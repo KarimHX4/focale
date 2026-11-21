@@ -32,6 +32,12 @@ const SAMPLES = (() => {
       surfaces: [S(Infinity, Infinity, '', { comment: 'Objet' }), S(Infinity, 100, '', { comment: 'Entrée' }), S(-1600, -800, 'MIRROR', { k: -1, stop: true, comment: 'Primaire parabolique' }),
         S(Infinity, 0, '', { comment: 'Image' })],
     }),
+    'Newton replié (miroir plan à 45°)': () => base({
+      title: 'Télescope de Newton D=200 F/4 avec miroir de renvoi', aperture: { type: 'EPD', value: 200, obscuration: 0.25 },
+      fields: [{ y: 0, w: 1 }, { y: 0.25, w: 1 }, { y: 0.5, w: 1 }], wavelengths: [{ um: 0.5875618, w: 1 }], primary: 0,
+      surfaces: [S(Infinity, Infinity, '', { comment: 'Objet' }), S(Infinity, 100, '', { comment: 'Entrée' }), S(-1600, -650, 'MIRROR', { k: -1, stop: true, comment: 'Primaire parabolique' }),
+        S(Infinity, 150, 'MIRROR', { tx: 45, dmode: 'BEN', comment: 'Miroir plan de renvoi' }), S(Infinity, 0, '', { comment: 'Image' })],
+    }),
     'Télescope Cassegrain F/7.5': () => base({
       title: 'Cassegrain classique D=200 mm F/7.5', aperture: { type: 'EPD', value: 200, obscuration: 0.32 },
       fields: [{ y: 0, w: 1 }, { y: 0.1, w: 1 }, { y: 0.2, w: 1 }], wavelengths: [{ um: 0.5875618, w: 1 }], primary: 0,

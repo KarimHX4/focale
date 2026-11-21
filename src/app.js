@@ -35,7 +35,9 @@ const toJSON = o => JSON.stringify(o, rep, 1);
 const fromJSON = s => JSON.parse(s, rev);
 function toast(msg, ms = 2200) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('on'), ms); }
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const newSurf = (o = {}) => ({ r: Infinity, t: 5, glass: '', sd: 0, sdFixed: false, k: 0, a4: 0, a6: 0, a8: 0, a10: 0, stop: false, comment: '', vr: false, vt: false, vk: false, tsolve: '', ...o });
+const newSurf = (o = {}) => ({ r: Infinity, t: 5, glass: '', sd: 0, sdFixed: false, k: 0, a4: 0, a6: 0, a8: 0, a10: 0, stop: false, comment: '', vr: false, vt: false, vk: false, tsolve: '',
+  dx: 0, dy: 0, dz: 0, tx: 0, ty: 0, tz: 0, dmode: 'DEC', ...o });
+const isDec = s => !!(s.dx || s.dy || s.dz || s.tx || s.ty || s.tz);
 
 /* ---------------- État ---------------- */
 const App = {
@@ -53,7 +55,7 @@ function load() {
 }
 function normalize(s) {
   s.aperture = { type: 'EPD', value: 10, obscuration: 0, ...(s.aperture || {}) };
-  s.fields = (s.fields && s.fields.length) ? s.fields : [{ y: 0, w: 1 }];
+  s.fields = ((s.fields && s.fields.length) ? s.fields : [{ y: 0, w: 1 }]).map(f => ({ x: +f.x || 0, y: +f.y || 0, w: f.w ?? 1 }));
   s.wavelengths = (s.wavelengths && s.wavelengths.length) ? s.wavelengths : [{ um: 0.5875618, w: 1 }];
   s.primary = Math.min(Math.max(0, s.primary | 0), s.wavelengths.length - 1);
   s.merit = s.merit || { image: 'SPOT', ops: [] }; s.merit.ops = s.merit.ops || [];
@@ -101,7 +103,9 @@ function renderLDE() {
   let h = `<thead><tr><th>#</th><th>Type</th><th>Commentaire</th><th>Rayon</th><th>Épaisseur</th><th>Verre</th><th>Demi-diamètre</th><th>Conique</th>${asph ? '<th>A4 (r⁴)</th><th>A6 (r⁶)</th><th>A8 (r⁸)</th><th>A10 (r¹⁰)</th>' : ''}</tr></thead><tbody>`;
   S.forEach((s, i) => {
     const obj = i === 0, img = i === N, mir = OE.isMirror(s);
-    const badge = obj ? '<span class="b">OBJ</span>' : img ? '<span class="b">IMA</span>' : s.stop ? '<span class="b st">STO</span>' : mir ? '<span class="b mi">MIR</span>' : '';
+    let badge = obj ? '<span class="b">OBJ</span>' : img ? '<span class="b">IMA</span>' : s.stop ? '<span class="b st">STO</span>' : mir ? '<span class="b mi">MIR</span>' : '';
+    if (isDec(s)) badge += `<span class="b de" title="${{ DEC: 'Décentrement', DAR: 'Décentrement et retour', BEN: 'Pliage' }[s.dmode || 'DEC']}">${s.dmode || 'DEC'}</span>`;
+    if (s.type && s.type !== 'STD') badge += `<span class="b fr">${s.type === 'XY' ? 'XY' : 'ZRN'}</span>`;
     const tVal = MS ? MS[i].t : s.t, sdVal = MS ? MS[i].sd : s.sd;
     const gOK = mir || OE.isAir(s.glass) || isFinite(OE.glassN(s.glass, 0.5876));
     h += `<tr data-i="${i}" class="${i === App.sel ? 'sel' : ''}">
@@ -184,7 +188,7 @@ function selectRow(i, redraw = true) {
   i = Math.max(0, Math.min(App.sys.surfaces.length - 1, i));
   if (App.sel === i) return; App.sel = i;
   $$('#lde tr[data-i]').forEach(tr => tr.classList.toggle('sel', +tr.dataset.i === i));
-  drawLayout();
+  renderSide(); drawLayout();
   if (App.panes.slice(0, App.grid).some(p => p.type === 'footprint' && p.si == null)) renderPanes();
 }
 function setStop(i) { commit(S => S.surfaces.forEach((s, j) => s.stop = j === i)); }
@@ -218,17 +222,18 @@ function renderSide() {
   const objInf = !isFinite(s.surfaces[0].t) || Math.abs(s.surfaces[0].t) > 1e10;
   const apOpts = objInf ? [['EPD', 'Diamètre pupille d\'entrée (mm)'], ['FNO', 'F/# image']] : [['EPD', 'Diamètre pupille d\'entrée (mm)'], ['NA', 'Ouverture numérique objet']];
   if (!apOpts.find(o => o[0] === ap.type)) ap.type = 'EPD';
-  const el = document.activeElement; const keep = el && el.closest && el.closest('#side') && el.dataset.f ? el.dataset.f : null;
+  const el = document.activeElement; const keep = el && el.closest && el.closest('#side') && el.dataset.f ? `[data-f="${el.dataset.f}"]${el.dataset.k ? `[data-k="${el.dataset.k}"]` : ''}${el.dataset.i != null ? `[data-i="${el.dataset.i}"]` : ''}` : null;
   let h = card('gen', 'Système', `
     <div class="row"><input class="in" style="flex:1" data-f="title" value="${esc(s.title)}" placeholder="Titre du système"></div>`);
+  h += inspector();
   h += card('ap', 'Ouverture', `
     <div class="row"><select class="in" style="flex:1" data-f="apType">${apOpts.map(o => `<option value="${o[0]}" ${o[0] === ap.type ? 'selected' : ''}>${o[1]}</option>`).join('')}</select></div>
     <div class="row"><label>Valeur</label><input class="in mini" data-f="apVal" value="${fmt(ap.value, 6)}"></div>
     <div class="row"><label>Obstruction centrale (rayon rel.)</label><input class="in mini" data-f="obs" value="${fmt(ap.obscuration || 0, 4)}"></div>
     <div class="row"><label title="Itère sur chaque rayon pour viser exactement le diaphragme">Visée réelle des rayons (ray aiming)</label><input type="checkbox" data-f="aim" ${s.rayAiming ? 'checked' : ''}></div>`);
   h += card('fi', `Champs — ${objInf ? 'angle (°)' : 'hauteur objet (mm)'}`, `
-    <table class="mt"><tr><th></th><th>${objInf ? 'Angle Y (°)' : 'Hauteur Y (mm)'}</th><th>Poids</th><th></th></tr>
-    ${s.fields.map((f, i) => `<tr><td><span class="sw" style="background:${fcol(i)}"></span></td><td><input class="in" data-f="fy" data-i="${i}" value="${fmt(f.y, 6)}"></td><td><input class="in" data-f="fw" style="width:56px" data-i="${i}" value="${fmt(f.w ?? 1, 4)}"></td><td><button class="x" data-a="fdel" data-i="${i}" title="Supprimer">✕</button></td></tr>`).join('')}
+    <table class="mt"><tr><th></th><th>${objInf ? 'X (°)' : 'X (mm)'}</th><th>${objInf ? 'Y (°)' : 'Y (mm)'}</th><th>Poids</th><th></th></tr>
+    ${s.fields.map((f, i) => `<tr><td><span class="sw" style="background:${fcol(i)}"></span></td><td><input class="in" data-f="fx" data-i="${i}" value="${fmt(f.x || 0, 6)}"></td><td><input class="in" data-f="fy" data-i="${i}" value="${fmt(f.y, 6)}"></td><td><input class="in" data-f="fw" style="width:44px" data-i="${i}" value="${fmt(f.w ?? 1, 4)}"></td><td><button class="x" data-a="fdel" data-i="${i}" title="Supprimer">✕</button></td></tr>`).join('')}
     </table><button class="add" data-a="fadd">+ Ajouter un champ</button>
     <div class="chips"><button class="chip" data-a="fspread">Répartir 0 · 0.7 · 1</button></div>`);
   h += card('wl', 'Longueurs d\'onde (µm)', `
@@ -258,8 +263,29 @@ function renderSide() {
       <div class="hint" style="margin-top:6px">Positions relatives : PE / 1ʳᵉ surface, PS / plan image.</div>`);
   }
   $('#side').innerHTML = h;
-  if (keep) { const e = $(`#side [data-f="${keep}"]`); if (e) e.focus(); }
+  if (keep) { const e = $('#side ' + keep); if (e) e.focus(); }
   status();
+}
+function inspector() {
+  const s = App.sys, j = App.sel, x = s.surfaces[j]; if (!x) return '';
+  const N = s.surfaces.length - 1;
+  if (j === 0) return card('surf', 'Surface 0 — objet', '<div class="hint">Sélectionnez une surface pour voir ses propriétés.</div>');
+  const ty = x.type || 'STD';
+  const inp = (k, lbl, unit) => `<div><div class="hint">${lbl}${unit ? ' <span style="opacity:.7">' + unit + '</span>' : ''}</div><input class="in" style="width:100%" data-f="dec" data-k="${k}" value="${fmt(x[k] || 0, 6)}"></div>`;
+  let h = `<div class="row"><label>Forme</label><select class="in" data-f="stype" style="width:150px">
+      <option value="STD" ${ty === 'STD' ? 'selected' : ''}>Standard (conique + asphère)</option>
+      <option value="XY" ${ty === 'XY' ? 'selected' : ''}>Polynôme XY</option>
+      <option value="ZERN" ${ty === 'ZERN' ? 'selected' : ''}>Zernike (Fringe)</option></select></div>`;
+  if (typeof freeformEditor === 'function') h += freeformEditor(x);
+  h += `<div class="hint" style="margin:8px 0 2px;font-weight:600;color:var(--fg)">Décentrement / bascule</div>
+    <div class="row"><select class="in" style="flex:1" data-f="dmode">
+      <option value="DEC" ${x.dmode !== 'DAR' && x.dmode !== 'BEN' ? 'selected' : ''}>Décentrement simple — la suite suit</option>
+      <option value="DAR" ${x.dmode === 'DAR' ? 'selected' : ''}>Décentrement et retour (DAR)</option>
+      <option value="BEN" ${x.dmode === 'BEN' ? 'selected' : ''}>Pliage miroir (BEN)</option></select></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px">${inp('dx', 'X', 'mm')}${inp('dy', 'Y', 'mm')}${inp('dz', 'Z', 'mm')}${inp('tx', 'α (X)', '°')}${inp('ty', 'β (Y)', '°')}${inp('tz', 'γ (Z)', '°')}</div>
+    <div class="chips">${j < N ? '<button class="chip" data-a="fold45">Miroir de renvoi 45°</button>' : ''}<button class="chip" data-a="dreset">Remettre à zéro</button></div>
+    <div class="hint" style="margin-top:4px">Décentrement puis rotations α, β, γ (main droite). Les données paraxiales ignorent décentrements et bascules.</div>`;
+  return card('surf', `Surface ${j}${x.comment ? ' — ' + esc(x.comment) : ''}`, h);
 }
 function setupSide() {
   const side = $('#side');
@@ -267,9 +293,11 @@ function setupSide() {
     const h3 = e.target.closest('h3'); if (h3) { const c = h3.parentElement; c.classList.toggle('closed'); c.classList.contains('closed') ? closedCards.add(c.dataset.card) : closedCards.delete(c.dataset.card); return; }
     const b = e.target.closest('[data-a]'); if (!b) return; const i = +b.dataset.i;
     switch (b.dataset.a) {
-      case 'fadd': commit(s => { const m = Math.max(...s.fields.map(f => f.y)); s.fields.push({ y: +(m * 1.2 || 1).toFixed(4), w: 1 }); }); break;
+      case 'fadd': commit(s => { const m = Math.max(...s.fields.map(f => f.y)); s.fields.push({ x: 0, y: +(m * 1.2 || 1).toFixed(4), w: 1 }); }); break;
       case 'fdel': if (App.sys.fields.length > 1) commit(s => s.fields.splice(i, 1)); break;
-      case 'fspread': commit(s => { const m = Math.max(...s.fields.map(f => Math.abs(f.y))) || 1; s.fields = [0, 0.7, 1].map(k => ({ y: +(m * k).toPrecision(6), w: 1 })); }); break;
+      case 'fspread': commit(s => { const m = Math.max(...s.fields.map(f => Math.hypot(f.x || 0, f.y))) || 1; s.fields = [0, 0.7, 1].map(k => ({ x: 0, y: +(m * k).toPrecision(6), w: 1 })); }); break;
+      case 'fold45': commit(s => { const x = s.surfaces[App.sel]; x.glass = 'MIRROR'; x.r = Infinity; x.tx = 45; x.ty = 0; x.tz = 0; x.dx = x.dy = x.dz = 0; x.dmode = 'BEN'; }); toast('Miroir de renvoi à 45° : pensez au signe de l\'épaisseur suivante'); break;
+      case 'dreset': commit(s => { const x = s.surfaces[App.sel]; x.dx = x.dy = x.dz = x.tx = x.ty = x.tz = 0; x.dmode = 'DEC'; }); break;
       case 'wadd': commit(s => s.wavelengths.push({ um: 0.55, w: 1 })); break;
       case 'wdel': if (App.sys.wavelengths.length > 1) commit(s => { s.wavelengths.splice(i, 1); s.primary = Math.min(s.primary, s.wavelengths.length - 1); }); break;
       case 'wpre': {
@@ -289,6 +317,12 @@ function setupSide() {
       case 'obs': if ((v = num(x => x >= 0 && x < 0.95)) != null) commit(s => s.aperture.obscuration = v); break;
       case 'aim': commit(s => s.rayAiming = t.checked); break;
       case 'fy': if ((v = num()) != null) commit(s => s.fields[i].y = v); break;
+      case 'fx': if ((v = num()) != null) commit(s => s.fields[i].x = v); break;
+      case 'dmode': commit(s => s.surfaces[App.sel].dmode = t.value); break;
+      case 'stype': commit(s => { const x = s.surfaces[App.sel]; x.type = t.value; if (t.value === 'ZERN' && !x.zr) x.zr = Math.max(1, App.M && App.M.ok ? +App.M.S[App.sel].sd.toPrecision(3) : 10); }); break;
+      case 'dec': if ((v = num()) != null) commit(s => s.surfaces[App.sel][t.dataset.k] = v); break;
+      case 'coef': { const k = t.dataset.k; v = t.value.trim() === '' ? 0 : parseNum(t.value, false); if (!isFinite(v)) { toast('Valeur invalide'); renderSide(); break; }
+        commit(s => { const x = s.surfaces[App.sel]; if (k === 'zr') x.zr = v; else if (k.startsWith('z')) { x.zc = x.zc || []; x.zc[+k.slice(1)] = v; } else { x.xy = x.xy || {}; if (v) x.xy[k] = v; else delete x.xy[k]; } }); break; }
       case 'fw': if ((v = num(x => x >= 0)) != null) commit(s => s.fields[i].w = v); break;
       case 'wum': if ((v = num(x => x > 0.15 && x < 25)) != null) commit(s => s.wavelengths[i].um = v); break;
       case 'ww': if ((v = num(x => x >= 0)) != null) commit(s => s.wavelengths[i].w = v); break;
@@ -400,19 +434,20 @@ function subgrid(n, w, h) { let best = null; for (let cols = 1; cols <= n; cols+
 /* ---------------- Layout 2D / 3D ---------------- */
 function layoutGeom(M) {
   if (M.geom) return M.geom;
-  const S = M.S, N = M.N, zg = M.zg, surfs = [];
+  const S = M.S, N = M.N, surfs = [], G3 = (j, p) => OE.toGlobal(M.fr[j], p);
+  let zmin = Infinity, zmax = -Infinity, ymin = Infinity, ymax = -Infinity, xa = 0;
   for (let j = 1; j <= N; j++) {
-    const sf = M.ctxs[M.pw].s[j], sd = S[j].sd || 1, pts = [];
-    for (let k = 0; k <= 40; k++) { const y = -sd + 2 * sd * k / 40; const z = OE.sag(sf, y * y); pts.push([zg[j] + (isFinite(z) ? z : 0), y]); }
-    surfs.push({ j, pts, sd, sf });
+    const sf = M.ctxs[M.pw].s[j], sd = S[j].sd || 1, pts = [], p3 = [];
+    const sz = (x, y) => { const z = OE.sag(sf, x, y); return isFinite(z) ? z : 0; };
+    for (let k = 0; k <= 40; k++) { const y = -sd + 2 * sd * k / 40, g = G3(j, [0, y, sz(0, y)]); p3.push(g); pts.push([g[2], g[1]]); }
+    for (const q of p3) { zmin = Math.min(zmin, q[2]); zmax = Math.max(zmax, q[2]); ymin = Math.min(ymin, q[1]); ymax = Math.max(ymax, q[1]); xa = Math.max(xa, Math.abs(q[0])); }
+    surfs.push({ j, pts, sd, sf, e: sz(0, sd), em: sz(0, -sd), sz });
   }
-  let zmin = Math.min(...zg.slice(1)), zmax = Math.max(...zg.slice(1)), ymax = Math.max(...S.slice(1).map(s => s.sd || 1));
-  for (const s of surfs) for (const p of s.pts) { zmin = Math.min(zmin, p[0]); zmax = Math.max(zmax, p[0]); }
-  const span = Math.max(zmax - zmin, ymax * 2, 1e-3);
+  const span = Math.max(zmax - zmin, ymax - ymin, 1e-3);
   const fin = !M.objInf && M.t0 < 4 * span && M.t0 > 0;
   const lead = fin ? M.t0 : 0.18 * span;
-  if (fin) zmin = Math.min(zmin, -M.t0);
-  M.geom = { surfs, zmin: zmin - (fin ? 0 : lead), zmax, ymax, span, lead, fin };
+  if (fin) zmin = Math.min(zmin, -M.t0); else zmin -= lead;
+  M.geom = { surfs, zmin, zmax, ymin: Math.min(ymin, -1e-3), ymax: Math.max(ymax, 1e-3), span, lead, fin, G3 };
   return M.geom;
 }
 function layoutRays(M, n, three) {
@@ -422,12 +457,12 @@ function layoutRays(M, n, three) {
     for (const [ax, ay] of fans) for (let k = 0; k < n; k++) {
       const p = n === 1 ? 0 : -1 + 2 * k / (n - 1);
       if (Math.abs(p) < M.obs - 1e-9) continue;
-      const pts = []; const r = OE.ray(M, M.pw, f.y, p * ax, p * ay, { pts });
+      const pts = []; const r = OE.ray(M, M.pw, f, p * ax, p * ay, { pts });
       if (!pts.length) continue;
       let p0;
-      if (M.objInf) { const th = f.y * OE.DEG, d = [0, Math.sin(th), Math.cos(th)], q = pts[0]; const L = G.lead + (q[2] - M.zg[1]); p0 = [q[0] - d[0] * L, q[1] - d[1] * L, q[2] - d[2] * L]; }
-      else if (G.fin) p0 = [0, f.y, -M.t0];
-      else { const q = pts[0], o = [0, f.y, -M.t0]; let d = [q[0] - o[0], q[1] - o[1], q[2] - o[2]]; const dn = Math.hypot(...d); d = d.map(v => v / dn); p0 = [q[0] - d[0] * G.lead, q[1] - d[1] * G.lead, q[2] - d[2] * G.lead]; }
+      if (M.objInf) { const d = OE.fieldDir(f), q = pts[0], L = G.lead + (q[2] - M.zg[1]); p0 = [q[0] - d[0] * L, q[1] - d[1] * L, q[2] - d[2] * L]; }
+      else if (G.fin) p0 = [f.x || 0, f.y, -M.t0];
+      else { const q = pts[0], o = [f.x || 0, f.y, -M.t0]; let d = [q[0] - o[0], q[1] - o[1], q[2] - o[2]]; const dn = Math.hypot(...d); d = d.map(v => v / dn); p0 = [q[0] - d[0] * G.lead, q[1] - d[1] * G.lead, q[2] - d[2] * G.lead]; }
       out.push({ fi, pts: [p0, ...pts], vig: r.vig });
     }
   });
@@ -436,13 +471,13 @@ function layoutRays(M, n, three) {
 function drawLayout() {
   readTheme();
   const cv = $('#lay'), { c, w, h } = prepCanvas(cv), M = App.M;
-  $('#legend').innerHTML = App.sys.fields.map((f, i) => `<span><span class="sw" style="background:${fcol(i)}"></span> ${fmt(f.y, 4)}${M && M.objInf ? '°' : ' mm'}</span>`).join('');
+  $('#legend').innerHTML = App.sys.fields.map((f, i) => `<span><span class="sw" style="background:${fcol(i)}"></span> ${f.x ? '(' + fmt(f.x, 4) + ', ' + fmt(f.y, 4) + ')' : fmt(f.y, 4)}${M && M.objInf ? '°' : ' mm'}</span>`).join('');
   $$('#laySeg button').forEach(x => x.classList.toggle('on', x.dataset.m === App.mode));
   if (!M || !M.ok) { text(c, (M && M.errors || ['Erreur']).join('  ·  '), 14, 14, { col: '#dc2626' }); return; }
   const G = layoutGeom(M);
   if (App.mode === '3d') return draw3D(c, w, h, M, G);
   const V = App.view;
-  if (V.auto) { const zr = G.zmax - G.zmin, yr = 2 * G.ymax * 1.15; V.s = Math.min((w - 40) / (zr || 1), (h - 30) / (yr || 1)); V.ox = 20 - G.zmin * V.s + ((w - 40) - zr * V.s) / 2; V.oy = h / 2; }
+  if (V.auto) { const zr = G.zmax - G.zmin, yr = (G.ymax - G.ymin) * 1.15; V.s = Math.min((w - 40) / (zr || 1), (h - 30) / (yr || 1)); V.ox = 20 - G.zmin * V.s + ((w - 40) - zr * V.s) / 2; V.oy = h / 2 + (G.ymax + G.ymin) / 2 * V.s; }
   const T = (z, y) => [V.ox + z * V.s, V.oy - y * V.s];
   App.layT = T;
   // axe
@@ -451,9 +486,8 @@ function drawLayout() {
   // lentilles
   for (let j = 1; j < N; j++) {
     if (OE.isAir(S[j].glass) || OE.isMirror(S[j])) continue;
-    const a = G.surfs[j - 1], b = G.surfs[j], H = Math.max(a.sd, b.sd);
-    const za = a.pts[a.pts.length - 1][0], zb = b.pts[b.pts.length - 1][0];
-    const poly = [[za, H], ...a.pts.slice().reverse(), [za, -H], [zb, -H], ...b.pts, [zb, H]];
+    const a = G.surfs[j - 1], b = G.surfs[j], H = Math.max(a.sd, b.sd), P2 = (k, q) => { const g = G.G3(k, q); return [g[2], g[1]]; };
+    const poly = [P2(j, [0, H, a.e]), ...a.pts.slice().reverse(), P2(j, [0, -H, a.em]), P2(j + 1, [0, -H, b.em]), ...b.pts, P2(j + 1, [0, H, b.e])];
     c.beginPath(); poly.forEach((p, k) => { const q = T(p[0], p[1]); k ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]); }); c.closePath();
     c.fillStyle = TH.lens; c.fill(); c.strokeStyle = TH.lensE; c.lineWidth = 1.2; c.stroke();
   }
@@ -469,11 +503,11 @@ function drawLayout() {
     if (s.j === N && !sel) c.strokeStyle = TH.mut;
     if (OE.isAir(S[s.j].glass) && (s.j === 1 || OE.isAir(S[s.j - 1].glass)) && !mir && s.j !== N && !sel && !S[s.j].stop) { c.strokeStyle = TH.mut; c.setLineDash([3, 3]); c.lineWidth = 0.8; }
     c.beginPath(); s.pts.forEach((p, k) => { const q = T(p[0], p[1]); k ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]); }); c.stroke(); c.setLineDash([]);
-    if (mir) { // hachures
+    if (mir) { // hachures côté dos du miroir
       const dir = Math.sign(M.nW[M.pw][s.j - 1]) || 1; c.strokeStyle = TH.mut; c.lineWidth = 0.8; c.beginPath();
-      for (let k = 0; k < s.pts.length; k += 3) { const q = T(s.pts[k][0], s.pts[k][1]); c.moveTo(q[0], q[1]); c.lineTo(q[0] + dir * 6, q[1] - 5); } c.stroke();
+      for (let k = 0; k <= 40; k += 3) { const y = -s.sd + 2 * s.sd * k / 40, z = s.sz(0, y), g1 = G.G3(s.j, [0, y, z]), g2 = G.G3(s.j, [0, y - 5 / V.s, z + dir * 6 / V.s]); const q1 = T(g1[2], g1[1]), q2 = T(g2[2], g2[1]); c.moveTo(q1[0], q1[1]); c.lineTo(q2[0], q2[1]); } c.stroke();
     }
-    if (S[s.j].stop) { const e = s.pts[s.pts.length - 1], z = e[0]; c.strokeStyle = TH.fg; c.lineWidth = 2.5; for (const sg of [1, -1]) { const q1 = T(z, sg * s.sd), q2 = T(z, sg * s.sd * 1.18 + sg * 3 / V.s); c.beginPath(); c.moveTo(q1[0], q1[1]); c.lineTo(q2[0], q2[1]); c.stroke(); } }
+    if (S[s.j].stop) { c.strokeStyle = TH.fg; c.lineWidth = 2.5; for (const sg of [1, -1]) { const e = sg > 0 ? s.e : s.em, g1 = G.G3(s.j, [0, sg * s.sd, e]), g2 = G.G3(s.j, [0, sg * (s.sd * 1.18 + 3 / V.s), e]); const q1 = T(g1[2], g1[1]), q2 = T(g2[2], g2[1]); c.beginPath(); c.moveTo(q1[0], q1[1]); c.lineTo(q2[0], q2[1]); c.stroke(); } }
   }
   if (G.fin) { const q = T(-M.t0, 0); c.fillStyle = TH.mut; c.fillRect(q[0] - 1, q[1] - 30, 2, 60); }
   // échelle
@@ -482,34 +516,30 @@ function drawLayout() {
 }
 function draw3D(c, w, h, M, G) {
   const V = App.view, ca = Math.cos(V.yaw), sa = Math.sin(V.yaw), cb = Math.cos(V.pitch), sb = Math.sin(V.pitch);
-  const zc = (G.zmin + G.zmax) / 2;
-  const P = (x, y, z) => { z -= zc; const sx = z * ca - x * sa, dep = z * sa + x * ca, sy = y * cb + dep * sb; return [sx, sy]; };
-  const sc = (V.s3 || 1) * Math.min((w - 40) / ((G.zmax - G.zmin) * 1.05 || 1), (h - 30) / (2.6 * G.ymax || 1));
-  const T = (x, y, z) => { const p = P(x, y, z); return [w / 2 + p[0] * sc + (V.px3 || 0), h / 2 - p[1] * sc + (V.py3 || 0)]; };
-  const S = M.S, N = M.N;
+  const zc = (G.zmin + G.zmax) / 2, yc = (G.ymin + G.ymax) / 2;
+  const P = (x, y, z) => { z -= zc; y -= yc; const sx = z * ca - x * sa, dep = z * sa + x * ca, sy = y * cb + dep * sb; return [sx, sy]; };
+  const sc = (V.s3 || 1) * Math.min((w - 40) / ((G.zmax - G.zmin) * 1.05 || 1), (h - 30) / (1.3 * (G.ymax - G.ymin) || 1));
+  const T = (q) => { const p = P(q[0], q[1], q[2]); return [w / 2 + p[0] * sc + (V.px3 || 0), h / 2 - p[1] * sc + (V.py3 || 0)]; };
+  const S = M.S, N = M.N, G3 = G.G3;
+  const poly = (arr) => { c.beginPath(); arr.forEach((q, k) => { const t = T(q); k ? c.lineTo(t[0], t[1]) : c.moveTo(t[0], t[1]); }); c.stroke(); };
   c.lineWidth = 1;
-  // rayons
   const rays = layoutRays(M, Math.max(3, App.nRays), true);
   c.globalAlpha = 0.85;
-  for (const r of rays) { c.strokeStyle = fcol(r.fi); c.beginPath(); r.pts.forEach((p, k) => { const q = T(p[0], p[1], p[2]); k ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]); }); c.stroke(); }
+  for (const r of rays) { c.strokeStyle = fcol(r.fi); poly(r.pts); }
   c.globalAlpha = 1;
-  // surfaces : contours + méridiens
   for (const s of G.surfs) {
-    const sel = s.j === App.sel, mir = OE.isMirror(S[s.j]), sd = s.sd, sf = s.sf, z0 = M.zg[s.j];
-    const zs = OE.sag(sf, sd * sd), ze = isFinite(zs) ? zs : 0;
+    const sel = s.j === App.sel, mir = OE.isMirror(S[s.j]), sd = s.sd;
     c.strokeStyle = sel ? '#f59e0b' : mir ? TH.fg : s.j === N ? TH.mut : TH.lensE; c.lineWidth = sel ? 2.2 : 1.1;
-    c.beginPath(); for (let k = 0; k <= 64; k++) { const a = 2 * Math.PI * k / 64; const q = T(sd * Math.cos(a), sd * Math.sin(a), z0 + ze); k ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]); } c.stroke();
+    poly(Array.from({ length: 65 }, (_, k) => { const a = 2 * Math.PI * k / 64, x = sd * Math.cos(a), y = sd * Math.sin(a); return G3(s.j, [x, y, s.sz(x, y)]); }));
     c.globalAlpha = 0.5; c.lineWidth = 0.8;
-    for (let m = 0; m < 4; m++) { const a = Math.PI * m / 4; c.beginPath(); for (let k = 0; k <= 30; k++) { const r = -sd + 2 * sd * k / 30, x = r * Math.cos(a), y = r * Math.sin(a), z = OE.sag(sf, r * r); const q = T(x, y, z0 + (isFinite(z) ? z : 0)); k ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]); } c.stroke(); }
+    for (let m = 0; m < 4; m++) { const a = Math.PI * m / 4; poly(Array.from({ length: 31 }, (_, k) => { const r = -sd + 2 * sd * k / 30, x = r * Math.cos(a), y = r * Math.sin(a); return G3(s.j, [x, y, s.sz(x, y)]); })); }
     c.globalAlpha = 1;
   }
-  // bords des lentilles
   for (let j = 1; j < N; j++) {
     if (OE.isAir(S[j].glass) || OE.isMirror(S[j])) continue;
     const a = G.surfs[j - 1], b = G.surfs[j], H = Math.max(a.sd, b.sd);
-    const za = M.zg[j] + (OE.sag(a.sf, a.sd * a.sd) || 0), zb = M.zg[j + 1] + (OE.sag(b.sf, b.sd * b.sd) || 0);
     c.strokeStyle = TH.lensE; c.globalAlpha = 0.6;
-    for (let m = 0; m < 8; m++) { const t = 2 * Math.PI * m / 8; const q1 = T(H * Math.cos(t), H * Math.sin(t), za), q2 = T(H * Math.cos(t), H * Math.sin(t), zb); c.beginPath(); c.moveTo(q1[0], q1[1]); c.lineTo(q2[0], q2[1]); c.stroke(); }
+    for (let m = 0; m < 8; m++) { const t = 2 * Math.PI * m / 8, x = H * Math.cos(t), y = H * Math.sin(t); poly([G3(j, [x, y, a.sz(x * a.sd / H, y * a.sd / H)]), G3(j + 1, [x, y, b.sz(x * b.sd / H, y * b.sd / H)])]); }
     c.globalAlpha = 1;
   }
   text(c, 'Glisser : rotation · Maj+glisser : déplacer · molette : zoom', 10, 8, { col: TH.mut, size: 10.5 });
@@ -588,7 +618,7 @@ function buildPanes() {
 function paneHeader(pi) {
   const p = App.panes[pi], t = PT[p.type] || PT.spot, s = App.sys, M = App.M;
   let h = `<select class="pt" data-p="type">${Object.entries(PT).map(([k, v]) => `<option value="${k}" ${k === p.type ? 'selected' : ''}>${v.l}</option>`).join('')}</select>`;
-  if (t.f) { p.fi = Math.min(p.fi || 0, s.fields.length - 1); h += `<select data-p="fi">${s.fields.map((f, i) => `<option value="${i}" ${i === p.fi ? 'selected' : ''}>Champ ${i + 1} (${fmt(f.y, 4)}${M && M.objInf ? '°' : ' mm'})</option>`).join('')}</select>`; }
+  if (t.f) { p.fi = Math.min(p.fi || 0, s.fields.length - 1); h += `<select data-p="fi">${s.fields.map((f, i) => `<option value="${i}" ${i === p.fi ? 'selected' : ''}>Champ ${i + 1} (${M && M.ok ? fLabel(M, i) : fmt(f.y, 4)})</option>`).join('')}</select>`; }
   if (t.w) { if (p.wi != null && p.wi >= s.wavelengths.length) p.wi = null; const we = p.wi ?? s.primary; h += `<select data-p="wi">${s.wavelengths.map((w, i) => `<option value="${i}" ${i === we ? 'selected' : ''}>${fmt(w.um * 1000, 5)} nm</option>`).join('')}</select>`; }
   if (t.s) h += `<select data-p="si"><option value="">Surface sélectionnée</option>${s.surfaces.map((x, i) => i ? `<option value="${i}" ${p.si === i ? 'selected' : ''}>Surface ${i}${x.comment ? ' · ' + esc(x.comment) : ''}</option>` : '').join('')}</select>`;
   if (p.type === 'psf') h += `<label><input type="checkbox" data-p="log" ${p.log ? 'checked' : ''}>log</label><select data-p="zoom">${[1, 2, 4].map(z => `<option value="${z}" ${(p.zoom || 2) == z ? 'selected' : ''}>×${z}</option>`).join('')}</select>`;
@@ -634,7 +664,7 @@ function renderPane(pi) {
     if (isH) hd.innerHTML = 'Erreur : ' + esc(err.message); else { const { c } = prepCanvas(cv); text(c, 'Erreur : ' + err.message, 12, 12, { col: '#dc2626' }); }
   }
 }
-const fLabel = (M, i) => `${fmt(M.sys.fields[i].y, 4)}${M.objInf ? '°' : ' mm'}`;
+const fLabel = (M, i) => { const f = M.sys.fields[i], u = M.objInf ? '°' : ' mm'; return f.x ? `(${fmt(f.x, 4)}, ${fmt(f.y, 4)})${u}` : `${fmt(f.y, 4)}${u}`; };
 const wlLegend = M => M.wls.map((l, i) => ({ col: wlCol(l), l: `${fmt(l * 1000, 4)} nm` }));
 const R = {
   spot(p, M, c, w, h) {
@@ -873,13 +903,14 @@ function toSeq(s) {
   const ap = s.aperture;
   L.push(ap.type === 'FNO' ? `FNO ${ap.value}` : ap.type === 'NA' ? `NAO ${ap.value}` : `EPD ${ap.value}`, 'DIM M');
   L.push('WL ' + s.wavelengths.map(w => (w.um * 1000).toFixed(4)).join(' '), `REF ${s.primary + 1}`, 'WTW ' + s.wavelengths.map(w => w.w ?? 1).join(' '));
-  L.push('INI \'FOC\'', 'XAN ' + s.fields.map(() => '0.0').join(' '));
+  L.push('INI \'FOC\'', (objInf ? 'XAN ' : 'XOB ') + s.fields.map(f => f.x || 0).join(' '));
   L.push((objInf ? 'YAN ' : 'YOB ') + s.fields.map(f => f.y).join(' '), 'WTF ' + s.fields.map(f => f.w ?? 1).join(' '));
   L.push(`SO 0 ${objInf ? '1e+18' : r(S[0].t)}`);
   for (let i = 1; i < N; i++) {
     const x = S[i]; L.push(`${x.stop ? 'STO' : 'S'} ${r(x.r)} ${r(x.t)} ${gl(x.glass)}`.trim());
     if (x.k || x.a4 || x.a6 || x.a8 || x.a10) { L.push(x.a4 || x.a6 || x.a8 || x.a10 ? '  ASP' : '  CON'); L.push(`  K ${x.k || 0}`); if (x.a4 || x.a6 || x.a8 || x.a10) L.push(`  A ${x.a4 || 0}; B ${x.a6 || 0}; C ${x.a8 || 0}; D ${x.a10 || 0}`); }
     if (x.sdFixed) L.push(`  CIR ${r(x.sd)}`);
+    if (isDec(x)) { if (x.dmode === 'DAR' || x.dmode === 'BEN') L.push('  ' + x.dmode); L.push(`  XDE ${x.dx || 0}; YDE ${x.dy || 0}; ZDE ${x.dz || 0}; ADE ${x.tx || 0}; BDE ${x.ty || 0}; CDE ${x.tz || 0}`); }
     if (x.tsolve === 'M' && i === N - 1) L.push('  PIM');
     if (x.vr) L.push('  CCY 0'); if (x.vt && x.tsolve !== 'M') L.push('  THC 0');
   }
@@ -899,7 +930,7 @@ function mapSeqGlass(g) {
 }
 function parseSeq(txt) {
   const sys = { title: '', aperture: { type: 'EPD', value: 10, obscuration: 0 }, fields: [], wavelengths: [], primary: 0, rayAiming: false, merit: { image: 'SPOT', ops: [] }, surfaces: [] };
-  let wl = [], wtw = [], fy = [], wtf = [], cur = null, rdn = false;
+  let wl = [], wtw = [], fy = [], fxs = [], wtf = [], cur = null, rdn = false;
   const stmts = txt.split('\n').map(l => l.replace(/!.*$/, '')).join('\n').split(/[;\n]/);
   for (let st of stmts) {
     st = st.trim(); if (!st) continue;
@@ -916,6 +947,10 @@ function parseSeq(txt) {
       case 'WTW': wtw = a.map(Number); break;
       case 'REF': sys.primary = n(0) - 1; break;
       case 'YAN': case 'YOB': case 'YIM': fy = a.map(Number).filter(isFinite); break;
+      case 'XAN': case 'XOB': case 'XIM': fxs = a.map(Number).filter(isFinite); break;
+      case 'XDE': if (cur) cur.dx = n(0); break; case 'YDE': if (cur) cur.dy = n(0); break; case 'ZDE': if (cur) cur.dz = n(0); break;
+      case 'ADE': if (cur) cur.tx = n(0); break; case 'BDE': if (cur) cur.ty = n(0); break; case 'CDE': if (cur) cur.tz = n(0); break;
+      case 'DAR': case 'BEN': if (cur) cur.dmode = cmd; break;
       case 'WTF': wtf = a.map(Number); break;
       case 'SO': sys.surfaces.push(newSurf({ r: Infinity, t: Math.abs(n(1)) > 1e10 || !isFinite(n(1)) ? Infinity : n(1), comment: 'Objet' })); cur = null; break;
       case 'S': case 'STO': case 'SI': {
@@ -943,7 +978,7 @@ function parseSeq(txt) {
   const last = sys.surfaces[sys.surfaces.length - 1]; if (last.comment !== 'Image') sys.surfaces.push(newSurf({ t: 0, comment: 'Image' }));
   sys.wavelengths = (wl.length ? wl : [587.56]).map((v, i) => ({ um: v / 1000, w: wtw[i] ?? 1 }));
   sys.primary = Math.max(0, Math.min(sys.primary, sys.wavelengths.length - 1));
-  sys.fields = (fy.length ? fy : [0]).map((v, i) => ({ y: v, w: wtf[i] ?? 1 }));
+  sys.fields = (fy.length ? fy : [0]).map((v, i) => ({ x: fxs[i] || 0, y: v, w: wtf[i] ?? 1 }));
   if (!sys.surfaces.some(s => s.stop)) sys.surfaces[1].stop = true;
   return sys;
 }

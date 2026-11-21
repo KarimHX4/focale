@@ -68,7 +68,7 @@ const OE = (() => {
 
   /* ---------------- Surfaces ---------------- */
   const curv = s => (isFinite(s.r) && s.r !== 0) ? 1 / s.r : 0;
-  function sag(sf, r2) {
+  function sagR(sf, r2) {
     const c = sf.c; let z = 0;
     if (c !== 0) {
       const a = 1 - (1 + sf.k) * c * c * r2;
@@ -90,6 +90,17 @@ const OE = (() => {
     return g;
   }
 
+  /** termes de forme libre (polynôme XY, Zernike) — 0 pour une surface standard */
+  function ffSag(sf, x, y) { return 0; }
+  function ffGrad(sf, x, y) { return [0, 0]; }
+  /** flèche locale z(x, y) */
+  function sag(sf, x, y) { const z = sagR(sf, x * x + y * y); return sf.ff ? z + ffSag(sf, x, y) : z; }
+  /** pente locale [dz/dx, dz/dy] */
+  function sGrad(sf, x, y) {
+    const g = sagG(sf, x * x + y * y); if (!sf.ff) return [x * g, y * g];
+    const f = ffGrad(sf, x, y); return [x * g + f[0], y * g + f[1]];
+  }
+
   /** indices signés (paraxial) pour une longueur d'onde */
   function indices(S, l) {
     const n = new Array(S.length);
@@ -97,7 +108,7 @@ const OE = (() => {
     let sg = 1;
     for (let j = 1; j < S.length; j++) {
       if (isMirror(S[j])) { sg = -sg; n[j] = sg * Math.abs(n[j - 1]); }
-      else n[j] = sg * glassN(S[j].glass, l);
+      else n[j] = sg * (glassN(S[j].glass, l) + (isAir(S[j].glass) ? 0 : (+S[j].dn || 0)));
     }
     return n;
   }
@@ -112,7 +123,7 @@ const OE = (() => {
     }
     return { y, nu };
   }
-  function maxField(sys) { return Math.max(1e-9, ...sys.fields.map(f => Math.abs(f.y))); }
+  function maxField(sys) { return Math.max(1e-9, ...sys.fields.map(f => Math.hypot(+f.x || 0, +f.y || 0))); }
 
   function paraxial(sys, n, stopIdx, objInf) {
     const S = sys.surfaces, N = S.length - 1;
@@ -159,11 +170,49 @@ const OE = (() => {
     };
   }
 
+  /* ---------------- Repères (décentrements / bascules) ---------------- */
+  const I3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  function mmul(A, B) { const C = new Array(9); for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) C[i * 3 + j] = A[i * 3] * B[j] + A[i * 3 + 1] * B[3 + j] + A[i * 3 + 2] * B[6 + j]; return C; }
+  const mv = (A, v) => [A[0] * v[0] + A[1] * v[1] + A[2] * v[2], A[3] * v[0] + A[4] * v[1] + A[5] * v[2], A[6] * v[0] + A[7] * v[1] + A[8] * v[2]];
+  const mtv = (A, v) => [A[0] * v[0] + A[3] * v[1] + A[6] * v[2], A[1] * v[0] + A[4] * v[1] + A[7] * v[2], A[2] * v[0] + A[5] * v[1] + A[8] * v[2]];
+  function rotXYZ(ax, ay, az) {
+    const a = ax * DEG, b = ay * DEG, g = az * DEG;
+    const Rx = [1, 0, 0, 0, Math.cos(a), -Math.sin(a), 0, Math.sin(a), Math.cos(a)];
+    const Ry = [Math.cos(b), 0, Math.sin(b), 0, 1, 0, -Math.sin(b), 0, Math.cos(b)];
+    const Rz = [Math.cos(g), -Math.sin(g), 0, Math.sin(g), Math.cos(g), 0, 0, 0, 1];
+    return mmul(mmul(Rx, Ry), Rz);
+  }
+  const isId = R => Math.abs(R[0] - 1) + Math.abs(R[4] - 1) + Math.abs(R[8] - 1) + Math.abs(R[1]) + Math.abs(R[2]) + Math.abs(R[3]) + Math.abs(R[5]) + Math.abs(R[6]) + Math.abs(R[7]) < 1e-15;
+  /**
+   * Repère (origine o, matrice r local→global) de chaque surface.
+   * DEC : les surfaces suivantes suivent le nouvel axe ; DAR : décentrement et retour ;
+   * BEN : pliage (l'axe suit la réflexion : la bascule est appliquée deux fois). Rotations : main droite, ordre X puis Y puis Z.
+   */
+  function frames(S) {
+    const N = S.length - 1, fr = [null];
+    let O = [0, 0, 0], Rm = I3;
+    for (let j = 1; j <= N; j++) {
+      const s = S[j], dec = !!(s.dx || s.dy || s.dz || s.tx || s.ty || s.tz);
+      let SO = O, SR = Rm;
+      if (dec) { const d = mv(Rm, [s.dx || 0, s.dy || 0, s.dz || 0]); SO = [O[0] + d[0], O[1] + d[1], O[2] + d[2]]; SR = mmul(Rm, rotXYZ(s.tx || 0, s.ty || 0, s.tz || 0)); }
+      fr[j] = { o: SO, r: SR, id: isId(SR) };
+      if (dec && s.dmode !== 'DAR') { O = SO; Rm = s.dmode === 'BEN' ? mmul(SR, rotXYZ(s.tx || 0, s.ty || 0, s.tz || 0)) : SR; }
+      if (j < N) { const t = isFinite(s.t) ? s.t : 0, d = mv(Rm, [0, 0, t]); O = [O[0] + d[0], O[1] + d[1], O[2] + d[2]]; }
+    }
+    return fr;
+  }
+  const toGlobal = (F, p) => { const q = mv(F.r, p); return [q[0] + F.o[0], q[1] + F.o[1], q[2] + F.o[2]]; };
+
   /* ---------------- Préparation du modèle ---------------- */
   function prepare(sys0) {
     const sys = structuredClone(sys0);
     const S = sys.surfaces, N = S.length - 1;
-    for (const s of S) { s.k = +s.k || 0; s.a4 = +s.a4 || 0; s.a6 = +s.a6 || 0; s.a8 = +s.a8 || 0; s.a10 = +s.a10 || 0; s.sd = +s.sd || 0; }
+    for (const s of S) {
+      s.k = +s.k || 0; s.a4 = +s.a4 || 0; s.a6 = +s.a6 || 0; s.a8 = +s.a8 || 0; s.a10 = +s.a10 || 0; s.sd = +s.sd || 0;
+      for (const k of ['dx', 'dy', 'dz', 'tx', 'ty', 'tz']) s[k] = +s[k] || 0;
+      if (!['DEC', 'DAR', 'BEN'].includes(s.dmode)) s.dmode = 'DEC';
+    }
+    for (const f of sys.fields) { f.x = +f.x || 0; f.y = +f.y || 0; }
     const wls = sys.wavelengths.map(w => w.um);
     const pw = Math.min(Math.max(0, sys.primary | 0), wls.length - 1);
     let stopIdx = S.findIndex(s => s.stop); if (stopIdx < 1 || stopIdx >= N) stopIdx = 1;
@@ -184,8 +233,9 @@ const OE = (() => {
       }
       if (!ch) break;
     }
+    const fr = frames(S);
     const zg = new Float64Array(N + 1);
-    for (let j = 2; j <= N; j++) zg[j] = zg[j - 1] + S[j - 1].t;
+    for (let j = 1; j <= N; j++) zg[j] = fr[j].o[2];
     const ctxs = wls.map((l, wi) => {
       const n = nW[wi];
       return {
@@ -194,7 +244,7 @@ const OE = (() => {
           asph: !!(s.a4 || s.a6 || s.a8 || s.a10), t: s.t, mirror: isMirror(s), sd: s.sd, clip: !!s.sdFixed })),
       };
     });
-    const M = { sys, S, N, wls, pw, stopIdx, objInf, nW, par, zg, ctxs, aimCache: new Map(), ok: true, errors: [],
+    const M = { sys, S, N, wls, pw, stopIdx, objInf, nW, par, zg, fr, ctxs, aimCache: new Map(), ok: true, errors: [],
       t0: objInf ? 0 : S[0].t, obs: Math.max(0, Math.min(0.95, +sys.aperture.obscuration || 0)) };
     M.epr = par.epd / 2;
     computeSD(M);
@@ -221,10 +271,10 @@ const OE = (() => {
     }
     if (sf.asph) {
       for (let it = 0; it < 40; it++) {
-        const px = x + t * L, py = y + t * Mm, pz = z + t * Nn, r2 = px * px + py * py;
-        const f = pz - sag(sf, r2), g = sagG(sf, r2);
-        if (!isFinite(f) || !isFinite(g)) return NaN;
-        const fp = Nn - g * (px * L + py * Mm);
+        const px = x + t * L, py = y + t * Mm, pz = z + t * Nn;
+        const f = pz - sag(sf, px, py), g = sGrad(sf, px, py);
+        if (!isFinite(f) || !isFinite(g[0]) || !isFinite(g[1])) return NaN;
+        const fp = Nn - (g[0] * L + g[1] * Mm);
         const dt = f / fp; t -= dt;
         if (Math.abs(dt) < 1e-13) break;
       }
@@ -240,81 +290,89 @@ const OE = (() => {
    * opts: upto (indice de surface final), pts (tableau à remplir en coordonnées globales), noClip
    */
   function trace(M, ctx, p, d, opl0, opts = {}) {
-    const upto = opts.upto ?? M.N, pts = opts.pts, clip = !opts.noClip;
+    const upto = opts.upto ?? M.N, pts = opts.pts, clip = !opts.noClip, fr = M.fr;
     let x = p[0], y = p[1], z = p[2], L = d[0], Mm = d[1], Nn = d[2], opl = opl0;
     for (let j = 1; j <= upto; j++) {
-      const sf = ctx.s[j];
-      const t = intersect(sf, x, y, z, L, Mm, Nn);
+      const sf = ctx.s[j], F = fr[j], r = F.r;
+      // passage dans le repère local de la surface
+      const qx = x - F.o[0], qy = y - F.o[1], qz = z - F.o[2];
+      let lx, ly, lz, dL, dM, dN;
+      if (F.id) { lx = qx; ly = qy; lz = qz; dL = L; dM = Mm; dN = Nn; }
+      else {
+        lx = r[0] * qx + r[3] * qy + r[6] * qz; ly = r[1] * qx + r[4] * qy + r[7] * qz; lz = r[2] * qx + r[5] * qy + r[8] * qz;
+        dL = r[0] * L + r[3] * Mm + r[6] * Nn; dM = r[1] * L + r[4] * Mm + r[7] * Nn; dN = r[2] * L + r[5] * Mm + r[8] * Nn;
+      }
+      const t = intersect(sf, lx, ly, lz, dL, dM, dN);
       if (!isFinite(t)) return { vig: j, why: 'miss' };
+      lx += t * dL; ly += t * dM; lz += t * dN;
       x += t * L; y += t * Mm; z += t * Nn;
       opl += ctx.nAbs[j - 1] * t;
-      if (clip && sf.clip && x * x + y * y > sf.sd * sf.sd * (1 + 1e-9)) return { vig: j, why: 'clip' };
-      if (pts) pts.push([x, y, z + M.zg[j]]);
-      if (j < M.N) {
-        // normale
-        const r2 = x * x + y * y; const g = sagG(sf, r2);
-        let nx = -x * g, ny = -y * g, nz = 1;
-        const nn = Math.hypot(nx, ny, nz); nx /= nn; ny /= nn; nz /= nn;
-        let cosI = -(L * nx + Mm * ny + Nn * nz);
-        if (cosI < 0) { nx = -nx; ny = -ny; nz = -nz; cosI = -cosI; }
-        if (sf.mirror) { L += 2 * cosI * nx; Mm += 2 * cosI * ny; Nn += 2 * cosI * nz; }
-        else {
-          const mu = ctx.nAbs[j - 1] / ctx.nAbs[j];
-          const k = 1 - mu * mu * (1 - cosI * cosI);
-          if (k < 0) return { vig: j, why: 'tir' };
-          const a = mu * cosI - Math.sqrt(k);
-          L = mu * L + a * nx; Mm = mu * Mm + a * ny; Nn = mu * Nn + a * nz;
-        }
-        const dn = Math.hypot(L, Mm, Nn); L /= dn; Mm /= dn; Nn /= dn;
-        z -= sf.t;
+      if (clip && sf.clip && lx * lx + ly * ly > sf.sd * sf.sd * (1 + 1e-9)) return { vig: j, why: 'clip' };
+      if (pts) pts.push([x, y, z, lx, ly]);
+      if (j === M.N) return { vig: 0, x: lx, y: ly, z: lz, L: dL, M: dM, N: dN, opl, gx: x, gy: y, gz: z };
+      // normale locale
+      const g = sGrad(sf, lx, ly);
+      let nx = -g[0], ny = -g[1], nz = 1;
+      const nn = Math.hypot(nx, ny, nz); nx /= nn; ny /= nn; nz /= nn;
+      let cosI = -(dL * nx + dM * ny + dN * nz);
+      if (cosI < 0) { nx = -nx; ny = -ny; nz = -nz; cosI = -cosI; }
+      if (sf.mirror) { dL += 2 * cosI * nx; dM += 2 * cosI * ny; dN += 2 * cosI * nz; }
+      else {
+        const mu = ctx.nAbs[j - 1] / ctx.nAbs[j];
+        const k = 1 - mu * mu * (1 - cosI * cosI);
+        if (k < 0) return { vig: j, why: 'tir' };
+        const a = mu * cosI - Math.sqrt(k);
+        dL = mu * dL + a * nx; dM = mu * dM + a * ny; dN = mu * dN + a * nz;
       }
+      const dn = Math.hypot(dL, dM, dN); dL /= dn; dM /= dn; dN /= dn;
+      if (F.id) { L = dL; Mm = dM; Nn = dN; }
+      else { L = r[0] * dL + r[1] * dM + r[2] * dN; Mm = r[3] * dL + r[4] * dM + r[5] * dN; Nn = r[6] * dL + r[7] * dM + r[8] * dN; }
     }
-    return { vig: 0, x, y, z, L, M: Mm, N: Nn, opl };
+    return { vig: 0, x, y, z, L, M: Mm, N: Nn, opl, partial: true };
   }
 
   /** point de départ d'un rayon visant (ax, ay) dans le plan de la pupille d'entrée */
-  function startAt(M, ctx, fy, ax, ay) {
-    if (M.objInf) {
-      const th = fy * DEG;
-      return { p: [ax, ay, M.par.zE], d: [0, Math.sin(th), Math.cos(th)] };
-    }
-    const ox = 0, oy = fy, oz = -M.t0;
+  function fieldDir(f) { const a = Math.tan((f.x || 0) * DEG), b = Math.tan((f.y || 0) * DEG), n = Math.hypot(a, b, 1); return [a / n, b / n, 1 / n]; }
+  function startAt(M, ctx, f, ax, ay) {
+    if (M.objInf) return { p: [ax, ay, M.par.zE], d: fieldDir(f) };
+    const ox = f.x || 0, oy = f.y || 0, oz = -M.t0;
     let dx = ax - ox, dy = ay - oy, dz = M.par.zE - oz;
     const dn = Math.hypot(dx, dy, dz) * Math.sign(dz || 1);
     return { p: [ox, oy, oz], d: [dx / dn, dy / dn, dz / dn] };
   }
-  function aimRay(M, ctx, fy, px, py) {
+  function aimRay(M, ctx, f, px, py) {
     let ax = px * M.epr, ay = py * M.epr;
     if (!M.sys.rayAiming) return [ax, ay];
     const tx = px * M.par.stopR, ty = py * M.par.stopR;
     const h = 1e-6 * Math.max(1, M.epr);
-    const f = (a, b) => { const s = startAt(M, ctx, fy, a, b); const r = trace(M, ctx, s.p, s.d, 0, { upto: M.stopIdx, noClip: true }); return r.vig ? null : [r.x - tx, r.y - ty]; };
+    const ev = (a, b) => { const s = startAt(M, ctx, f, a, b); const r = trace(M, ctx, s.p, s.d, 0, { upto: M.stopIdx, noClip: true }); return r.vig ? null : [r.x - tx, r.y - ty]; };
     // départ : visée du rayon principal en cache
-    const key = fy + '|' + ctx.wi;
+    const key = (f.x || 0) + '|' + (f.y || 0) + '|' + ctx.wi;
     const c0 = M.aimCache.get(key);
     if (c0) { ax += c0[0]; ay += c0[1]; }
     for (let it = 0; it < 15; it++) {
-      const e = f(ax, ay); if (!e) return [px * M.epr, py * M.epr];
+      const e = ev(ax, ay); if (!e) return [px * M.epr, py * M.epr];
       if (Math.hypot(e[0], e[1]) < 1e-11 * Math.max(1, M.par.stopR)) break;
-      const ex = f(ax + h, ay), ey = f(ax, ay + h); if (!ex || !ey) break;
+      const ex = ev(ax + h, ay), ey = ev(ax, ay + h); if (!ex || !ey) break;
       const j11 = (ex[0] - e[0]) / h, j21 = (ex[1] - e[1]) / h, j12 = (ey[0] - e[0]) / h, j22 = (ey[1] - e[1]) / h;
       const det = j11 * j22 - j12 * j21; if (Math.abs(det) < 1e-20) break;
       ax -= (j22 * e[0] - j12 * e[1]) / det; ay -= (-j21 * e[0] + j11 * e[1]) / det;
     }
     return [ax, ay];
   }
-  function chiefAim(M, ctx, fy) {
-    const key = fy + '|' + ctx.wi;
+  function chiefAim(M, ctx, f) {
+    const key = (f.x || 0) + '|' + (f.y || 0) + '|' + ctx.wi;
     if (!M.sys.rayAiming) return [0, 0];
     if (M.aimCache.has(key)) return M.aimCache.get(key);
-    const a = aimRay(M, ctx, fy, 0, 0); M.aimCache.set(key, a); return a;
+    const a = aimRay(M, ctx, f, 0, 0); M.aimCache.set(key, a); return a;
   }
-  /** rayon réel pour un champ (valeur y) et une pupille normalisée */
-  function ray(M, wi, fy, px, py, opts) {
+  /** rayon réel pour un champ {x, y} et une pupille normalisée (px, py) */
+  function ray(M, wi, f, px, py, opts) {
+    if (typeof f === 'number') f = { x: 0, y: f };
     const ctx = M.ctxs[wi];
-    const ca = chiefAim(M, ctx, fy);
-    const a = (px === 0 && py === 0) ? ca : aimRay(M, ctx, fy, px, py);
-    const s = startAt(M, ctx, fy, a[0], a[1]);
+    const ca = chiefAim(M, ctx, f);
+    const a = (px === 0 && py === 0) ? ca : aimRay(M, ctx, f, px, py);
+    const s = startAt(M, ctx, f, a[0], a[1]);
     let opl0 = 0;
     if (M.objInf) opl0 = ctx.nAbs[0] * ((a[0] - ca[0]) * s.d[0] + (a[1] - ca[1]) * s.d[1]);
     return trace(M, ctx, s.p, s.d, opl0, opts);
@@ -327,8 +385,8 @@ const OE = (() => {
       for (let k = -1; k < nA; k++) {
         const px = k < 0 ? 0 : Math.cos(2 * Math.PI * k / nA), py = k < 0 ? 0 : Math.sin(2 * Math.PI * k / nA);
         const pts = [];
-        const r = ray(M, wi, f.y, px, py, { pts, noClip: true });
-        pts.forEach((p, i) => { const rr = Math.hypot(p[0], p[1]); if (rr > mx[i + 1]) mx[i + 1] = rr; });
+        ray(M, wi, f, px, py, { pts, noClip: true });
+        pts.forEach((p, i) => { const rr = Math.hypot(p[3], p[4]); if (rr > mx[i + 1]) mx[i + 1] = rr; });
       }
     }
     for (let j = 1; j <= N; j++) if (!S[j].sdFixed) {
@@ -384,7 +442,7 @@ const OE = (() => {
 
   /* ---------------- Analyses ---------------- */
   function spot(M, fi, n = 21, wsel = null) {
-    const fy = M.sys.fields[fi].y, pts = [], grid = pupilGrid(n, M.obs);
+    const fy = M.sys.fields[fi], pts = [], grid = pupilGrid(n, M.obs);
     let sx = 0, sy = 0, sw = 0, nv = 0;
     const wlist = wsel == null ? M.wls.map((_, i) => i) : [wsel];
     const chiefP = ray(M, M.pw, fy, 0, 0);
@@ -404,7 +462,7 @@ const OE = (() => {
   }
 
   function rayFan(M, fi, n = 61) {
-    const fy = M.sys.fields[fi].y;
+    const fy = M.sys.fields[fi];
     const c = ray(M, M.pw, fy, 0, 0);
     const out = [];
     for (let wi = 0; wi < M.wls.length; wi++) {
@@ -420,7 +478,7 @@ const OE = (() => {
     return out;
   }
   function opdFan(M, fi, n = 61) {
-    const fy = M.sys.fields[fi].y, out = [];
+    const fy = M.sys.fields[fi], out = [];
     for (let wi = 0; wi < M.wls.length; wi++) {
       const ref = opdRef(M, wi, fy); const T = [], Sg = [], P = [];
       for (let i = 0; i < n; i++) {
@@ -457,7 +515,7 @@ const OE = (() => {
     return x;
   }
   function wavefront(M, fi, wi, N = 64, removeTilt = true) {
-    const fy = M.sys.fields[fi].y, ref = opdRef(M, wi, fy);
+    const fy = M.sys.fields[fi], ref = opdRef(M, wi, fy);
     const W = new Float64Array(N * N).fill(NaN);
     if (!ref) return { N, W, rms: NaN, pv: NaN, zern: [], ok: false };
     const samples = [];
@@ -576,8 +634,8 @@ const OE = (() => {
       const grid = pupilGrid(opts.n || 15, M.obs);
       const all = grid.concat(Array.from({ length: ring }, (_, k) => [Math.cos(2 * Math.PI * k / ring), Math.sin(2 * Math.PI * k / ring)]));
       for (const [px, py] of all) {
-        const P = []; const r = ray(M, M.pw, f.y, px, py, { pts: P, upto: si });
-        if (!r.vig && P.length >= si) pts.push([P[si - 1][0], P[si - 1][1]]);
+        const P = []; const r = ray(M, M.pw, f, px, py, { pts: P, upto: si });
+        if (!r.vig && P.length >= si) pts.push([P[si - 1][3], P[si - 1][4]]);
       }
       out.push({ fi, pts });
     });
@@ -588,7 +646,7 @@ const OE = (() => {
     const fm = M.par.fmax, res = { f: [], dist: [], per: M.wls.map(() => ({ T: [], S: [] })) };
     const eps = 0.02;
     for (let i = 0; i <= n; i++) {
-      const fy = fm * i / n; res.f.push(fy);
+      const fv = fm * i / n, fy = { x: 0, y: fv }; res.f.push(fv);
       M.wls.forEach((_, wi) => {
         const c = ray(M, wi, fy, 0, 0);
         const fz = (a, b) => {
@@ -600,7 +658,7 @@ const OE = (() => {
         };
         res.per[wi].T.push(fz(0, eps)); res.per[wi].S.push(fz(eps, 0));
         if (wi === M.pw) {
-          const ypar = M.objInf ? M.par.unitImgH * Math.tan(fy * DEG) : M.par.unitImgH * fy;
+          const ypar = M.objInf ? M.par.unitImgH * Math.tan(fv * DEG) : M.par.unitImgH * fv;
           res.dist.push(c.vig || Math.abs(ypar) < 1e-12 ? (i === 0 ? 0 : NaN) : 100 * (c.y - ypar) / ypar);
         }
       });
@@ -686,13 +744,13 @@ const OE = (() => {
         if (mf.image === 'SPOT') {
           const rs = [];
           let sx = 0, sy = 0, sw = 0;
-          Wl.forEach((_, wi) => ray0.forEach(([px, py, w]) => { const r = ray(M, wi, fd.y, px, py); rs.push([r, wi, w]); if (!r.vig) { sx += ww[wi] * w * r.x; sy += ww[wi] * w * r.y; sw += ww[wi] * w; } }));
+          Wl.forEach((_, wi) => ray0.forEach(([px, py, w]) => { const r = ray(M, wi, fd, px, py); rs.push([r, wi, w]); if (!r.vig) { sx += ww[wi] * w * r.x; sy += ww[wi] * w * r.y; sw += ww[wi] * w; } }));
           const cx = sx / sw, cy = sy / sw;
           for (const [r, wi, w] of rs) { const k = Math.sqrt(fw[fi] * ww[wi] * w / Wsum); if (r.vig) { f.push(k * 1, k * 1); } else { f.push(k * (r.x - cx), k * (r.y - cy)); } }
         } else {
           Wl.forEach((_, wi) => {
-            const ref = opdRef(M, wi, fd.y); const vals = [];
-            ray0.forEach(([px, py, w]) => vals.push([ref ? ref.W(ray(M, wi, fd.y, px, py)) : NaN, w]));
+            const ref = opdRef(M, wi, fd); const vals = [];
+            ray0.forEach(([px, py, w]) => vals.push([ref ? ref.W(ray(M, wi, fd, px, py)) : NaN, w]));
             let m = 0, s = 0; vals.forEach(([v, w]) => { if (isFinite(v)) { m += v * w; s += w; } }); m /= s || 1;
             vals.forEach(([v, w]) => { const k = Math.sqrt(fw[fi] * ww[wi] * w / Wsum) * M.ctxs[wi].lmm; f.push(isFinite(v) ? k * (v - m) : k * 10); });
           });
@@ -700,7 +758,7 @@ const OE = (() => {
       });
     }
     const S = M.S, N = M.N;
-    const sagAt = (j, r) => { const s = M.ctxs[M.pw].s[j]; const v = sag(s, r * r); return isFinite(v) ? v : 0; };
+    const sagAt = (j, r) => { const s = M.ctxs[M.pw].s[j]; const v = sag(s, 0, r); return isFinite(v) ? v : 0; };
     for (const op of (mf.ops || [])) {
       const w = +op.weight || 0, tg = +op.target || 0; if (!w) continue;
       let val = null; const list = [];
@@ -709,7 +767,7 @@ const OE = (() => {
         case 'WFNO': val = M.par.wfno; break;
         case 'TTL': val = M.par.ttl; break;
         case 'BFL': val = M.par.imgDist; break;
-        case 'DIST': { const fy = M.par.fmax, c = ray(M, M.pw, fy, 0, 0); const yp = M.objInf ? M.par.unitImgH * Math.tan(fy * DEG) : M.par.unitImgH * fy; val = c.vig ? 0 : 100 * (c.y - yp) / yp; break; }
+        case 'DIST': { const fy = M.par.fmax, c = ray(M, M.pw, { x: 0, y: fy }, 0, 0); const yp = M.objInf ? M.par.unitImgH * Math.tan(fy * DEG) : M.par.unitImgH * fy; val = c.vig ? 0 : 100 * (c.y - yp) / yp; break; }
         case 'MNCT': case 'MXCT': for (let j = 1; j < N - 1; j++) if (!isAir(S[j].glass) && !isMirror(S[j])) list.push(Math.abs(S[j].t)); break;
         case 'MNCA': for (let j = 1; j < N - 1; j++) if (isAir(S[j].glass) && !isMirror(S[j]) && S[j].tsolve !== 'M') list.push(Math.abs(S[j].t)); break;
         case 'MNET': for (let j = 1; j < N - 1; j++) if (!isAir(S[j].glass) && !isMirror(S[j])) { const r = Math.max(S[j].sd, S[j + 1].sd); list.push(S[j].t + sagAt(j + 1, r) - sagAt(j, r)); } break;
@@ -756,7 +814,7 @@ const OE = (() => {
     return { done: true, merit: m0, msg: 'Minimum local atteint' };
   }
 
-  return { DEG, GL, catalog, glassN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
+  return { DEG, frames, toGlobal, mv, sGrad, fieldDir, GL, catalog, glassN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
     wavefront, psf, mtf, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
     OPS, getVars, residuals, meritOf, optStep, pupilGrid, indices, paraxial };
 })();

@@ -13,5 +13,7 @@ Interface et commentaires en français. Unités : mm, longueurs d'onde en µm.
 
 ## Conventions
 - Convention de signes Zemax/CODE V : épaisseurs négatives après un miroir, R > 0 centre à droite.
-- Surface 0 = objet, dernière = image ; champs en Y uniquement (angle si objet à l'infini, hauteur sinon).
+- Surface 0 = objet, dernière = image ; champs {x, y} (angles si objet à l'infini — direction ∝ (tan x, tan y, 1) —, hauteurs sinon).
+- Décentrements par surface (dx, dy, dz, tx, ty, tz en °, dmode DEC | DAR | BEN, rotations X→Y→Z main droite) : `frames()` calcule le repère de chaque surface, le tracé réel se fait en coordonnées globales et `trace()` renvoie le rayon dans le repère local de l'image. Le paraxial ignore décentrements et bascules.
+- `sag(sf, x, y)` / `sGrad(sf, x, y)` : flèche et pente locales (partie de révolution + forme libre éventuelle).
 - Avant chaque commit : `node tests/engine.test.js` doit passer, puis `python3 build.py`.
