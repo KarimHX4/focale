@@ -147,6 +147,14 @@ const HELP = [
 <li>Préréglages : SMF-28 (1550 nm), monomode 630 nm, OM3 50/125, OM1 62,5/125, saut d'indice 105, 200 et 400 µm.</li></ul>
 <p>L'extrémité de la fibre (gaine, cœur, cône d'ouverture) est dessinée dans le layout au plan objet.</p>` },
 
+  { id: 'rapport', t: 'Rapports PDF', h: `
+<p>Bouton <b>Rapport</b> (ou <i>Fichier → Rapport PDF…</i>) : composez le rapport puis cliquez sur <b>Générer le PDF</b>.</p>
+<ul><li><b>Titre, auteur, notes</b> : repris en page de garde (avec date, version de Focale et chiffres clés) et dans les pieds de page.</li>
+<li><b>Sections</b> : données du système et paraxiales, prescription (avec asphères et décentrements), layout 2D, performances par champ (spot, front d'onde, Strehl, vignetage), coefficients de Seidel, détecteur, source / fibre, tolérancement (résultats déjà calculés : sensibilités, RSS, Monte-Carlo avec histogramme).</li>
+<li><b>Analyses</b> : cochez celles à inclure ; « un graphique par champ » les répète pour chaque champ. « Fenêtres d'analyse ouvertes » reprend exactement vos fenêtres avec leurs réglages.</li>
+<li>Les graphiques sont rendus en haute résolution sur fond blanc (même en mode nuit) ; textes et tableaux sont vectoriels et sélectionnables. Le PDF (A4) est créé dans le navigateur, sans connexion.</li></ul>
+<p class="hint">Vos choix sont mémorisés pour le prochain rapport. Dans la version hébergée sur claude.ai, le téléchargement peut être bloqué : utilisez le site GitHub Pages ou l'application installée.</p>` },
+
   { id: 'optimisation', t: 'Optimisation', h: `
 <p>Méthode des <b>moindres carrés amortis</b> (Levenberg-Marquardt) avec Jacobien numérique.</p>
 <ul><li><b>Variables</b> : bouton <b>V</b> sur les courbures, épaisseurs et coniques.</li>

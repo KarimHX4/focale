@@ -504,7 +504,8 @@ function setupSide() {
 
 /* ---------------- Outils de tracé ---------------- */
 let TH = {};
-function readTheme() { const g = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim(); TH = { fg: g('--fg'), mut: g('--mut'), line: g('--line'), grid: g('--grid'), acc: g('--acc'), panel: g('--panel'), lens: g('--lens'), lensE: g('--lensE'), bg: g('--bg') }; }
+const LIGHT_TH = { fg: '#1c2430', mut: '#6b7686', line: '#dde3ea', grid: '#eef1f5', acc: '#2563eb', panel: '#ffffff', lens: 'rgba(96,165,250,.20)', lensE: '#3b82f6', bg: '#eef1f5' };
+function readTheme() { if (App.forceLight) { TH = { ...LIGHT_TH }; return; } const g = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim(); TH = { fg: g('--fg'), mut: g('--mut'), line: g('--line'), grid: g('--grid'), acc: g('--acc'), panel: g('--panel'), lens: g('--lens'), lensE: g('--lensE'), bg: g('--bg') }; }
 function prepCanvas(cv) {
   const p = cv.parentElement, w = Math.max(10, p.clientWidth), h = Math.max(10, p.clientHeight), d = window.devicePixelRatio || 1;
   if (cv.width !== Math.round(w * d) || cv.height !== Math.round(h * d)) { cv.width = Math.round(w * d); cv.height = Math.round(h * d); }
@@ -639,10 +640,10 @@ function layoutRays(M, n, three) {
   });
   return out;
 }
-function drawLayout() {
+function drawLayout(tgt) {
   readTheme();
-  const cv = $('#lay'), { c, w, h } = prepCanvas(cv), M = App.M;
-  $('#legend').innerHTML = App.sys.fields.map((f, i) => `<span><span class="sw" style="background:${fcol(i)}"></span> ${f.x ? '(' + fmt(f.x, 4) + ', ' + fmt(f.y, 4) + ')' : fmt(f.y, 4)}${M && M.objInf ? '°' : ' mm'}</span>`).join('');
+  const cv = $('#lay'), { c, w, h } = tgt || prepCanvas(cv), M = App.M;
+  if (!tgt) $('#legend').innerHTML = App.sys.fields.map((f, i) => `<span><span class="sw" style="background:${fcol(i)}"></span> ${f.x ? '(' + fmt(f.x, 4) + ', ' + fmt(f.y, 4) + ')' : fmt(f.y, 4)}${M && M.objInf ? '°' : ' mm'}</span>`).join('');
   $$('#laySeg button').forEach(x => x.classList.toggle('on', x.dataset.m === App.mode));
   if (!M || !M.ok) { text(c, (M && M.errors || ['Erreur']).join('  ·  '), 14, 14, { col: '#dc2626' }); return; }
   const G = layoutGeom(M);
@@ -1186,10 +1187,16 @@ function loadUserImage(file) {
   rd.onload = () => { const im = new Image(); im.onload = () => { const sc = 256 / Math.max(im.width, im.height), cv = document.createElement('canvas'); cv.width = Math.max(1, Math.round(im.width * sc)); cv.height = Math.max(1, Math.round(im.height * sc)); cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height); App.userImg = imgToSrc(cv, file.name); if (App.simPane != null) { App.panes[App.simPane].src = 'user'; renderPane(App.simPane); } }; im.src = rd.result; };
   rd.readAsDataURL(file);
 }
-function simPane(p, M, c, w, h) {
+function simKey(p, M) {
   const src = makeSource(p.src || 'mire'), size = p.res || 192, fm = p.fov || (M.par.fmax > 1e-6 ? M.par.fmax : 1);
   const dd = det(), onDet = dd.on && p.det !== false, pixD = onDet ? dd.p * 1e-3 : 0;
   const key = toJSON(App.sys) + '|' + [p.src, size, fm, pixD].join('|') + (p.src === 'user' && App.userImg ? App.userImg.name : '');
+  return { src, size, fm, dd, onDet, pixD, key };
+}
+/** calcule la simulation d'image immédiatement (rapports) */
+function simSync(p, M) { const k = simKey(p, M); if (!SIM.cache.has(k.key)) SIM.cache.set(k.key, OE.imageSim(M, k.src, { size: k.size, fm: k.fm, pix: k.pixD, maxS: Math.max(256, k.size * 2) })); }
+function simPane(p, M, c, w, h) {
+  const { src, size, fm, dd, onDet, pixD, key } = simKey(p, M);
   const half = w / 2, pad = 26, box = Math.min(half - 20, h - pad - 24);
   const drawSrc = () => { c.imageSmoothingEnabled = true; c.drawImage(src.cv, 10 + (half - 20 - box) / 2, pad, box * src.w / Math.max(src.w, src.h), box * src.h / Math.max(src.w, src.h)); text(c, `Objet — ½ champ ${fmt(fm, 4)}${M.objInf ? '°' : ' mm'}`, 10, 6, { b: true }); };
   drawSrc();
@@ -1304,6 +1311,7 @@ function setupDlg() {
     const b = e.target.closest('[data-d]'); if (!b) return;
     const a = b.dataset.d;
     if (a === 'close') closeDlg();
+    if (a === 'rgen') genReport();
     if (a === 'tsens') runSens();
     if (a === 'tmc') runMC();
     if (a === 'tstop') TOL.running = false;
@@ -1426,8 +1434,8 @@ function renderTolRes() {
   el.innerHTML = h;
   if (MC && MC.vals.length) drawMC();
 }
-function drawMC() {
-  const cv = $('#mcchart'); if (!cv) return; readTheme(); const { c, w, h } = prepCanvas(cv), MC = TOL.mc, v = MC.vals.slice().sort((a, b) => a - b);
+function drawMC(tgt) {
+  const cv = $('#mcchart'); if (!cv && !tgt) return; readTheme(); const { c, w, h } = tgt || prepCanvas(cv), MC = TOL.mc, v = MC.vals.slice().sort((a, b) => a - b);
   const lo = Math.min(MC.B.nominal, v[0]), hi = v[v.length - 1], nb = Math.max(8, Math.min(30, Math.round(Math.sqrt(v.length) * 1.5))), bw = (hi - lo) / nb || 1;
   const bins = new Array(nb).fill(0); for (const x of v) bins[Math.min(nb - 1, Math.floor((x - lo) / bw))]++;
   const A = axes(c, { x: 0, y: 0, w, h }, [lo, hi + 1e-12], [0, Math.max(...bins) * 1.1], { xl: tolUnit(MC.c.crit) + ' RMS', ml: 36, mb: 30 });
@@ -1588,6 +1596,7 @@ function init() {
       case 'undo': undo(); break; case 'redo': redo(); break;
       case 'optim': openOptim(); break;
       case 'tol': openTol(); break;
+      case 'report': openReport(); break;
       case 'glasses': openGlasses(); break;
       case 'theme': { const d = document.documentElement; d.dataset.theme = d.dataset.theme === 'dark' ? '' : 'dark'; save(); readTheme(); drawLayout(); renderPanes(); break; }
       case 'help': openHelp(); break;

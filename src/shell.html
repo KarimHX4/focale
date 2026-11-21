@@ -162,6 +162,7 @@ footer .k{font-family:var(--mono);color:var(--fg)}
 .help{font-size:13.5px;line-height:1.6}.help h3{margin:4px 0 8px;font-size:17px}.help h4{margin:14px 0 4px;font-size:13.5px}.help hr{border:0;border-top:1px solid var(--line);margin:18px 0}
 .help code{font-family:var(--mono);font-size:12px;background:var(--panel2);padding:1px 4px;border-radius:4px}.help mark{background:#fde68a;color:#111;border-radius:2px}
 table.ht{border-collapse:collapse;width:100%;font-size:12.5px}table.ht td,table.ht th{border-bottom:1px solid var(--line);padding:5px 8px;text-align:left;vertical-align:top}table.ht th{color:var(--mut);font-weight:500}table.ht td:first-child{white-space:nowrap;font-weight:600}
+.rgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:2px 10px;font-size:12.5px}.rgrid label{display:flex;align-items:center;gap:5px;padding:2px 0;cursor:pointer}
 .dlg.wide{width:min(1120px,96vw)}
 .dlg textarea{width:100%;height:300px;font-family:var(--mono);font-size:11.5px;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--panel2);color:var(--fg)}
 .hint{color:var(--mut);font-size:12px}
@@ -193,6 +194,8 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
       <button data-act="import">Coller un système (Zemax / CODE V / JSON)…</button>
       <button data-act="export">Afficher / copier le texte (JSON / .zmx / .seq)…</button>
       <hr>
+      <button data-act="report">Rapport PDF…</button>
+      <hr>
       <button data-act="about">À propos / version</button>
     </div></div>
   <div class="dd"><button class="tb" data-menu="mSamp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3c-3 4-3 14 0 18M12 3c3 4 3 14 0 18"/></svg>Exemples ▾</button>
@@ -203,6 +206,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
   <div class="sep"></div>
   <button class="tb pri" data-act="optim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20l6-8 4 4 8-11"/><circle cx="21" cy="5" r="1.5" fill="currentColor"/></svg>Optimiser</button>
   <button class="tb" data-act="tol" title="Sensibilités et Monte-Carlo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20h18"/><path d="M6 20V10M10 20V4M14 20V8M18 20v-6"/></svg>Tolérancer</button>
+  <button class="tb" data-act="report" title="Composer et générer un rapport PDF"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6"/><path d="M9 13h7M9 17h5"/></svg>Rapport</button>
   <div class="grow"></div>
   <span class="hint" style="margin-right:4px">Analyses</span>
   <div class="seg" id="gridSeg"><button data-g="1">1</button><button data-g="2">2</button><button data-g="4">4</button><button data-g="6">6</button></div>
@@ -270,7 +274,13 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 /*__SAMPLES__*/
 </script>
 <script>
+/*__PDF__*/
+</script>
+<script>
 /*__APP__*/
+</script>
+<script>
+/*__REPORT__*/
 </script>
 </body>
 </html>
