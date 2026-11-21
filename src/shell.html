@@ -12,11 +12,13 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#eef1f5;--panel:#fff;--panel2:#f7f9fb;--fg:#1c2430;--mut:#6b7686;--line:#dde3ea;--acc:#2563eb;--acc2:#e3ecfd;--grid:#eef1f5;--sel:#eaf1ff;--lens:rgba(96,165,250,.20);--lensE:#3b82f6;--warn:#b45309;--err:#dc2626;--ok:#15803d;--shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);--mono:'JetBrains Mono',ui-monospace,Menlo,monospace}
-[data-theme=dark]{--bg:#0d1117;--panel:#151b23;--panel2:#11161d;--fg:#e6e9ee;--mut:#8b96a5;--line:#2a323d;--acc:#5b9cff;--acc2:#1b2c48;--grid:#1f2630;--sel:#18263b;--lens:rgba(96,165,250,.16);--lensE:#60a5fa;--shadow:none}
+[data-theme=dark]{color-scheme:dark;--bg:#0d1117;--panel:#151b23;--panel2:#11161d;--fg:#e6e9ee;--mut:#8b96a5;--line:#2a323d;--acc:#5b9cff;--acc2:#1b2c48;--grid:#1f2630;--sel:#18263b;--lens:rgba(96,165,250,.16);--lensE:#60a5fa;--shadow:none}
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
 body{font:13px/1.35 Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--fg);overflow:hidden}
 button,select,input{font:inherit;color:inherit}
+select option,select optgroup{background:var(--panel);color:var(--fg)}
+
 #app{display:grid;grid-template-rows:46px 1fr 26px;height:100vh}
 /* header */
 header{display:flex;align-items:center;gap:6px;padding:0 10px;background:var(--panel);border-bottom:1px solid var(--line);min-width:0}
