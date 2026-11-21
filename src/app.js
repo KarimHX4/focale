@@ -1314,8 +1314,9 @@ function setupDlg() {
     if (a === 'stop') { OPT.running = false; }
     if (a === 'revert') { if (OPT.snap) { OPT.running = false; App.sys = fromJSON(OPT.snap); pushHist(); refresh(); toast('État initial restauré'); openOptim(); } }
     if (a === 'copy') { const ta = $('#dlg textarea'); navigator.clipboard?.writeText(ta.value).then(() => toast('Copié dans le presse-papiers'), () => { ta.select(); toast('Sélectionné — Ctrl+C pour copier'); }); }
-    if (a === 'fmtjson') { $('#exTxt').value = toJSON(App.sys); }
-    if (a === 'fmtseq') { $('#exTxt').value = toSeq(App.sys); }
+    if (a === 'fmtjson') { $('#exTxt').value = toJSON(App.sys); $('#exHint').textContent = 'JSON Focale (format natif complet).'; }
+    if (a === 'fmtseq') { const r = IO.toSeq(App.sys); $('#exTxt').value = r.text; $('#exHint').textContent = r.warnings.length ? '⚠ ' + r.warnings.join(' · ') : 'CODE V séquentiel (.seq).'; }
+    if (a === 'fmtzmx') { const r = IO.toZMX(App.sys); $('#exTxt').value = r.text; $('#exHint').textContent = r.warnings.length ? '⚠ ' + r.warnings.join(' · ') : 'Zemax OpticStudio séquentiel (.zmx).'; }
     if (a === 'pick') $('#fileIn').click();
     if (a === 'load') { importFile('', $('#imTxt').value); }
     if (a === 'agf') $('#fileIn').click();
@@ -1444,117 +1445,44 @@ function tolReport() {
 }
 
 /* ---------------- Import / export (JSON, CODE V .seq) ---------------- */
-const SEQ_GLASS = { 'N-BK7': 'NBK7_SCHOTT', 'F_SILICA': 'SILICA_SPECIAL', 'CAF2': 'CAF2_SPECIAL' };
-function toSeq(s) {
-  const S = s.surfaces, N = S.length - 1, L = [];
-  const objInf = !isFinite(S[0].t) || Math.abs(S[0].t) > 1e10;
-  const gl = g => { if (OE.isAir(g)) return ''; if (OE.isMirror({ glass: g })) return 'REFL'; const rc = OE.glassRecord(g); if (rc) return SEQ_GLASS[rc.name] || (rc.name.replace(/-/g, '') + '_' + rc.cat); const m = String(g).match(/^\s*([0-9.]+)\s*[,\/;:]\s*([0-9.]+)/); if (m) { const nd = +m[1], vd = +m[2]; return `${Math.round((nd - 1) * 1000)}.${Math.round(vd * 10)}`; } return g; };
-  const r = v => isFinite(v) ? (+v).toPrecision(10).replace(/\.?0+$/, '') : '0';
-  L.push('RDM;LEN', `TITLE '${(s.title || 'Focale').replace(/'/g, '')}'`);
-  const ap = s.aperture;
-  L.push(ap.type === 'FNO' ? `FNO ${ap.value}` : ap.type === 'NA' ? `NAO ${ap.value}` : `EPD ${ap.value}`, 'DIM M');
-  L.push('WL ' + s.wavelengths.map(w => (w.um * 1000).toFixed(4)).join(' '), `REF ${s.primary + 1}`, 'WTW ' + s.wavelengths.map(w => w.w ?? 1).join(' '));
-  L.push('INI \'FOC\'', (objInf ? 'XAN ' : 'XOB ') + s.fields.map(f => f.x || 0).join(' '));
-  L.push((objInf ? 'YAN ' : 'YOB ') + s.fields.map(f => f.y).join(' '), 'WTF ' + s.fields.map(f => f.w ?? 1).join(' '));
-  L.push(`SO 0 ${objInf ? '1e+18' : r(S[0].t)}`);
-  for (let i = 1; i < N; i++) {
-    const x = S[i]; L.push(`${x.stop ? 'STO' : 'S'} ${r(x.r)} ${r(x.t)} ${gl(x.glass)}`.trim());
-    if (x.k || x.a4 || x.a6 || x.a8 || x.a10) { L.push(x.a4 || x.a6 || x.a8 || x.a10 ? '  ASP' : '  CON'); L.push(`  K ${x.k || 0}`); if (x.a4 || x.a6 || x.a8 || x.a10) L.push(`  A ${x.a4 || 0}; B ${x.a6 || 0}; C ${x.a8 || 0}; D ${x.a10 || 0}`); }
-    if (x.sdFixed) L.push(`  CIR ${r(x.sd)}`);
-    if (isDec(x)) { if (x.dmode === 'DAR' || x.dmode === 'BEN') L.push('  ' + x.dmode); L.push(`  XDE ${x.dx || 0}; YDE ${x.dy || 0}; ZDE ${x.dz || 0}; ADE ${x.tx || 0}; BDE ${x.ty || 0}; CDE ${x.tz || 0}`); }
-    if (x.tsolve === 'M' && i === N - 1) L.push('  PIM');
-    if (x.vr) L.push('  CCY 0'); if (x.vt && x.tsolve !== 'M') L.push('  THC 0');
-  }
-  if (S.some(x => x.type && x.type !== 'STD')) L.push('! Attention : surfaces XY / Zernike non exportées (base conique seule)');
-  if (S.some(x => x.elem)) L.push('! Attention : réseaux, lentilles idéales, polariseurs et lames d\'onde non exportés (surfaces ordinaires)');
-  L.push(`SI ${r(S[N].r)} 0`, 'GO');
-  return L.join('\n');
+/** rapport d'import / export (avertissements de conversion) */
+function ioReport(title, warnings, extra = '') {
+  if (!warnings || !warnings.length) return;
+  dlg(`<h2>${esc(title)} <button class="x" data-d="close">✕</button></h2><div class="db">${extra}
+    <div class="hint" style="margin-bottom:6px">${warnings.length} point(s) à vérifier :</div>
+    <ul style="margin:0;padding-left:18px;font-size:12.5px;line-height:1.6">${warnings.map(w => `<li>${esc(w)}</li>`).join('')}</ul></div>
+    <div class="df"><button class="tb pri" data-d="close">OK</button></div>`);
 }
-function mapSeqGlass(g) {
-  if (!g) return '';
-  let u = g.toUpperCase();
-  if (u === 'REFL') return 'MIRROR';
-  if (/^\d{3}\.\d{2,3}$/.test(u)) { const [a, b] = u.split('.'); return `${(1 + (+a) / 1000).toFixed(3)}/${(+b / (b.length === 3 ? 10 : 1)).toFixed(1)}`; }
-  if (OE.glassKey(u)) return OE.glassKey(u);
-  u = u.replace(/[_.](SCHOTT|OHARA|HOYA|SPECIAL|CDGM|SUMITA|HIKARI)$/, '');
-  if (OE.glassKey(u)) return OE.glassKey(u);
-  if (u[0] === 'N' && OE.glassKey('N-' + u.slice(1))) return OE.glassKey('N-' + u.slice(1));
-  if (/SILICA|SIO2/.test(u)) return 'F_SILICA';
-  return u;
-}
-function parseSeq(txt) {
-  const sys = { title: '', aperture: { type: 'EPD', value: 10, obscuration: 0 }, fields: [], wavelengths: [], primary: 0, rayAiming: false, merit: { image: 'SPOT', ops: [] }, surfaces: [] };
-  let wl = [], wtw = [], fy = [], fxs = [], wtf = [], cur = null, rdn = false;
-  const stmts = txt.split('\n').map(l => l.replace(/!.*$/, '')).join('\n').split(/[;\n]/);
-  for (let st of stmts) {
-    st = st.trim(); if (!st) continue;
-    const q = st.match(/'([^']*)'|"([^"]*)"/); const tk = st.split(/\s+/), cmd = tk[0].toUpperCase(), a = tk.slice(1);
-    const n = i => parseFloat(a[i]);
-    switch (cmd) {
-      case 'TIT': case 'TITLE': sys.title = q ? (q[1] ?? q[2]) : a.join(' '); break;
-      case 'LEN': if (q) sys.title = sys.title || (q[1] ?? q[2]); break;
-      case 'RDN': rdn = true; break;
-      case 'EPD': sys.aperture = { type: 'EPD', value: n(0), obscuration: 0 }; break;
-      case 'FNO': sys.aperture = { type: 'FNO', value: n(0), obscuration: 0 }; break;
-      case 'NAO': sys.aperture = { type: 'NA', value: n(0), obscuration: 0 }; break;
-      case 'WL': wl = a.map(Number).filter(isFinite); break;
-      case 'WTW': wtw = a.map(Number); break;
-      case 'REF': sys.primary = n(0) - 1; break;
-      case 'YAN': case 'YOB': case 'YIM': fy = a.map(Number).filter(isFinite); break;
-      case 'XAN': case 'XOB': case 'XIM': fxs = a.map(Number).filter(isFinite); break;
-      case 'XDE': if (cur) cur.dx = n(0); break; case 'YDE': if (cur) cur.dy = n(0); break; case 'ZDE': if (cur) cur.dz = n(0); break;
-      case 'ADE': if (cur) cur.tx = n(0); break; case 'BDE': if (cur) cur.ty = n(0); break; case 'CDE': if (cur) cur.tz = n(0); break;
-      case 'DAR': case 'BEN': if (cur) cur.dmode = cmd; break;
-      case 'WTF': wtf = a.map(Number); break;
-      case 'SO': sys.surfaces.push(newSurf({ r: Infinity, t: Math.abs(n(1)) > 1e10 || !isFinite(n(1)) ? Infinity : n(1), comment: 'Objet' })); cur = null; break;
-      case 'S': case 'STO': case 'SI': {
-        if (!sys.surfaces.length) sys.surfaces.push(newSurf({ t: Infinity, comment: 'Objet' }));
-        let rv = n(0); if (rdn) rv = rv ? 1 / rv : 0;
-        const s = newSurf({ r: !rv ? Infinity : rv, t: cmd === 'SI' ? 0 : (isFinite(n(1)) ? n(1) : 0), glass: cmd === 'SI' ? '' : mapSeqGlass(a[2] || ''), stop: cmd === 'STO' });
-        if (cmd === 'SI') s.comment = 'Image';
-        sys.surfaces.push(s); cur = s; break;
-      }
-      case 'K': if (cur) cur.k = n(0); break;
-      case 'A': if (cur) cur.a4 = n(0); break; case 'B': if (cur) cur.a6 = n(0); break; case 'C': if (cur) cur.a8 = n(0); break; case 'D': if (cur) cur.a10 = n(0); break;
-      case 'CIR': if (cur) { cur.sd = n(0); cur.sdFixed = true; } break;
-      case 'THI': if (cur) cur.t = n(0); break;
-      case 'RDY': if (cur) cur.r = n(0) ? n(0) : Infinity; break;
-      case 'CUY': if (cur) cur.r = n(0) ? 1 / n(0) : Infinity; break;
-      case 'GLA': if (cur) cur.glass = mapSeqGlass(a[0]); break;
-      case 'REFL': if (cur) cur.glass = 'MIRROR'; break;
-      case 'PIM': if (cur) cur.tsolve = 'M'; break;
-      case 'CCY': if (cur && n(0) === 0) cur.vr = true; break;
-      case 'THC': if (cur && n(0) === 0) cur.vt = true; break;
-      case 'KC': if (cur && n(0) === 0) cur.vk = true; break;
-    }
-  }
-  if (sys.surfaces.length < 3) throw new Error('Fichier .seq : aucune surface trouvée');
-  const last = sys.surfaces[sys.surfaces.length - 1]; if (last.comment !== 'Image') sys.surfaces.push(newSurf({ t: 0, comment: 'Image' }));
-  sys.wavelengths = (wl.length ? wl : [587.56]).map((v, i) => ({ um: v / 1000, w: wtw[i] ?? 1 }));
-  sys.primary = Math.max(0, Math.min(sys.primary, sys.wavelengths.length - 1));
-  sys.fields = (fy.length ? fy : [0]).map((v, i) => ({ x: fxs[i] || 0, y: v, w: wtf[i] ?? 1 }));
-  if (!sys.surfaces.some(s => s.stop)) sys.surfaces[1].stop = true;
-  return sys;
-}
-function importText(t) {
+function importText(t, name = '') {
   try {
-    t = t.trim(); let s;
-    if (t.startsWith('{')) s = fromJSON(t); else s = parseSeq(t);
+    const kind = IO.detect(name, t); let s, W = [];
+    if (kind === 'agf') { importAGF(name, t); return; }
+    if (kind === 'json') s = fromJSON(t.trim());
+    else if (kind === 'zmx') ({ sys: s, warnings: W } = IO.parseZMX(t));
+    else ({ sys: s, warnings: W } = IO.parseSeq(t));
     if (!s.surfaces || s.surfaces.length < 3) throw new Error('Pas de surfaces');
-    closeDlg(); loadSystem(s, 'Système importé');
-  } catch (e) { toast('Import impossible : ' + e.message, 3500); }
+    closeDlg(); rebuildGlassList(); loadSystem(s, `${({ zmx: 'Fichier Zemax', seq: 'Fichier CODE V', json: 'Système' })[kind]} importé${W.length ? ` — ${W.length} remarque(s)` : ''}`);
+    if (W.length) ioReport(`Import ${kind === 'zmx' ? 'Zemax' : 'CODE V'}${name ? ' — ' + name : ''}`, W);
+  } catch (e) { console.error(e); toast('Import impossible : ' + e.message, 4000); }
+}
+function exportAs(kind, dl = true) {
+  const r = kind === 'zmx' ? IO.toZMX(App.sys) : IO.toSeq(App.sys), ext = kind === 'zmx' ? '.zmx' : '.seq';
+  if (dl) { download(fileBase() + ext, r.text, 'text/plain'); toast(`Export ${kind === 'zmx' ? 'Zemax' : 'CODE V'} téléchargé`); }
+  if (r.warnings.length) ioReport(`Export ${kind === 'zmx' ? 'Zemax (.zmx)' : 'CODE V (.seq)'}`, r.warnings, dl ? '' : '');
+  return r.text;
 }
 function openExport() {
+  const seg = (k, l, on) => `<button ${on ? 'class="on"' : ''} data-d="fmt${k}" onclick="this.parentNode.querySelectorAll('button').forEach(b=>b.classList.remove('on'));this.classList.add('on')">${l}</button>`;
   dlg(`<h2>Exporter <button class="x" data-d="close">✕</button></h2><div class="db">
-  <div class="seg" style="margin-bottom:8px"><button class="on" data-d="fmtjson" onclick="this.parentNode.querySelectorAll('button').forEach(b=>b.classList.remove('on'));this.classList.add('on')">JSON Focale</button><button data-d="fmtseq" onclick="this.parentNode.querySelectorAll('button').forEach(b=>b.classList.remove('on'));this.classList.add('on')">CODE V (.seq)</button></div>
+  <div class="seg" style="margin-bottom:8px">${seg('json', 'JSON Focale', true)}${seg('zmx', 'Zemax (.zmx)')}${seg('seq', 'CODE V (.seq)')}</div>
   <textarea id="exTxt" spellcheck="false">${esc(toJSON(App.sys))}</textarea>
-  <div class="hint">Le téléchargement direct n'est pas possible dans cette page : copiez le contenu et collez-le dans un fichier. L'export .seq est un séquentiel CODE V de base (verres Schott, coniques, asphères, CIR, PIM) à vérifier dans CODE V.</div></div>
+  <div class="hint" id="exHint">Copiez le contenu dans un fichier, ou utilisez Fichier → Exporter pour télécharger directement.</div></div>
   <div class="df"><button class="tb pri" data-d="copy">Copier</button></div>`);
 }
 function openImport() {
   dlg(`<h2>Importer un système <button class="x" data-d="close">✕</button></h2><div class="db">
-  <div class="hint">Collez un fichier JSON Focale ou un séquentiel CODE V (.seq : SO, S, STO, SI, EPD/FNO/NAO, WL, REF, YAN/YOB, K, A–D, CIR, PIM, REFL…), ou choisissez un fichier.</div>
-  <textarea id="imTxt" spellcheck="false" placeholder="RDM;LEN&#10;EPD 10&#10;WL 486.13 587.56 656.27&#10;REF 2&#10;YAN 0 14 20&#10;SO 0 1e18&#10;S 22.01359 3.25896 NSK16_SCHOTT&#10;…&#10;SI 0 0&#10;GO"></textarea></div>
+  <div class="hint">Collez un fichier <b>Zemax OpticStudio (.zmx)</b>, <b>CODE V (.seq)</b> ou JSON Focale — le format est reconnu automatiquement — ou choisissez un fichier (les .zmx en UTF-16 sont pris en charge).</div>
+  <textarea id="imTxt" spellcheck="false" placeholder="VERS …&#10;MODE SEQ&#10;SURF 0 …   (Zemax)&#10;&#10;RDM;LEN&#10;EPD 10 …&#10;SO 0 1e18&#10;S 22.01 3.26 NSK16_SCHOTT …   (CODE V)"></textarea></div>
   <div class="df"><button class="bt" data-d="pick">Choisir un fichier…</button><button class="tb pri" data-d="load">Importer</button></div>`);
 }
 function openHelp(id) {
@@ -1587,8 +1515,8 @@ function download(name, text, type = 'application/json') {
 async function openFile() {
   if (window.showOpenFilePicker && TOP) {
     try {
-      const [h] = await showOpenFilePicker({ types: [{ description: 'Systèmes optiques et catalogues', accept: { 'application/json': ['.json'], 'text/plain': ['.seq', '.agf', '.txt'] } }] });
-      const f = await h.getFile(); importFile(f.name, await f.text()); FS.handle = /\.json$/i.test(f.name) ? h : null;
+      const [h] = await showOpenFilePicker({ types: [{ description: 'Systèmes optiques et catalogues', accept: { 'application/json': ['.json'], 'text/plain': ['.zmx', '.seq', '.agf', '.txt'] } }] });
+      const f = await h.getFile(); await readAndImport(f); FS.handle = /\.json$/i.test(f.name) ? h : null;
     } catch (e) { if (e.name !== 'AbortError') toast('Ouverture impossible : ' + e.message); }
   } else $('#fileIn').click();
 }
@@ -1602,10 +1530,9 @@ async function saveFile(as) {
   }
   download(fileBase() + '.json', txt); toast('Fichier ' + fileBase() + '.json téléchargé' + (TOP ? '' : ' (si rien ne se passe, utilisez Fichier → Afficher / copier)'), 4000);
 }
-function importFile(name, t) {
-  if (/\.agf$/i.test(name) || /^\s*NM\s/m.test(t) && /^\s*CD\s/m.test(t)) { if (typeof importAGF === 'function') importAGF(name, t); else toast('Catalogues AGF non pris en charge'); return; }
-  importText(t);
-}
+function importFile(name, t) { importText(t, name); }
+/** lit un fichier (UTF-8, UTF-16…) puis l'importe */
+async function readAndImport(f) { importFile(f.name, IO.decode(await f.arrayBuffer())); }
 let deferredInstall = null;
 function setupPlatform() {
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; $('#btnInstall').style.display = ''; });
@@ -1616,12 +1543,12 @@ function setupPlatform() {
       setInterval(() => reg.update().catch(() => { }), 3600e3);
     }).catch(() => { });
   }
-  if ('launchQueue' in window) launchQueue.setConsumer(async params => { for (const h of params.files || []) { const f = await h.getFile(); importFile(f.name, await f.text()); if (/\.json$/i.test(f.name)) FS.handle = h; } });
+  if ('launchQueue' in window) launchQueue.setConsumer(async params => { for (const h of params.files || []) { const f = await h.getFile(); await readAndImport(f); if (/\.json$/i.test(f.name)) FS.handle = h; } });
   let dn = 0; const drop = $('#drop');
   window.addEventListener('dragenter', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { dn++; drop.classList.add('on'); } });
   window.addEventListener('dragleave', () => { if (--dn <= 0) { dn = 0; drop.classList.remove('on'); } });
   window.addEventListener('dragover', e => e.preventDefault());
-  window.addEventListener('drop', e => { e.preventDefault(); dn = 0; drop.classList.remove('on'); const f = e.dataTransfer.files[0]; if (f) f.text().then(t => importFile(f.name, t)); });
+  window.addEventListener('drop', e => { e.preventDefault(); dn = 0; drop.classList.remove('on'); const f = e.dataTransfer.files[0]; if (f) readAndImport(f); });
 }
 function openAbout() {
   dlg(`<h2>À propos de Focale <button class="x" data-d="close">✕</button></h2><div class="db" style="font-size:13px;line-height:1.6">
@@ -1654,7 +1581,8 @@ function init() {
       case 'open': openFile(); break;
       case 'save': saveFile(false); break;
       case 'saveAs': saveFile(true); break;
-      case 'dlSeq': download(fileBase() + '.seq', toSeq(App.sys), 'text/plain'); toast('Export CODE V téléchargé'); break;
+      case 'dlSeq': exportAs('seq'); break;
+      case 'dlZmx': exportAs('zmx'); break;
       case 'about': openAbout(); break;
       case 'install': if (deferredInstall) { deferredInstall.prompt(); deferredInstall.userChoice.finally(() => { deferredInstall = null; $('#btnInstall').style.display = 'none'; }); } break;
       case 'undo': undo(); break; case 'redo': redo(); break;
@@ -1671,7 +1599,7 @@ function init() {
   $('#laySeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; App.mode = b.dataset.m; drawLayout(); });
   $('#nRays').addEventListener('change', e => { App.nRays = +e.target.value; drawLayout(); });
   $('#showAsph').addEventListener('change', e => { App.showAsph = e.target.checked; renderLDE(); });
-  $('#fileIn').addEventListener('change', e => { const f = e.target.files[0]; if (!f) return; f.text().then(t => importFile(f.name, t)); e.target.value = ''; });
+  $('#fileIn').addEventListener('change', e => { const f = e.target.files[0]; if (!f) return; readAndImport(f); e.target.value = ''; });
   setupPlatform();
   const ii = document.createElement('input'); ii.type = 'file'; ii.accept = 'image/*'; ii.id = 'imgIn'; ii.style.display = 'none'; document.body.appendChild(ii);
   ii.addEventListener('change', e => { const f = e.target.files[0]; if (f) loadUserImage(f); e.target.value = ''; });

@@ -1,5 +1,5 @@
 // Tests de non-régression du moteur : node tests/engine.test.js
-const OE = require('../src/engine.js'), S = require('../src/samples.js');
+const OE = require('../src/engine.js'), S = require('../src/samples.js'), IO = require('../src/io.js');
 let fail = 0;
 const near = (name, v, ref, tol) => { const ok = Math.abs(v - ref) <= tol; if (!ok) fail++; console.log(`${ok ? 'OK  ' : 'FAIL'} ${name}: ${v.toFixed(6)} (attendu ${ref} ± ${tol})`); };
 const g = OE.glassInfo('N-BK7'); near('N-BK7 nd', g.nd, 1.5168, 1e-4); near('N-BK7 vd', g.vd, 64.17, 0.02);
@@ -52,4 +52,15 @@ const P = []; OE.ray(M, 1, 20, 0, 1, { pts: P }); near('Visée réelle sur diaph
   const M = OE.prepare(S['Système fini 1:1 (relais)']()), t = 0.05 / 0.22;
   near('Fibre GI : couplage 2t² − t⁴', OE.extSource(M, 0, { type: 'fiber', fib: 'gi', core: 50, na: 0.22 }).coupling, 2 * t * t - t ** 4, 1e-3);
   near('Fibre SI : couplage (ON sys / ON fibre)²', OE.extSource(M, 0, { type: 'fiber', fib: 'si', core: 50, na: 0.22 }).coupling, t * t, 1e-3); }
+{ const sig = s => { s = structuredClone(s); s.aperture.obscuration = 0; const M = OE.prepare(s); return M.sys.fields.map((f, i) => OE.spot(M, i, 11).rms).concat([M.par.efl]); };
+  const diff = (a, b) => Math.max(...a.map((v, i) => Math.abs(v - b[i])));
+  for (const k of ['Triplet de Cooke f=50 F/5', 'Newton replié (miroir plan à 45°)', 'Spectrographe à réseau 600 traits/mm', 'Télescope Cassegrain F/7.5', 'Système fini 1:1 (relais)']) {
+    const s = S[k](); s.surfaces.forEach(x => { for (const q of ['dx', 'dy', 'dz', 'tx', 'ty', 'tz']) x[q] = x[q] || 0; x.dmode = x.dmode || 'DEC'; }); s.fields = s.fields.map(f => ({ x: 0, ...f }));
+    near(`Aller-retour Zemax : ${k}`, diff(sig(s), sig(IO.parseZMX(IO.toZMX(s).text).sys)), 0, 1e-6);
+    if (!k.startsWith('Spectro')) near(`Aller-retour CODE V : ${k}`, diff(sig(s), sig(IO.parseSeq(IO.toSeq(s).text).sys)), 0, 1e-6);
+  }
+  const txt = IO.toZMX(S['Triplet de Cooke f=50 F/5']()).text, b = Buffer.concat([Buffer.from([0xFF, 0xFE]), Buffer.from(txt, 'utf16le')]);
+  near('Zemax UTF-16 : EFL', OE.prepare(IO.parseZMX(IO.decode(b)).sys).par.efl, 50.0214, 1e-3);
+  IO.parseSeq("WL 656.3 587.6 486.1\nPRV\nPWL 656.3 587.6 486.1\n'TESTPRV' 1.51432 1.51680 1.52238\nEND\nSO 0 1e18\nSTO 50 4 'TESTPRV'\nS -50 45\nSI 0 0");
+  near('CODE V : verre privé PRV (nd)', OE.glassInfo('TESTPRV').nd, 1.5168, 2e-4); }
 console.log(fail ? `${fail} échec(s)` : 'Tous les tests passent'); process.exit(fail ? 1 : 0);

@@ -22,6 +22,7 @@ const OE = (() => {
     const c = r.c, l2 = l * l;
     switch (r.f) {
       case 'R2': { let n2 = 1 + c[0]; for (let i = 1; i + 1 < c.length; i += 2) n2 += c[i] * l2 / (l2 - c[i + 1]); return Math.sqrt(n2); }
+      case 'CY': return c[0] + c[1] / l2 + c[2] / (l2 * l2); // Cauchy (verres privés CODE V)
       case 'R3': { let n2 = c[0]; for (let i = 1; i + 1 < c.length; i += 2) n2 += c[i] * Math.pow(l, c[i + 1]); return Math.sqrt(n2); }
       case 'A1': return Math.sqrt(c[0] + c[1] * l2 + c[2] / l2 + c[3] / l2 ** 2 + c[4] / l2 ** 3 + c[5] / l2 ** 4);
       case 'A2': return Math.sqrt(1 + c[0] * l2 / (l2 - c[1]) + c[2] * l2 / (l2 - c[3]) + c[4] * l2 / (l2 - c[5]));

@@ -163,11 +163,24 @@ const HELP = [
 <li><b>Monte-Carlo</b> : toutes les tolérances tirées au hasard (gaussienne tronquée, uniforme ou extrêmes) ; histogramme, courbe cumulée, percentiles 50/80/90/98 % (rendement), plage du compensateur.</li></ul>
 <p>« Copier le rapport » exporte les résultats au format CSV.</p>` },
 
-  { id: 'fichiers', t: 'Fichiers et installation', h: `
-<ul><li><b>Ctrl+O</b> ouvrir, <b>Ctrl+S</b> enregistrer (.json), <i>Enregistrer sous…</i>, export <b>CODE V (.seq)</b>, import .seq par ouverture ou copier-coller.</li>
-<li><b>Glisser-déposer</b> d'un fichier .json, .seq ou .agf sur la fenêtre.</li>
-<li>Export .seq : surfaces standard, coniques, asphères, décentrements (XDE…CDE, DAR, BEN), CIR, PIM, verres au format NOM_FABRICANT. Les réseaux, lentilles idéales, polariseurs et formes libres ne sont pas exportés (commentaire dans le fichier).</li>
-<li><b>Installation</b> : depuis le site GitHub Pages, bouton « Installer » (Chrome, Edge). L'application fonctionne hors ligne et se met à jour à chaque nouvelle version publiée.</li></ul>` },
+  { id: 'fichiers', t: 'Fichiers, Zemax et CODE V', h: `
+<ul><li><b>Ctrl+O</b> ouvrir, <b>Ctrl+S</b> enregistrer (.json, format natif complet), <i>Enregistrer sous…</i></li>
+<li><b>Glisser-déposer</b> d'un fichier <b>.zmx</b>, <b>.seq</b>, .json ou .agf sur la fenêtre, ou <i>Fichier → Coller un système</i> : le format est reconnu automatiquement. Les .zmx enregistrés en UTF-16 (cas courant) sont décodés.</li>
+<li><i>Fichier → Exporter Zemax (.zmx)</i> et <i>Exporter CODE V (.seq)</i> téléchargent le fichier ; <i>Afficher / copier le texte</i> montre les trois formats.</li>
+<li>Après un import ou un export, un <b>rapport</b> liste ce qui a été converti ou ignoré.</li></ul>
+<h4>Zemax OpticStudio (.zmx, séquentiel)</h4>
+<table class="ht"><tr><th>Élément</th><th>Correspondance</th></tr>
+<tr><td>Système</td><td>NAME, UNIT (mm, cm, in, m → mm), ENPD / FNUM / OBNA / FLOA, FTYP (angle, hauteur objet, hauteur image → convertie), XFLN/YFLN/FWGN, WAVM ou WAVL/WWGT, PWAV.</td></tr>
+<tr><td>Surfaces</td><td>STANDARD, EVENASPH (PARM 2…5 → A4…A10), COORDBRK (décentrements et bascules), PARAXIAL (lentille idéale), DGRATING (réseau, traits/µm et ordre). CURV, DISZ, CONI, DIAM, CLAP (demi-diamètre fixe), STOP, COMM.</td></tr>
+<tr><td>Verres</td><td>Noms de catalogue (Schott, Ohara, CDGM, Hoya, MISC), MIRROR, ___BLANK (modèle nd/νd). Un verre inconnu est remplacé par son modèle nd/νd (signalé).</td></tr>
+<tr><td>Export</td><td>Décentrements → paires de COORDBRK (DEC : un CB ; DAR : CB + retour en ordre inverse ; pliage BEN : CB + CB de même bascule). Verres fictifs → ___BLANK. Solves → épaisseurs fixes.</td></tr></table>
+<h4>CODE V (.seq)</h4>
+<table class="ht"><tr><th>Élément</th><th>Correspondance</th></tr>
+<tr><td>Système</td><td>TITLE, DIM (M, C, I → mm), EPD / FNO / NAO, WL, REF, WTW, XAN/YAN, XOB/YOB, XIM/YIM (converties), WTF.</td></tr>
+<tr><td>Surfaces</td><td>SO, S, STO, SI, RDM/RDN, RDY/CUY/THI/GLA, K, A…D, CIR, REFL, PIM, XDE…CDE, DAR, BEN (REV → DAR), GRT/GRO/GRS/GRX/GRY (réseau), CCY/THC/KC 0 (variables).</td></tr>
+<tr><td>Verres</td><td>NOM_CATALOGUE (NBK7_SCHOTT, SBSL7_OHARA…), codes 6 chiffres, <b>verres privés PRV</b> (PWL + indices → loi de Cauchy). À l'export, verres fictifs et importés deviennent des verres privés PRV.</td></tr></table>
+<p class="hint">Non exportés (signalés) : lentille idéale en CODE V, polariseurs et lames d'onde, surfaces XY et Zernike, obstruction centrale, orientation non nulle des traits d'un réseau vers Zemax. Les conventions de bascule sont supposées identiques (rotations main droite) : vérifiez les systèmes décentrés après conversion.</p>
+<h4>Installation</h4><p>Depuis le site GitHub Pages, bouton « Installer » (Chrome, Edge) : l'application fonctionne hors ligne, se met à jour à chaque nouvelle version et peut ouvrir directement les fichiers .zmx, .seq, .json et .agf.</p>` },
 
   { id: 'raccourcis', t: 'Raccourcis clavier', h: `
 <table class="ht"><tr><th>Touches</th><th>Action</th></tr>

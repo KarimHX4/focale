@@ -7,7 +7,8 @@ Interface et commentaires en français. Unités : mm, longueurs d'onde en µm.
 - `src/engine.js` : moteur pur (aucune dépendance au DOM), exporté en module Node pour les tests.
   Paraxial y-nu à indices signés, tracé réel vectoriel (coniques + asphères paires, miroirs),
   pupilles paraxiales + visée réelle optionnelle, OPD/Zernike, PSF/FTM par FFT, Seidel, optimiseur DLS.
-- `src/app.js` : interface (éditeur de lentilles, layout 2D/3D canvas, panneaux d'analyse, optimiseur, import/export JSON & CODE V .seq).
+- `src/app.js` : interface (éditeur de lentilles, layout 2D/3D canvas, panneaux d'analyse, optimiseur, tolérancement…).
+- `src/io.js` : import/export Zemax `.zmx` et CODE V `.seq` (module Node testable) : `decode` (UTF-16), `detect`, `parseZMX`/`toZMX`, `parseSeq`/`toSeq` ; chaque fonction renvoie aussi `warnings`. Décentrements ↔ COORDBRK, verres fictifs ↔ ___BLANK / PRV.
 - `src/samples.js` : systèmes d'exemple. `src/shell.html` : HTML/CSS avec marqueurs `/*__ENGINE__*/` etc.
 - `index.html`, `sw.js`, `manifest.webmanifest`, `icon.svg` sont GÉNÉRÉS par `python3 build.py` (version = hash du contenu, ce qui déclenche la mise à jour des applications installées) : ne jamais les éditer à la main, toujours régénérer et commiter.
 

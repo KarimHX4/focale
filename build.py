@@ -4,7 +4,7 @@ manifest.webmanifest et icon.svg à la racine (servis par GitHub Pages)."""
 import hashlib, pathlib, shutil
 d = pathlib.Path(__file__).parent
 src = d / 'src'
-parts = {k: (src / f).read_text(encoding='utf-8') for k, f in [('ENGINE', 'engine.js'), ('GLASSES', 'glasses.js'), ('HELP', 'help.js'), ('SAMPLES', 'samples.js'), ('APP', 'app.js')] if (src / f).exists()}
+parts = {k: (src / f).read_text(encoding='utf-8') for k, f in [('ENGINE', 'engine.js'), ('GLASSES', 'glasses.js'), ('HELP', 'help.js'), ('IO', 'io.js'), ('SAMPLES', 'samples.js'), ('APP', 'app.js')] if (src / f).exists()}
 h = (src / 'shell.html').read_text(encoding='utf-8')
 version = hashlib.sha1(''.join(parts.values()).encode() + h.encode()).hexdigest()[:8]
 h = h.replace('__VERSION__', version)
