@@ -2,8 +2,13 @@
 
 Logiciel de conception optique séquentielle : éditeur de lentilles, tracé de rayons réels,
 analyses (spot, ray fan, OPD, WFE/Zernike, PSF, FTM, énergie encerclée, footprint,
-courbure de champ, distorsion, Seidel, chromatisme) et optimisation par moindres carrés amortis.
-Import/export JSON et CODE V (.seq).
+courbure de champ, distorsion, Seidel, chromatisme), optimisation par moindres carrés amortis
+et tolérancement (sensibilités, RSS, Monte-Carlo avec compensateur).
+
+- Surfaces : sphère, conique, asphère paire, polynôme XY (ordre 6), Zernike Fringe (16 termes), miroirs
+- Décentrements et bascules par surface (DEC, DAR, pliage BEN), champs en X et Y
+- Plus de 1000 verres Schott, Ohara, CDGM, Hoya + import de catalogues Zemax `.agf`
+- Import/export JSON et CODE V (.seq)
 
 ## Utiliser
 - En ligne : https://karimhx4.github.io/focale/ (après activation de GitHub Pages).
@@ -17,6 +22,7 @@ Import/export JSON et CODE V (.seq).
 - `src/engine.js` — moteur optique (paraxial, tracé réel, diffraction, optimisation), sans dépendance
 - `src/app.js` — interface
 - `src/samples.js` — systèmes d'exemple
+- `src/glasses.js` — catalogues de verres (généré depuis refractiveindex.info, CC0)
 - `src/shell.html` — HTML/CSS
 - `src/pwa/` — manifeste, service worker et icône de l'application installable
 - `build.py` — assemble le tout dans `index.html` + `sw.js` versionné (`python3 build.py`)
@@ -28,3 +34,7 @@ Import/export JSON et CODE V (.seq).
 ## Publier avec GitHub Pages
 Settings → Pages → Source : branche `main`, dossier `/ (root)`. Le site est servi à
 `https://<utilisateur>.github.io/focale/`.
+
+## Données
+Les catalogues de verres proviennent de la base [refractiveindex.info](https://github.com/polyanskiy/refractiveindex.info-database)
+(domaine public, CC0 1.0), elle-même issue des catalogues publiés par les fabricants.

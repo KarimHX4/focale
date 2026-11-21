@@ -19,3 +19,5 @@ Interface et commentaires en français. Unités : mm, longueurs d'onde en µm.
 - Avant chaque commit : `node tests/engine.test.js` doit passer, puis `python3 build.py`.
 - Tolérancement (`TOLT`, `tolBase`, `tolItems`, `tolApply`, `criterion`, `bestFocus`) : système de base = solves figés + nominal au meilleur foyer ;
   chaque tolérance est appliquée par décentrements DAR / champ `dn` (indice) ; compensateur = épaisseur avant l'image (encadrement + section dorée).
+- Verres : registre `glassRecord / addGlasses` (clé normalisée sans tirets ni espaces, suffixe `_CATALOGUE` pour lever les homonymies), formules refractiveindex.info `R2`/`R3` et Zemax AGF `A1`…`A13` dans `dispN`. `src/glasses.js` est généré : ne pas éditer à la main.
+- Surfaces de forme libre : `type` = STD | XY (`xy` : {"i,j": c}) | ZERN (`zc`[16], rayon `zr`) ; intersection par Newton ; ignorées par le paraxial et les Seidel.

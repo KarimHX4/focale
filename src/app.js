@@ -60,6 +60,7 @@ function normalize(s) {
   s.primary = Math.min(Math.max(0, s.primary | 0), s.wavelengths.length - 1);
   s.merit = s.merit || { image: 'SPOT', ops: [] }; s.merit.ops = s.merit.ops || [];
   s.surfaces = s.surfaces.map(x => newSurf(x));
+  if (s.userGlass) { OE.addGlasses(Object.values(s.userGlass).map(g => ({ ...g, user: true })), false); delete s.userGlass; rebuildGlassList(); }
   return s;
 }
 function pushHist() {
@@ -92,6 +93,7 @@ function status(extra) {
   el.innerHTML = `<span>${esc(s.title || 'Sans titre')}</span><span>Surfaces <span class="k">${s.surfaces.length - 2}</span></span>
   <span>EFL <span class="k">${fx(p.efl, 3)}</span></span><span>F/# trav. <span class="k">${fx(p.wfno, 3)}</span></span>
   <span>TTL <span class="k">${fx(p.ttl, 2)}</span></span><span>Variables <span class="k">${OE.getVars(s).length}</span></span>
+  ${M.warnings && M.warnings.length ? `<span style="color:var(--warn)" title="${esc(M.warnings.join('\n'))}">⚠ ${M.warnings.length} avertissement(s) verre</span>` : ''}
   <span class="grow"></span><span>${extra || ''}</span><span>calcul <span class="k">${(App.lastPanes || 0).toFixed(0)} ms</span></span>`;
 }
 
@@ -265,6 +267,56 @@ function renderSide() {
   $('#side').innerHTML = h;
   if (keep) { const e = $('#side ' + keep); if (e) e.focus(); }
   status();
+}
+const SUP = n => String(n).split('').map(d => '⁰¹²³⁴⁵⁶⁷⁸⁹'[d]).join('');
+function freeformEditor(x) {
+  if (x.type === 'XY') {
+    const terms = []; for (let n = 1; n <= 6; n++) for (let j = 0; j <= n; j++) terms.push([n - j, j]);
+    const lab = (i, j) => (i ? 'x' + (i > 1 ? SUP(i) : '') : '') + (j ? 'y' + (j > 1 ? SUP(j) : '') : '');
+    return `<div class="hint" style="margin:6px 0 2px">z = conique + Σ cᵢⱼ xⁱ yʲ (mm, coordonnées locales)</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:3px;max-height:230px;overflow:auto;padding-right:2px">${terms.map(([i, j]) => `<div><div class="hint">${lab(i, j)}</div><input class="in" style="width:100%" data-f="coef" data-k="${i},${j}" value="${fmt((x.xy || {})[i + ',' + j] || 0, 6)}"></div>`).join('')}</div>`;
+  }
+  if (x.type === 'ZERN') {
+    return `<div class="row"><label>Rayon de normalisation (mm)</label><input class="in mini" data-f="coef" data-k="zr" value="${fmt(x.zr || 1, 6)}"></div>
+      <div class="hint" style="margin:2px 0">z = conique + Σ cₖ Zₖ(x/R, y/R), Zernike Fringe, cₖ en mm</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px;max-height:230px;overflow:auto;padding-right:2px">${OE.ZN.map((nm, k) => `<div><div class="hint" title="${nm}">Z${k + 1} ${nm}</div><input class="in" style="width:100%" data-f="coef" data-k="z${k}" value="${fmt((x.zc || [])[k] || 0, 6)}"></div>`).join('')}</div>`;
+  }
+  return '';
+}
+const CATCOL = { SCHOTT: '#2563eb', OHARA: '#16a34a', CDGM: '#dc2626', HOYA: '#9333ea', SPECIAL: '#0891b2' };
+const catCol = c => CATCOL[c] || '#ca8a04';
+function rebuildGlassList() {
+  let dl = $('#glassList'); if (!dl) { dl = document.createElement('datalist'); dl.id = 'glassList'; document.body.appendChild(dl); }
+  dl.innerHTML = [...OE.catalog().filter(g => g.st !== 'o').map(g => `<option value="${esc(g.name)}">${g.cat} · nd ${g.nd.toFixed(4)} · νd ${g.vd.toFixed(1)}</option>`), '<option value="MIRROR">miroir</option>'].join('');
+}
+function usedUserGlasses(s) {
+  const out = {}; for (const x of s.surfaces) { const r = OE.glassRecord(x.glass); if (r && r.user) out[r.key] = { name: r.name, cat: r.cat, f: r.f, c: r.c, lmin: r.lmin, lmax: r.lmax }; } return out;
+}
+function importAGF(name, text) {
+  const cat = ((name || '').replace(/\.[^.]*$/, '').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'USER').slice(0, 20);
+  const recs = OE.parseAGF(text, cat); if (!recs.length) { toast('Aucun verre lisible dans ce fichier AGF'); return; }
+  const n = OE.addGlasses(recs, true);
+  try { const st = JSON.parse(localStorage.getItem('focale.agf') || '{}'); st[cat] = text; localStorage.setItem('focale.agf', JSON.stringify(st)); } catch (e) { }
+  rebuildGlassList(); closeDlg(); refresh(); toast(`${n} verres importés dans le catalogue ${cat}`, 3500);
+}
+function loadStoredAGF() { try { const st = JSON.parse(localStorage.getItem('focale.agf') || '{}'); for (const [cat, t] of Object.entries(st)) OE.addGlasses(OE.parseAGF(t, cat), true); } catch (e) { } }
+function openGlasses() {
+  const cats = OE.cats();
+  dlg(`<h2>Catalogue de verres <button class="x" data-d="close">✕</button></h2><div class="db">
+    <div class="row"><input class="in" id="gq" style="flex:1" placeholder="Rechercher (nom, ex. BK7, LAH, FK…)"><select class="in" id="gc"><option value="">Tous les catalogues</option>${cats.map(c => `<option>${c}</option>`).join('')}</select>
+      <label class="hint"><input type="checkbox" id="go"> obsolètes</label><button class="bt" data-d="agf">Importer un AGF…</button></div>
+    <div class="hint" id="gn"></div>
+    <div style="max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:6px"><table class="mt" id="gt" style="font-size:12px"></table></div>
+    <div class="hint" style="margin-top:6px">Cliquez sur un verre pour l'affecter à la surface ${App.sel} (milieu après la surface). Données : refractiveindex.info (CC0) d'après les catalogues fabricants ; les fichiers AGF importés (Zemax, formules 1–13) sont conservés dans ce navigateur.</div></div>`, true);
+  const draw = () => {
+    const q = $('#gq').value.trim().toUpperCase().replace(/[\s\-_]/g, ''), c = $('#gc').value, ob = $('#go').checked;
+    const L = OE.catalog().filter(g => (!c || g.cat === c) && (ob || g.st !== 'o') && (!q || g.name.toUpperCase().replace(/[\s\-_]/g, '').includes(q)));
+    $('#gn').textContent = `${L.length} verres`;
+    $('#gt').innerHTML = `<tr><th>Nom</th><th>Catalogue</th><th>nd</th><th>νd</th><th>Domaine (µm)</th><th>Statut</th></tr>` + L.slice(0, 400).map(g => `<tr data-g="${esc(g.name)}" style="cursor:pointer"><td><b>${esc(g.name)}</b></td><td><span class="sw" style="background:${catCol(g.cat)}"></span> ${g.cat}</td><td style="font-family:var(--mono)">${g.nd.toFixed(5)}</td><td style="font-family:var(--mono)">${g.vd.toFixed(2)}</td><td style="font-family:var(--mono)">${g.lmin ?? '—'} – ${g.lmax ?? '—'}</td><td>${{ s: 'standard', p: 'préférentiel', o: 'obsolète', i: 'inquiry' }[g.st] || g.st}</td></tr>`).join('');
+  };
+  ['input', 'change'].forEach(ev => { $('#gq').addEventListener(ev, draw); $('#gc').addEventListener(ev, draw); $('#go').addEventListener(ev, draw); });
+  $('#gt').addEventListener('click', e => { const tr = e.target.closest('[data-g]'); if (!tr) return; const j = App.sel, N = App.sys.surfaces.length - 1; if (j < 0 || j >= N) return toast('Sélectionnez une surface (pas l\'image)'); commit(s => s.surfaces[j].glass = tr.dataset.g); toast(`${tr.dataset.g} → surface ${j}`); });
+  draw(); $('#gq').focus();
 }
 function inspector() {
   const s = App.sys, j = App.sel, x = s.surfaces[j]; if (!x) return '';
@@ -621,6 +673,7 @@ function paneHeader(pi) {
   if (t.f) { p.fi = Math.min(p.fi || 0, s.fields.length - 1); h += `<select data-p="fi">${s.fields.map((f, i) => `<option value="${i}" ${i === p.fi ? 'selected' : ''}>Champ ${i + 1} (${M && M.ok ? fLabel(M, i) : fmt(f.y, 4)})</option>`).join('')}</select>`; }
   if (t.w) { if (p.wi != null && p.wi >= s.wavelengths.length) p.wi = null; const we = p.wi ?? s.primary; h += `<select data-p="wi">${s.wavelengths.map((w, i) => `<option value="${i}" ${i === we ? 'selected' : ''}>${fmt(w.um * 1000, 5)} nm</option>`).join('')}</select>`; }
   if (t.s) h += `<select data-p="si"><option value="">Surface sélectionnée</option>${s.surfaces.map((x, i) => i ? `<option value="${i}" ${p.si === i ? 'selected' : ''}>Surface ${i}${x.comment ? ' · ' + esc(x.comment) : ''}</option>` : '').join('')}</select>`;
+  if (p.type === 'glass') h += `<select data-p="cat"><option value="">Tous les catalogues</option>${OE.cats().map(k => `<option ${p.cat === k ? 'selected' : ''}>${k}</option>`).join('')}</select>`;
   if (p.type === 'psf') h += `<label><input type="checkbox" data-p="log" ${p.log ? 'checked' : ''}>log</label><select data-p="zoom">${[1, 2, 4].map(z => `<option value="${z}" ${(p.zoom || 2) == z ? 'selected' : ''}>×${z}</option>`).join('')}</select>`;
   if (p.type === 'wfe') h += `<label><input type="checkbox" data-p="tilt" ${p.tilt !== false ? 'checked' : ''}>sans tilt</label>`;
   if (p.type === 'mtf') h += `<label>f max <input class="in" data-p="fmax" style="width:56px;height:22px" value="${p.fmax || ''}" placeholder="auto"></label>`;
@@ -635,6 +688,7 @@ function setupPanes() {
     if (k === 'type') { App.panes[pi] = { type: t.value }; }
     else if (k === 'log' || k === 'tilt' || k === 'chief') p[k] = t.checked;
     else if (k === 'si') p.si = t.value === '' ? null : +t.value;
+    else if (k === 'cat') p.cat = t.value;
     else if (k === 'fmax') { const v = parseFloat(t.value); p.fmax = isFinite(v) && v > 0 ? v : null; }
     else p[k] = +t.value;
     save(); renderPane(pi);
@@ -783,9 +837,15 @@ const R = {
     M.wls.forEach(l => { c.fillStyle = wlCol(l); const k = cs.l.reduce((b, v, i) => Math.abs(v - l) < Math.abs(cs.l[b] - l) ? i : b, 0); c.beginPath(); c.arc(A.X(l), A.Y(cs.dz[k]), 4, 0, 7); c.fill(); });
   },
   glass(p, M, c, w, h) {
-    const cat = OE.catalog(), used = new Set(M.S.map(s => OE.glassKey(s.glass)).filter(Boolean));
-    const A = axes(c, { x: 0, y: 0, w, h }, [100, 15], [1.4, 2.05], { xl: 'Constringence νd', yl: 'nd', title: 'Carte des verres du catalogue (verres utilisés en orange)' });
-    for (const g of cat) { const u = used.has(g.name); c.fillStyle = u ? '#ea580c' : TH.acc; c.beginPath(); c.arc(A.X(g.vd), A.Y(g.nd), u ? 5 : 3.5, 0, 7); c.fill(); text(c, g.name, A.X(g.vd) + 6, A.Y(g.nd) - 6, { size: 10, col: u ? '#ea580c' : TH.mut, b: u }); }
+    const used = new Set(M.S.map(s => OE.glassKey(s.glass)).filter(Boolean)), sel = p.cat || '';
+    const cat = OE.catalog().filter(g => (!sel || g.cat === sel) && g.st !== 'o' && isFinite(g.nd) && isFinite(g.vd));
+    const A = axes(c, { x: 0, y: 0, w, h: h - 16 }, [100, 15], [1.4, 2.08], { xl: 'Constringence νd', yl: 'nd', title: `Carte des verres — ${cat.length} verres${sel ? ' ' + sel : ''} (utilisés en orange)` });
+    clip(c, A.P); c.globalAlpha = 0.55;
+    for (const g of cat) { c.fillStyle = catCol(g.cat); c.beginPath(); c.arc(A.X(g.vd), A.Y(g.nd), 2.3, 0, 7); c.fill(); }
+    c.globalAlpha = 1;
+    for (const g of cat) if (used.has(g.name)) { c.fillStyle = '#ea580c'; c.strokeStyle = TH.panel; c.lineWidth = 1.5; c.beginPath(); c.arc(A.X(g.vd), A.Y(g.nd), 5.5, 0, 7); c.fill(); c.stroke(); text(c, g.name, A.X(g.vd) + 8, A.Y(g.nd) - 6, { size: 10.5, col: '#ea580c', b: true }); }
+    c.restore();
+    legend(c, 8, h - 7, [...new Set(cat.map(g => g.cat))].map(k => ({ col: catCol(k), l: k })));
   },
   presc(p, M) {
     const S = M.S, par = M.par;
@@ -871,6 +931,7 @@ function setupDlg() {
     if (a === 'fmtseq') { $('#exTxt').value = toSeq(App.sys); }
     if (a === 'pick') $('#fileIn').click();
     if (a === 'load') { importFile('', $('#imTxt').value); }
+    if (a === 'agf') $('#fileIn').click();
   });
 }
 function runOpt() {
@@ -1000,7 +1061,7 @@ const SEQ_GLASS = { 'N-BK7': 'NBK7_SCHOTT', 'F_SILICA': 'SILICA_SPECIAL', 'CAF2'
 function toSeq(s) {
   const S = s.surfaces, N = S.length - 1, L = [];
   const objInf = !isFinite(S[0].t) || Math.abs(S[0].t) > 1e10;
-  const gl = g => { if (OE.isAir(g)) return ''; if (OE.isMirror({ glass: g })) return 'REFL'; const k = OE.glassKey(g); if (k) return SEQ_GLASS[k] || (k.replace('-', '') + '_SCHOTT'); const m = String(g).match(/^\s*([0-9.]+)\s*[,\/;:]\s*([0-9.]+)/); if (m) { const nd = +m[1], vd = +m[2]; return `${Math.round((nd - 1) * 1000)}.${Math.round(vd * 10)}`; } return g; };
+  const gl = g => { if (OE.isAir(g)) return ''; if (OE.isMirror({ glass: g })) return 'REFL'; const rc = OE.glassRecord(g); if (rc) return SEQ_GLASS[rc.name] || (rc.name.replace(/-/g, '') + '_' + rc.cat); const m = String(g).match(/^\s*([0-9.]+)\s*[,\/;:]\s*([0-9.]+)/); if (m) { const nd = +m[1], vd = +m[2]; return `${Math.round((nd - 1) * 1000)}.${Math.round(vd * 10)}`; } return g; };
   const r = v => isFinite(v) ? (+v).toPrecision(10).replace(/\.?0+$/, '') : '0';
   L.push('RDM;LEN', `TITLE '${(s.title || 'Focale').replace(/'/g, '')}'`);
   const ap = s.aperture;
@@ -1017,6 +1078,7 @@ function toSeq(s) {
     if (x.tsolve === 'M' && i === N - 1) L.push('  PIM');
     if (x.vr) L.push('  CCY 0'); if (x.vt && x.tsolve !== 'M') L.push('  THC 0');
   }
+  if (S.some(x => x.type && x.type !== 'STD')) L.push('! Attention : surfaces XY / Zernike non exportées (base conique seule)');
   L.push(`SI ${r(S[N].r)} 0`, 'GO');
   return L.join('\n');
 }
@@ -1025,6 +1087,7 @@ function mapSeqGlass(g) {
   let u = g.toUpperCase();
   if (u === 'REFL') return 'MIRROR';
   if (/^\d{3}\.\d{2,3}$/.test(u)) { const [a, b] = u.split('.'); return `${(1 + (+a) / 1000).toFixed(3)}/${(+b / (b.length === 3 ? 10 : 1)).toFixed(1)}`; }
+  if (OE.glassKey(u)) return OE.glassKey(u);
   u = u.replace(/[_.](SCHOTT|OHARA|HOYA|SPECIAL|CDGM|SUMITA|HIKARI)$/, '');
   if (OE.glassKey(u)) return OE.glassKey(u);
   if (u[0] === 'N' && OE.glassKey('N-' + u.slice(1))) return OE.glassKey('N-' + u.slice(1));
@@ -1110,6 +1173,7 @@ function openHelp() {
   dlg(`<h2>Focale — aide rapide <button class="x" data-d="close">✕</button></h2><div class="db" style="font-size:13px;line-height:1.55">
   <p><b>Éditeur de lentilles</b> : chaque ligne est une surface (OBJ → IMA). Saisissez rayon, épaisseur, verre (catalogue Schott, modèle <code>nd/νd</code> comme <code>1.5168/64.2</code>, indice fixe, ou <code>MIRROR</code>). <kbd>Entrée</kbd> valide et descend, <kbd>Tab</kbd> passe à la colonne suivante, <kbd>Échap</kbd> annule. « Infini » ou vide = plan. Après un miroir, les épaisseurs sont négatives.</p>
   <p><b>V</b> rend un paramètre variable pour l'optimisation ; <b>M</b> calcule l'épaisseur pour la mise au point paraxiale ; <b>🔒</b> fixe le demi-diamètre (les rayons au-delà sont vignettés). Double-cliquez sur la colonne Type pour placer le diaphragme.</p>
+  <p><b>Verres</b> : plus de 1000 verres Schott, Ohara, CDGM et Hoya (bouton « Verres… » ou saisie avec auto-complétion). Ajoutez un suffixe pour choisir le fabricant en cas d'homonymie (<code>F2_CDGM</code>). Importez n'importe quel catalogue Zemax <code>.agf</code> par glisser-déposer. <b>Surfaces</b> : dans l'inspecteur, forme Standard, polynôme XY (ordre 6) ou Zernike Fringe (16 termes), et décentrements/bascules.</p>
   <p><b>Analyses</b> : choisissez 1, 2, 4 ou 6 fenêtres en haut à droite, le type d'analyse dans chaque fenêtre, double-cliquez sur l'en-tête pour agrandir. Tout se recalcule en direct à chaque modification.</p>
   <p><b>Méthodes</b> : tracé de rayons réels (Snell vectoriel, coniques et asphères paires par Newton), pupilles paraxiales avec visée réelle optionnelle, OPD par rapport à une sphère de référence centrée sur le rayon principal et passant par la pupille de sortie, PSF par FFT de la pupille 64×64 dans une grille 256×256, FTM par FFT de la PSF, Seidel avec contributions des coniques/asphères, optimisation Levenberg-Marquardt à Jacobien numérique.</p>
   <p><b>Raccourcis</b> : <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd> annuler/rétablir, <kbd>Inser</kbd> insérer après, <kbd>Ctrl</kbd>+<kbd>Suppr</kbd> supprimer la surface, <kbd>Ctrl</kbd>+<kbd>O</kbd> ouvrir, <kbd>Ctrl</kbd>+<kbd>S</kbd> enregistrer, <kbd>Ctrl</kbd>+<kbd>Maj</kbd>+<kbd>O</kbd> optimiser. Glissez-déposez un fichier .json, .seq ou .agf sur la fenêtre pour l'ouvrir. Le système est sauvegardé automatiquement dans ce navigateur.</p></div>`);
@@ -1173,9 +1237,7 @@ function openAbout() {
 
 /* ---------------- Initialisation ---------------- */
 function init() {
-  const dl = document.createElement('datalist'); dl.id = 'glassList';
-  dl.innerHTML = [...OE.catalog().map(g => `<option value="${g.name}">nd ${g.nd.toFixed(4)} · νd ${g.vd.toFixed(1)}</option>`), '<option value="MIRROR">miroir</option>'].join('');
-  document.body.appendChild(dl);
+  loadStoredAGF(); rebuildGlassList();
   $('#mSamp').innerHTML = Object.keys(SAMPLES).map(k => `<button data-samp="${esc(k)}">${esc(k)}</button>`).join('');
   load();
   if (!App.sys) App.sys = normalize(SAMPLES['Triplet de Cooke f=50 F/5']());
@@ -1203,6 +1265,7 @@ function init() {
       case 'undo': undo(); break; case 'redo': redo(); break;
       case 'optim': openOptim(); break;
       case 'tol': openTol(); break;
+      case 'glasses': openGlasses(); break;
       case 'theme': { const d = document.documentElement; d.dataset.theme = d.dataset.theme === 'dark' ? '' : 'dark'; save(); readTheme(); drawLayout(); renderPanes(); break; }
       case 'help': openHelp(); break;
       case 'fit': fitView(); break;

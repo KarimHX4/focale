@@ -8,47 +8,74 @@
 const OE = (() => {
   const DEG = Math.PI / 180;
 
-  /* ---------------- Catalogue de verres (Sellmeier B1,B2,B3,C1,C2,C3) ---------------- */
-  const GL = {
-    'N-BK7':  [1.03961212, 0.231792344, 1.01046945, 0.00600069867, 0.0200179144, 103.560653],
-    'N-K5':   [1.08511833, 0.199562005, 0.930511663, 0.00661099503, 0.024110866, 111.982777],
-    'N-BAK1': [1.12365662, 0.309276848, 0.881511957, 0.00644742752, 0.0222284402, 107.297751],
-    'N-BAK4': [1.28834642, 0.132817724, 0.945395373, 0.00779980626, 0.0315631177, 105.965875],
-    'N-SK16': [1.34317774, 0.241144399, 0.994317969, 0.00704687339, 0.0229005, 92.7508526],
-    'N-FK51A':[0.971247817, 0.216901417, 0.904651666, 0.00472301995, 0.0153575612, 168.68133],
-    'N-BAF10':[1.5851495, 0.143559385, 1.08521269, 0.00926681282, 0.0424489805, 105.613573],
-    'N-LAK9': [1.46231905, 0.344399589, 1.15508372, 0.00724270156, 0.0243353131, 85.4686868],
-    'N-LASF9':[2.00029547, 0.298926886, 1.80691843, 0.0121426017, 0.0538736236, 156.530829],
-    'F2':     [1.34533359, 0.209073176, 0.937357162, 0.00997743871, 0.0470450767, 111.886764],
-    'N-F2':   [1.39757037, 0.159201403, 1.2686543, 0.00995906143, 0.0546931752, 119.248346],
-    'SF2':    [1.40301821, 0.231767504, 0.939056586, 0.0105795466, 0.0493226978, 112.405955],
-    'N-SF5':  [1.52481889, 0.187085527, 1.42729015, 0.011254756, 0.0588995392, 129.141675],
-    'N-SF6':  [1.77931763, 0.338149866, 2.08734474, 0.0133714182, 0.0617533621, 174.01759],
-    'N-SF10': [1.62153902, 0.256287842, 1.64447552, 0.0122241457, 0.0595736775, 147.468793],
-    'N-SF11': [1.73759695, 0.313747346, 1.89878101, 0.013188707, 0.0623068142, 155.23629],
-    'N-SF57': [1.87543831, 0.37375749, 2.30001797, 0.0141749518, 0.0640509927, 177.389795],
-    'F_SILICA':[0.6961663, 0.4079426, 0.8974794, 0.004679148, 0.01351206, 97.934003],
-    'CAF2':   [0.5675888, 0.4710914, 3.8484723, 0.00252643, 0.01007833, 1200.5560],
-  };
-  const ALIAS = { 'BK7': 'N-BK7', 'SK16': 'N-SK16', 'SF5': 'N-SF5', 'SF6': 'N-SF6', 'SF11': 'N-SF11',
-    'LAK9': 'N-LAK9', 'LASF9': 'N-LASF9', 'BAK1': 'N-BAK1', 'BAK4': 'N-BAK4', 'K5': 'N-K5',
-    'SILICA': 'F_SILICA', 'FUSED_SILICA': 'F_SILICA', 'SIO2': 'F_SILICA', 'FK51A': 'N-FK51A', 'BAF10': 'N-BAF10', 'SF10': 'N-SF10', 'SF57': 'N-SF57' };
-
-  function sellmeier(B, l) {
-    const l2 = l * l;
-    return Math.sqrt(1 + B[0] * l2 / (l2 - B[3]) + B[1] * l2 / (l2 - B[4]) + B[2] * l2 / (l2 - B[5]));
+  /* ---------------- Verres : registre (catalogues fabricants + verres importés AGF) ---------------- */
+  const SPECIAL = [
+    ['F_SILICA', [0, 0.6961663, 0.004679148, 0.4079426, 0.01351206, 0.8974794, 97.934003], 0.21, 6.7],
+    ['CAF2', [0, 0.5675888, 0.00252643, 0.4710914, 0.01007833, 3.8484723, 1200.556], 0.23, 9.7],
+  ];
+  const ALIAS = { BK7: 'N-BK7', SK16: 'N-SK16', SF11: 'N-SF11', LAK9: 'N-LAK9', LASF9: 'N-LASF9', BAK1: 'N-BAK1', BAK4: 'N-BAK4', K5: 'N-K5', FK51A: 'N-FK51A', BAF10: 'N-BAF10', SF57: 'N-SF57',
+    SILICA: 'F_SILICA', FUSEDSILICA: 'F_SILICA', SIO2: 'F_SILICA', SILICASPECIAL: 'F_SILICA', CAF2SPECIAL: 'CAF2' };
+  const REG = new Map(), QUAL = new Map(), ALL = [], CATS = new Set(['SPECIAL']);
+  const gnorm = s => String(s || '').toUpperCase().replace(/[\s\-_]/g, '');
+  let dbReady = false;
+  function dispN(r, l) {
+    const c = r.c, l2 = l * l;
+    switch (r.f) {
+      case 'R2': { let n2 = 1 + c[0]; for (let i = 1; i + 1 < c.length; i += 2) n2 += c[i] * l2 / (l2 - c[i + 1]); return Math.sqrt(n2); }
+      case 'R3': { let n2 = c[0]; for (let i = 1; i + 1 < c.length; i += 2) n2 += c[i] * Math.pow(l, c[i + 1]); return Math.sqrt(n2); }
+      case 'A1': return Math.sqrt(c[0] + c[1] * l2 + c[2] / l2 + c[3] / l2 ** 2 + c[4] / l2 ** 3 + c[5] / l2 ** 4);
+      case 'A2': return Math.sqrt(1 + c[0] * l2 / (l2 - c[1]) + c[2] * l2 / (l2 - c[3]) + c[4] * l2 / (l2 - c[5]));
+      case 'A3': { const L = 1 / (l2 - 0.028); return c[0] + c[1] * L + c[2] * L * L + c[3] * l2 + c[4] * l2 * l2 + c[5] * l2 ** 3; }
+      case 'A4': return Math.sqrt(1 + c[0] + c[1] * l2 / (l2 - c[2] * c[2]) + c[3] / (l2 - c[4] * c[4]));
+      case 'A5': return c[0] + c[1] / l + c[2] / Math.pow(l, 3.5);
+      case 'A6': return Math.sqrt(1 + c[0] * l2 / (l2 - c[1]) + c[2] * l2 / (l2 - c[3]) + c[4] * l2 / (l2 - c[5]) + c[6] * l2 / (l2 - c[7]));
+      case 'A7': return Math.sqrt(c[0] + c[1] / (l2 - c[2]) - c[3] * l2);
+      case 'A8': return Math.sqrt(c[0] + c[1] * l2 / (l2 - c[2]) - c[3] * l2);
+      case 'A9': return Math.sqrt(c[0] + c[1] * l2 / (l2 - c[2]) + c[3] * l2 / (l2 - c[4]));
+      case 'A10': return Math.sqrt(c[0] + c[1] * l2 + c[2] / l2 + c[3] / l2 ** 2 + c[4] / l2 ** 3 + c[5] / l2 ** 4 + c[6] / l2 ** 5 + c[7] / l2 ** 6);
+      case 'A11': return Math.sqrt(1 + c[0] * l2 / (l2 - c[1]) + c[2] * l2 / (l2 - c[3]) + c[4] * l2 / (l2 - c[5]) + c[6] * l2 / (l2 - c[7]) + c[8] * l2 / (l2 - c[9]));
+      case 'A12': return Math.sqrt(c[0] + c[1] * l2 + c[2] / l2 + c[3] / l2 ** 2 + c[4] / l2 ** 3 + c[5] / l2 ** 4 + c[6] * l2 * l2 + c[7] * l2 ** 3);
+      case 'A13': return Math.sqrt(c[0] + c[1] * l2 + c[2] * l2 * l2 + c[3] / l2 + c[4] / l2 ** 2 + c[5] / l2 ** 3 + c[6] / l2 ** 4 + c[7] / l2 ** 5 + c[8] / l2 ** 6);
+    }
+    return NaN;
   }
-  function glassKey(name) {
-    const u = (name || '').trim().toUpperCase();
-    return GL[u] ? u : (ALIAS[u] && GL[ALIAS[u]] ? ALIAS[u] : null);
+  /** ajoute des verres au registre ; replace : remplace un verre de même nom et même catalogue */
+  function addGlasses(recs, replace) {
+    let n = 0;
+    for (const r0 of recs) {
+      const r = { ...r0, cat: String(r0.cat || 'USER').toUpperCase() }, k = gnorm(r.name), qk = k + '@' + r.cat;
+      CATS.add(r.cat);
+      const old = QUAL.get(qk);
+      if (old) { if (!replace) continue; Object.assign(old, r, { key: old.key }); delete old.ndv; n++; continue; }
+      r.key = REG.has(k) ? `${r.name}_${r.cat}` : r.name;
+      REG.set(gnorm(r.key), r); if (!REG.has(k)) REG.set(k, r); QUAL.set(qk, r); ALL.push(r); n++;
+    }
+    return n;
   }
+  function ensureDB() {
+    if (dbReady) return; dbReady = true;
+    addGlasses(SPECIAL.map(([name, c, a, b]) => ({ name, cat: 'SPECIAL', f: 'R2', c, lmin: a, lmax: b })));
+    let db = typeof GLASSDB !== 'undefined' ? GLASSDB : null;
+    if (!db && typeof require === 'function') { try { db = require('./glasses.js'); } catch (e) { db = null; } }
+    if (db) addGlasses(db.g.map(g => ({ name: g[0], cat: db.cats[g[1]], f: 'R' + g[2], c: g[3], lmin: g[4], lmax: g[5], nd: g[6], vd: g[7], st: g[8] })));
+  }
+  function glassRecord(name) {
+    ensureDB();
+    const u = String(name || '').trim(); if (!u) return null;
+    let r = REG.get(gnorm(u)); if (r) return r;
+    const m = u.match(/^(.+?)[\s_]*\(?([A-Za-z]+)\)?$/);
+    if (m && CATS.has(m[2].toUpperCase())) { r = QUAL.get(gnorm(m[1]) + '@' + m[2].toUpperCase()); if (r) return r; }
+    const al = ALIAS[gnorm(u)] || (m && ALIAS[gnorm(m[1])]); if (al) return REG.get(gnorm(al)) || null;
+    return null;
+  }
+  function glassKey(name) { const r = glassRecord(name); return r ? r.key : null; }
   function isMirror(s) { return (s.glass || '').trim().toUpperCase() === 'MIRROR'; }
   function isAir(name) { const u = (name || '').trim().toUpperCase(); return u === '' || u === 'AIR'; }
   /** indice d'un milieu ; NaN si verre inconnu */
   function glassN(name, l) {
     if (isAir(name)) return 1;
-    const k = glassKey(name);
-    if (k) return sellmeier(GL[k], l);
+    const r = glassRecord(name);
+    if (r) return dispN(r, l);
     const m = String(name).match(/^\s*([0-9.]+)\s*[,\/;:]\s*([0-9.]+)\s*$/); // modèle nd/vd
     if (m) {
       const nd = +m[1], vd = +m[2];
@@ -60,11 +87,27 @@ const OE = (() => {
     if (isFinite(v) && v >= 1 && /^\s*[0-9.]+\s*$/.test(name)) return v;
     return NaN;
   }
+  function recInfo(r) {
+    if (!r.ndv) { const nd = dispN(r, 0.5875618), nF = dispN(r, 0.4861327), nC = dispN(r, 0.6562725); r.ndv = { nd, vd: (nd - 1) / (nF - nC) }; }
+    return r.ndv;
+  }
   function glassInfo(name) {
+    const r = glassRecord(name); if (r) return recInfo(r);
     const nd = glassN(name, 0.5875618), nF = glassN(name, 0.4861327), nC = glassN(name, 0.6562725);
     return { nd, vd: (nd - 1) / (nF - nC) };
   }
-  const catalog = () => Object.keys(GL).map(k => ({ name: k, ...glassInfo(k) }));
+  const catalog = () => { ensureDB(); return ALL.map(r => ({ name: r.key, base: r.name, cat: r.cat, st: r.st || 's', user: !!r.user, lmin: r.lmin, lmax: r.lmax, ...recInfo(r) })); };
+  /** lecture d'un catalogue Zemax AGF (formules 1 à 13) */
+  function parseAGF(text, cat) {
+    const recs = []; let cur = null;
+    for (const line of String(text).split(/\r?\n/)) {
+      const t = line.trim().split(/\s+/), k = (t[0] || '').toUpperCase();
+      if (k === 'NM') { cur = { name: t[1], f: 'A' + Math.round(+t[2]), c: [], nd: +t[4], vd: +t[5], cat, user: true, st: ({ 0: 's', 1: 'p', 2: 'o', 3: 's', 4: 's', 5: 'o' })[t[7]] || 's' }; recs.push(cur); }
+      else if (k === 'CD' && cur) cur.c = t.slice(1).map(Number);
+      else if (k === 'LD' && cur) { cur.lmin = +t[1]; cur.lmax = +t[2]; }
+    }
+    return recs.filter(r => r.name && r.c.length && isFinite(dispN(r, 0.5875618)));
+  }
 
   /* ---------------- Surfaces ---------------- */
   const curv = s => (isFinite(s.r) && s.r !== 0) ? 1 / s.r : 0;
@@ -91,8 +134,25 @@ const OE = (() => {
   }
 
   /** termes de forme libre (polynôme XY, Zernike) — 0 pour une surface standard */
-  function ffSag(sf, x, y) { return 0; }
-  function ffGrad(sf, x, y) { return [0, 0]; }
+  function ffZ(sf, x, y) { const b = zernBasis(x / sf.zr, y / sf.zr); let z = 0; for (let k = 0; k < sf.zc.length; k++) if (sf.zc[k]) z += sf.zc[k] * b[k]; return z; }
+  function ffSag(sf, x, y) {
+    let z = 0;
+    if (sf.xyT) for (const [i, j, c] of sf.xyT) z += c * Math.pow(x, i) * Math.pow(y, j);
+    if (sf.zc) z += ffZ(sf, x, y);
+    return z;
+  }
+  function ffGrad(sf, x, y) {
+    let gx = 0, gy = 0;
+    if (sf.xyT) for (const [i, j, c] of sf.xyT) { if (i) gx += c * i * Math.pow(x, i - 1) * Math.pow(y, j); if (j) gy += c * j * Math.pow(x, i) * Math.pow(y, j - 1); }
+    if (sf.zc) { const h = 1e-6 * sf.zr; gx += (ffZ(sf, x + h, y) - ffZ(sf, x - h, y)) / (2 * h); gy += (ffZ(sf, x, y + h) - ffZ(sf, x, y - h)) / (2 * h); }
+    return [gx, gy];
+  }
+  /** termes de forme libre d'une surface (polynôme XY "i,j" → c, ou Zernike Fringe zc[0..15] sur le rayon zr) */
+  function ffTerms(s) {
+    const xyT = s.type === 'XY' ? Object.entries(s.xy || {}).map(([k, c]) => { const [i, j] = k.split(',').map(Number); return [i, j, +c || 0]; }).filter(t => t[2] && t[0] + t[1] > 0) : null;
+    const zc = s.type === 'ZERN' && Array.isArray(s.zc) && s.zc.some(v => +v) ? Array.from({ length: 16 }, (_, k) => +s.zc[k] || 0) : null;
+    return { xyT: xyT && xyT.length ? xyT : null, zc, zr: +s.zr > 0 ? +s.zr : 1, ff: !!((xyT && xyT.length) || zc) };
+  }
   /** flèche locale z(x, y) */
   function sag(sf, x, y) { const z = sagR(sf, x * x + y * y); return sf.ff ? z + ffSag(sf, x, y) : z; }
   /** pente locale [dz/dx, dz/dy] */
@@ -221,6 +281,8 @@ const OE = (() => {
     const errors = [];
     nW.forEach((n, wi) => n.forEach((v, j) => { if (!isFinite(v)) errors.push(`Verre inconnu « ${S[j].glass} » (surface ${j})`); }));
     if (errors.length) return { sys, errors: [...new Set(errors)], ok: false };
+    const warnings = [];
+    S.forEach((s, j) => { const r = glassRecord(s.glass); if (r && r.lmin && r.lmax) { const out = wls.filter(l => l < r.lmin - 1e-9 || l > r.lmax + 1e-9); if (out.length) warnings.push(`${r.key} (S${j}) : λ hors domaine ${r.lmin}–${r.lmax} µm`); } });
     let par;
     const nSolve = S.filter(s => s.tsolve === 'M').length;
     for (let it = 0; it < nSolve + 2; it++) {
@@ -240,11 +302,11 @@ const OE = (() => {
       const n = nW[wi];
       return {
         wi, l, lmm: l * 1e-3, n, nAbs: n.map(Math.abs),
-        s: S.map(s => ({ c: curv(s), k: s.k, a4: s.a4, a6: s.a6, a8: s.a8, a10: s.a10,
-          asph: !!(s.a4 || s.a6 || s.a8 || s.a10), t: s.t, mirror: isMirror(s), sd: s.sd, clip: !!s.sdFixed })),
+        s: S.map(s => { const f = ffTerms(s); return { c: curv(s), k: s.k, a4: s.a4, a6: s.a6, a8: s.a8, a10: s.a10, ...f,
+          asph: !!(s.a4 || s.a6 || s.a8 || s.a10 || f.ff), t: s.t, mirror: isMirror(s), sd: s.sd, clip: !!s.sdFixed }; }),
       };
     });
-    const M = { sys, S, N, wls, pw, stopIdx, objInf, nW, par, zg, fr, ctxs, aimCache: new Map(), ok: true, errors: [],
+    const M = { sys, S, N, wls, pw, stopIdx, objInf, nW, par, zg, fr, ctxs, aimCache: new Map(), ok: true, errors: [], warnings: [...new Set(warnings)],
       t0: objInf ? 0 : S[0].t, obs: Math.max(0, Math.min(0.95, +sys.aperture.obscuration || 0)) };
     M.epr = par.epd / 2;
     computeSD(M);
@@ -831,7 +893,6 @@ const OE = (() => {
     if (M.ok) s.surfaces.forEach((x, j) => { x.t = M.S[j].t; x.tsolve = ''; });
     return s;
   }
-  const isGlassSurf = s => !isAir(s.glass) && !isMirror(s.glass ? s : { glass: '' });
   function tolItems(sys, cfg) {
     const S = sys.surfaces, N = S.length - 1, T = cfg.types, out = [];
     const add = (type, j, lbl) => { const t = T[type]; if (t && t.on && +t.v) out.push({ type, j, tol: +t.v, label: `${TOLT[type].label} ${lbl}` }); };
@@ -921,7 +982,7 @@ const OE = (() => {
   function gaussTrunc(rnd) { let v; do { const u = 1 - rnd(), w = rnd(); v = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * w) / 2; } while (Math.abs(v) > 1); return v; }
   function tolDraw(dist, rnd) { return dist === 'uniform' ? 2 * rnd() - 1 : dist === 'end' ? (rnd() < 0.5 ? -1 : 1) : gaussTrunc(rnd); }
 
-  return { DEG, TOLT, tolBase, tolDefaults, tolFreeze, tolItems, tolApply, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, GL, catalog, glassN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
+  return { DEG, TOLT, tolBase, tolDefaults, tolFreeze, tolItems, tolApply, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
     wavefront, psf, mtf, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
     OPS, getVars, residuals, meritOf, optStep, pupilGrid, indices, paraxial };
 })();
