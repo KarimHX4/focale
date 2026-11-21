@@ -137,7 +137,15 @@ const HELP = [
 <li><b>Fente / rectangle</b> (largeur × hauteur) et <b>point source</b>.</li>
 <li>Pour un objet à l'infini, les tailles sont en <b>secondes d'arc</b> (étoile, disque planétaire, fente sur le ciel).</li></ul>
 <p>Méthode : la source est projetée dans le plan image par la jacobienne locale des rayons principaux (grandissement, anamorphose, distorsion locale), puis convoluée par la PSF polychromatique (diffraction, ou géométrique si le front d'onde est très aberrant), pupille apodisée selon l'émission de la source. Résultats : image, profils X/Y, FWHM, diamètres à 50/80/95 % d'énergie, couplage, énergie dans un pixel et taille en pixels si un détecteur est défini (case « pixels » : image intégrée sur les pixels).</p>
-<p class="hint">Les systèmes fibrés se modélisent avec un objet à distance finie : distance objet = distance fibre → première surface, ouverture = ON objet.</p>` },
+<p class="hint">Les systèmes fibrés se modélisent avec un objet à distance finie : distance objet = distance fibre → première surface, ouverture = ON objet.</p>
+<h4>Définir la fibre (carte « Source / fibre »)</h4>
+<ul><li><b>Type</b> : multimode à saut d'indice (champ proche uniforme, émission uniforme jusqu'à l'ON), multimode à gradient d'indice (champ proche parabolique 1 − (r/a)², émission décroissante jusqu'à l'ON ; couplage = 2t² − t⁴ avec t = ON système / ON fibre), monomode (mode gaussien).</li>
+<li><b>Ø cœur, Ø gaine, ON</b>. En monomode, le <b>diamètre de mode (MFD)</b> est calculé par la formule de Marcuse à partir du cœur et de l'ON et varie avec λ ; saisissez la valeur du fabricant pour l'imposer (recommandé : l'ON nominale est souvent différente de l'ON effective du profil).</li>
+<li><b>Spectre</b> : λ centrale et largeur Δλ (FWHM). Vide : longueurs d'onde du système. Avec Δλ &gt; 0, le spectre gaussien est échantillonné sur 5 longueurs d'onde pour l'analyse (chromatisme compris).</li>
+<li><b>Lien fibré (optionnel)</b> : longueur, atténuation (dB/km) → transmission de la fibre et transmission totale (fibre × couplage) ; bande passante modale (MHz·km) → bande passante du lien ≈ BP / longueur.</li>
+<li>Grandeurs affichées : fréquence normalisée V = 2π a ON / λ, longueur d'onde de coupure (V = 2,405), régime mono/multimode et nombre de modes approximatif, étendue géométrique.</li>
+<li>Préréglages : SMF-28 (1550 nm), monomode 630 nm, OM3 50/125, OM1 62,5/125, saut d'indice 105, 200 et 400 µm.</li></ul>
+<p>L'extrémité de la fibre (gaine, cœur, cône d'ouverture) est dessinée dans le layout au plan objet.</p>` },
 
   { id: 'optimisation', t: 'Optimisation', h: `
 <p>Méthode des <b>moindres carrés amortis</b> (Levenberg-Marquardt) avec Jacobien numérique.</p>

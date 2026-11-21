@@ -48,4 +48,8 @@ const P = []; OE.ray(M, 1, 20, 0, 1, { pts: P }); near('Visée réelle sur diaph
   near('Source ponctuelle : FWHM = 1,029 λF (µm)', OE.extSource(P, 0, { type: 'point' }).fwhmX * 1e3, 1.029 * 0.5875618 * 4, 0.05);
   near('Pixel : FTM à Nyquist = 2/π', OE.detMTF(1 / (2 * 0.003), 0.003, 1), 2 / Math.PI, 1e-9);
   const ps = OE.psf(P, 0, 0, 64, 256); near('Pixel : somme des énergies 41×41 ≈ 1', OE.binPSF(ps.I, ps.P, ps.dx, 0.003, 'centre', 41).G.reduce((a, b) => a + b, 0), 1, 0.01); }
+{ const fi = OE.fiberInfo({ fib: 'sm', core: 8.2, na: 0.14 }, 1.55); near('Fibre : V (SMF-28, 1550 nm)', fi.V, 2 * Math.PI * 4.1 * 0.14 / 1.55, 1e-9); near('Fibre : coupure (nm)', fi.lc * 1000, 1500, 2);
+  const M = OE.prepare(S['Système fini 1:1 (relais)']()), t = 0.05 / 0.22;
+  near('Fibre GI : couplage 2t² − t⁴', OE.extSource(M, 0, { type: 'fiber', fib: 'gi', core: 50, na: 0.22 }).coupling, 2 * t * t - t ** 4, 1e-3);
+  near('Fibre SI : couplage (ON sys / ON fibre)²', OE.extSource(M, 0, { type: 'fiber', fib: 'si', core: 50, na: 0.22 }).coupling, t * t, 1e-3); }
 console.log(fail ? `${fail} échec(s)` : 'Tous les tests passent'); process.exit(fail ? 1 : 0);

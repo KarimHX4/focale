@@ -25,3 +25,4 @@ Interface et commentaires en français. Unités : mm, longueurs d'onde en µm.
 - Polarisation : `ray(..., { polState, fresnel })` propage un champ E complexe 3D (`polStep`) ; `polPupil` pour l'analyse. `imageSim` : cartographie des rayons principaux + PSF 5×5 dans le champ, objet à l'infini inversé (scène +v ↔ champ −y).
 - Aide : `src/help.js` (tableau `HELP`) — à tenir à jour avec chaque nouvelle fonction.
 - Détecteur : `sys.det` {on, p (µm), nx, ny, ff (%), bits, fw, rn, lvl, noise} ; `binPSF`, `binImage`, `detMTF` ; `imageSim(..., { pix })` échantillonne sur les pixels. Source étendue : `extSource(M, f, { type: point|disk|gauss|rect, d, na, w, h })` (unités µm objet fini, ″ objet à l'infini).
+- Source du système : `sys.src` {type none|fiber|disk|gauss|rect|point, fib si|gi|sm, core, clad, na, mfd, lc0 (nm), dl (nm), len, att, bw, d, w, h} ; `fiberInfo` (V, coupure, MFD Marcuse) ; `srcModel()` (app) remplace les λ par le spectre de la source.

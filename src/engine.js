@@ -980,6 +980,16 @@ const OE = (() => {
   /** FTM d'un pixel (ouverture rectangulaire de largeur ff·p) */
   const detMTF = (f, p, ff = 1) => { const a = Math.PI * f * p * ff; return a < 1e-9 ? 1 : Math.abs(Math.sin(a) / a); };
 
+  /* ---------------- Fibres optiques ---------------- */
+  /** grandeurs d'une fibre à la longueur d'onde l (µm) : V, coupure, MFD (Marcuse), nombre de modes, régime */
+  function fiberInfo(fb, l) {
+    const a = (+fb.core || 0) / 2, na = +fb.na || 0, V = 2 * Math.PI * a * na / l, lc = 2 * Math.PI * a * na / 2.405;
+    const w = V > 0 ? a * (0.65 + 1.619 * Math.pow(V, -1.5) + 2.879 * Math.pow(V, -6)) : NaN;
+    const mfd = fb.fib === 'sm' && +fb.mfd > 0 ? +fb.mfd : 2 * w;
+    const modes = fb.fib === 'gi' ? V * V / 4 : V * V / 2;
+    return { V, lc, mfd, modes: V < 2.405 ? 1 : Math.round(modes), single: V < 2.405, etendue: Math.PI * a * a * Math.PI * na * na };
+  }
+
   /* ---------------- Source étendue (fibre, fente…) ---------------- */
   /**
    * o : { type: 'point'|'disk'|'gauss'|'rect', d (diamètre / MFD), w, h, na }. Unités objet : µm (objet à distance finie) ou secondes d'arc (objet à l'infini).
@@ -991,18 +1001,25 @@ const OE = (() => {
     const c0 = ray(M, M.pw, f, 0, 0); if (c0.vig) return null;
     const dl = inf ? 1e-3 : 1e-3, cx = ray(M, M.pw, { x: f.x + dl, y: f.y }, 0, 0), cy = ray(M, M.pw, { x: f.x, y: f.y + dl }, 0, 0);
     const J = [(cx.x - c0.x) / dl * uo, (cy.x - c0.x) / dl * uo, (cx.y - c0.y) / dl * uo, (cy.y - c0.y) / dl * uo]; // mm image / unité objet
-    const NAs = inf ? 0 : M.par.objNA, type = o.type || 'disk';
+    const NAs = inf ? 0 : M.par.objNA;
+    let type = o.type || 'disk';
+    const fb = type === 'fiber' ? o : null, fkind = fb ? (fb.fib || 'si') : null;
+    if (fb) { o = { ...o, d: fkind === 'sm' ? fiberInfo(fb, M.wls[M.pw]).mfd : +fb.core, na: +fb.na }; type = fkind === 'sm' ? 'gauss' : fkind === 'gi' ? 'gi' : 'disk'; }
     const W = M.sys.wavelengths.map(w => w.w ?? 1), Wt = W.reduce((a, b) => a + b, 0);
     // demi-étendue de la source dans l'image
     let sh = 0; const d = +o.d || 0, ww = +o.w || 0, hh = +o.h || 0;
     const corners = type === 'rect' ? [[ww / 2, hh / 2], [-ww / 2, hh / 2]] : type === 'gauss' ? [[d, 0], [0, d]] : [[d / 2, 0], [0, d / 2]];
+    o.type = type;
     for (const [u, v] of corners) { sh = Math.max(sh, Math.hypot(J[0] * u + J[1] * v, J[2] * u + J[3] * v)); }
     // PSF par longueur d'onde
     const psfs = []; let r99 = 0, dxMin = Infinity; const coup = [];
     M.wls.forEach((l, wi) => {
       const lmm = M.ctxs[wi].lmm; let apod = null, cp = 1;
       if (!inf && type === 'disk' && +o.na > 0 && NAs > 0) { const rm = Math.min(1, o.na / NAs); apod = (x, y) => (x * x + y * y <= rm * rm ? 1 : 0); cp = Math.min(1, (NAs / o.na) ** 2); }
-      if (!inf && type === 'gauss' && d > 0 && NAs > 0) { const t0 = lmm / (Math.PI * d * 1e-3 / 2); apod = (x, y) => Math.exp(-((x * x + y * y) * NAs * NAs) / (t0 * t0)); cp = 1 - Math.exp(-2 * NAs * NAs / (t0 * t0)); }
+      if (!inf && type === 'gi' && +o.na > 0 && NAs > 0) { const k = NAs / o.na; apod = (x, y) => Math.sqrt(Math.max(0, 1 - (x * x + y * y) * k * k)); const t = Math.min(1, k); cp = 2 * t * t - t ** 4; }
+      if (!inf && type === 'gauss' && d > 0 && NAs > 0) {
+        const dd = fkind === 'sm' && !(+fb.mfd > 0) ? fiberInfo(fb, l).mfd : d; // MFD dépend de λ
+        const t0 = lmm / (Math.PI * dd * 1e-3 / 2); apod = (x, y) => Math.exp(-((x * x + y * y) * NAs * NAs) / (t0 * t0)); cp = 1 - Math.exp(-2 * NAs * NAs / (t0 * t0)); }
       coup.push(cp);
       const wf = wavefront(M, f, wi, 64, false), cw = ray(M, wi, f, 0, 0);
       const sh0 = cw.vig ? [0, 0] : [cw.x - c0.x, cw.y - c0.y];
@@ -1031,7 +1048,7 @@ const OE = (() => {
     }
     // source projetée (inverse de la jacobienne), suréchantillonnée 4×4
     const det = J[0] * J[3] - J[1] * J[2], Ji = [J[3] / det, -J[1] / det, -J[2] / det, J[0] / det], ns = 4;
-    const inside = (u, v) => type === 'point' ? 0 : type === 'rect' ? (Math.abs(u) <= ww / 2 && Math.abs(v) <= hh / 2 ? 1 : 0) : type === 'gauss' ? Math.exp(-2 * (u * u + v * v) / ((d / 2) ** 2)) : (u * u + v * v <= (d / 2) ** 2 ? 1 : 0);
+    const inside = (u, v) => type === 'point' ? 0 : type === 'rect' ? (Math.abs(u) <= ww / 2 && Math.abs(v) <= hh / 2 ? 1 : 0) : type === 'gauss' ? Math.exp(-2 * (u * u + v * v) / ((d / 2) ** 2)) : type === 'gi' ? Math.max(0, 1 - (u * u + v * v) / ((d / 2) ** 2)) : (u * u + v * v <= (d / 2) ** 2 ? 1 : 0);
     let ssum = 0;
     if (type === 'point' || sh < pq * 0.25) { src[h * P2 + h] = 1; ssum = 1; }
     else for (let j = 0; j < Qe; j++) for (let i = 0; i < Qe; i++) {
@@ -1057,7 +1074,7 @@ const OE = (() => {
     rad.sort((a, b) => a[0] - b[0]); let acc = 0, d80 = NaN, d50 = NaN, d95 = NaN;
     for (const [r, v] of rad) { acc += v / tot; if (isNaN(d50) && acc >= 0.5) d50 = 2 * r; if (isNaN(d80) && acc >= 0.8) d80 = 2 * r; if (isNaN(d95) && acc >= 0.95) { d95 = 2 * r; break; } }
     const coupling = coup.reduce((a, c, i) => a + c * W[i], 0) / Wt;
-    return { Q: Qe, pq, img, src: sImg, tot, peak: pk, cx: (cxm - h) * pq, cy: (cym - h) * pq, px, py, fwhmX: fwhm(px), fwhmY: fwhm(py), d50, d80, d95, coupling, J, inf, NAs, sh };
+    return { type, Q: Qe, pq, img, src: sImg, tot, peak: pk, dEff: d, cx: (cxm - h) * pq, cy: (cym - h) * pq, px, py, fwhmX: fwhm(px), fwhmY: fwhm(py), d50, d80, d95, coupling, J, inf, NAs, sh };
   }
   /** énergie d'une image (grille Q×Q, pas pq) intégrée sur des pixels de pas p centrés sur (cx, cy) */
   function binImage(img, Q, pq, p, cx, cy, nb = 9, phase = 'centre') {
@@ -1286,7 +1303,7 @@ const OE = (() => {
   function gaussTrunc(rnd) { let v; do { const u = 1 - rnd(), w = rnd(); v = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * w) / 2; } while (Math.abs(v) > 1); return v; }
   function tolDraw(dist, rnd) { return dist === 'uniform' ? 2 * rnd() - 1 : dist === 'end' ? (rnd() < 0.5 ? -1 : 1) : gaussTrunc(rnd); }
 
-  return { DEG, binPSF, detMTF, extSource, binImage, imageSim, polPupil, polOut, POLSTATES, TOLT, tolBase, tolDefaults, tolFreeze, tolItems, tolApply, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
+  return { DEG, fiberInfo, binPSF, detMTF, extSource, binImage, imageSim, polPupil, polOut, POLSTATES, TOLT, tolBase, tolDefaults, tolFreeze, tolItems, tolApply, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
     wavefront, psf, mtf, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
     OPS, getVars, residuals, meritOf, optStep, pupilGrid, indices, paraxial };
 })();
