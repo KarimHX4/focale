@@ -117,8 +117,27 @@ const HELP = [
 <li>L'image est convoluée par une <b>PSF qui varie dans le champ</b> (grille 5×5, interpolation bilinéaire), calculée par diffraction ou, si le front d'onde dépasse 1,5 λ RMS, à partir du spot géométrique.</li>
 <li>Les canaux <b>rouge, vert, bleu</b> utilisent respectivement la plus grande, la médiane et la plus petite longueur d'onde du système.</li>
 <li>Le <b>vignetage</b> est pris en compte (fraction de pupille transmise).</li></ol>
-<p>L'image est inversée comme dans un vrai objectif ; cochez « redresser » pour la remettre à l'endroit. Mires : résolution, texte, grille (distorsion), champ d'étoiles (PSF dans le champ), étoile de Siemens, damier, mire couleur (chromatisme).</p>
+<p>L'image est inversée comme dans un vrai objectif ; cochez « redresser » pour la remettre à l'endroit. Mires : <b>USAF 1951</b> (groupes 0 à 5, six éléments par groupe au pas 2^(1/6), bord incliné, étoile de Siemens), texte, grille (distorsion), champ d'étoiles (PSF dans le champ), étoile de Siemens, damier, mire couleur (chromatisme).</p>
 <p class="hint">Le calcul prend environ une seconde ; il est relancé automatiquement après une modification (ou avec ▶ Simuler).</p>` },
+
+  { id: 'detecteur', t: 'Détecteur', h: `
+<p>Carte <b>Détecteur</b> (panneau de gauche) : cochez <i>Ajouter un détecteur</i> puis renseignez le <b>pas des pixels</b> (µm, pixels carrés), le <b>format</b> (pixels X × Y), le <b>facteur de remplissage</b>, et pour la simulation de bruit : profondeur (bits), capacité du puits (e⁻), bruit de lecture (e⁻), niveau de signal (% du puits). Des préréglages sont proposés (CMOS 3,45 µm, sCMOS 6,5 µm, CCD 13 µm, InGaAs 15 µm, smartphone 1 µm).</p>
+<p>La carte affiche la taille du capteur, la fréquence de <b>Nyquist</b> 1/(2p), la coupure optique 1/(λF), le facteur d'échantillonnage <b>Q = λF/p</b> (Q ≥ 2 : PSF échantillonnée au critère de Nyquist) et le diamètre d'Airy en pixels.</p>
+<p>Quand le détecteur est actif :</p>
+<ul><li><b>Spot</b> et <b>PSF</b> : grille des pixels superposée ; la PSF peut être affichée <b>intégrée sur les pixels</b> (case « pixels »), avec l'énergie du pixel central et du carré 3×3.</li>
+<li><b>Footprint</b> de la surface image : contour du capteur.</li>
+<li><b>FTM</b> : FTM du pixel (sinus cardinal, avec facteur de remplissage), produit système × pixel et fréquence de Nyquist.</li>
+<li><b>Simulation d'image</b> (case « détecteur ») : l'image est calculée directement sur la grille de pixels (ou affichée sous-échantillonnée si le capteur dépasse la résolution d'affichage), la zone hors capteur est masquée, et le bruit de photons, de lecture et de quantification est ajouté si « Bruit » est coché.</li>
+<li><b>Échantillonnage détecteur</b> : PSF intégrée sur une grille 7×7 de pixels, centrée sur un pixel ou sur un coin (cas le plus défavorable), avec énergie du pixel central, du meilleur carré 2×2, des carrés 3×3 et 5×5.</li></ul>` },
+
+  { id: 'source', t: 'Source étendue (fibre, fente…)', h: `
+<p>L'analyse <b>Source étendue</b> calcule l'image d'une source réelle placée au point de champ choisi :</p>
+<ul><li><b>Fibre multimode</b> : disque uniforme de diamètre Ø (µm) émettant dans une ouverture numérique ON. Si l'ON de la fibre est plus petite que celle du système, la pupille est partiellement remplie (tache de diffraction plus large) ; si elle est plus grande, une partie de la lumière n'entre pas : <b>couplage</b> ≈ (ON système / ON fibre)².</li>
+<li><b>Fibre monomode</b> : profil gaussien de diamètre de mode MFD (1/e²) ; son faisceau gaussien apodise la pupille (divergence λ/(π w₀)) ; couplage = 1 − exp(−2 ON²/θ₀²).</li>
+<li><b>Fente / rectangle</b> (largeur × hauteur) et <b>point source</b>.</li>
+<li>Pour un objet à l'infini, les tailles sont en <b>secondes d'arc</b> (étoile, disque planétaire, fente sur le ciel).</li></ul>
+<p>Méthode : la source est projetée dans le plan image par la jacobienne locale des rayons principaux (grandissement, anamorphose, distorsion locale), puis convoluée par la PSF polychromatique (diffraction, ou géométrique si le front d'onde est très aberrant), pupille apodisée selon l'émission de la source. Résultats : image, profils X/Y, FWHM, diamètres à 50/80/95 % d'énergie, couplage, énergie dans un pixel et taille en pixels si un détecteur est défini (case « pixels » : image intégrée sur les pixels).</p>
+<p class="hint">Les systèmes fibrés se modélisent avec un objet à distance finie : distance objet = distance fibre → première surface, ouverture = ON objet.</p>` },
 
   { id: 'optimisation', t: 'Optimisation', h: `
 <p>Méthode des <b>moindres carrés amortis</b> (Levenberg-Marquardt) avec Jacobien numérique.</p>
@@ -162,5 +181,6 @@ const HELP = [
 <li>Calcul paraxial sans décentrements, formes libres ni réseaux.</li>
 <li>Pas de traitements multicouches (Fresnel non traité ou antireflet parfait).</li>
 <li>Variables d'optimisation limitées aux courbures, épaisseurs et coniques.</li>
-<li>Simulation d'image : PSF interpolée sur une grille 5×5, éclairement relatif simplifié.</li></ul>` },
+<li>Simulation d'image : PSF interpolée sur une grille 5×5, éclairement relatif simplifié ; pixels carrés.</li>
+<li>Source étendue : PSF supposée constante sur l'étendue de la source (source petite devant le champ).</li></ul>` },
 ];

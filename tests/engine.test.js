@@ -41,4 +41,11 @@ const P = []; OE.ray(M, 1, 20, 0, 1, { pts: P }); near('Visée réelle sur diaph
   M = OE.prepare(sys([Sf(Infinity, Infinity), Sf(Infinity, 5, { stop: true, glass: 'N-BK7' }), Sf(Infinity, 10), Sf(Infinity, 0)])); const n = OE.glassN('N-BK7', 0.55);
   near('Fresnel : lame N-BK7 à incidence normale', OE.polPupil(M, 0, 0, 'X', 3, true).pts.find(q => !q.px && !q.py).I, (1 - ((n - 1) / (n + 1)) ** 2) ** 2, 1e-9);
   M = OE.prepare(S['Spectrographe à réseau 600 traits/mm']()); near('Spectrographe : 550 nm centré', OE.ray(M, 1, { x: 0, y: 0 }, 0, 0).y, 0, 0.01); }
+{ const M = OE.prepare(S['Système fini 1:1 (relais)']());
+  near('Source : couplage fibre ON 0,22 dans ON 0,05', OE.extSource(M, 0, { type: 'disk', d: 50, na: 0.22 }).coupling, (0.05 / 0.22) ** 2, 1e-3);
+  near('Source : taille géométrique fente 100 µm (grandissement 1)', OE.extSource(M, 0, { type: 'rect', w: 20, h: 100 }).fwhmY * 1e3, 100, 2);
+  const s = S['Miroir parabolique f/4 (Newton)'](); s.fields = [{ x: 0, y: 0 }]; const P = OE.prepare(s);
+  near('Source ponctuelle : FWHM = 1,029 λF (µm)', OE.extSource(P, 0, { type: 'point' }).fwhmX * 1e3, 1.029 * 0.5875618 * 4, 0.05);
+  near('Pixel : FTM à Nyquist = 2/π', OE.detMTF(1 / (2 * 0.003), 0.003, 1), 2 / Math.PI, 1e-9);
+  const ps = OE.psf(P, 0, 0, 64, 256); near('Pixel : somme des énergies 41×41 ≈ 1', OE.binPSF(ps.I, ps.P, ps.dx, 0.003, 'centre', 41).G.reduce((a, b) => a + b, 0), 1, 0.01); }
 console.log(fail ? `${fail} échec(s)` : 'Tous les tests passent'); process.exit(fail ? 1 : 0);

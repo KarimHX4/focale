@@ -24,3 +24,4 @@ Interface et commentaires en français. Unités : mm, longueurs d'onde en µm.
 - Types d'éléments (`elem`) : '' (dioptre) | grating (`lpmm`, `gm`, `gang` ; réflexion si verre MIRROR) | ideal (`fid`, plan, puissance ajoutée au paraxial) | polarizer (`pang`) | waveplate (`ret` en ondes, `wang`). Traités dans `trace()` après l'intersection.
 - Polarisation : `ray(..., { polState, fresnel })` propage un champ E complexe 3D (`polStep`) ; `polPupil` pour l'analyse. `imageSim` : cartographie des rayons principaux + PSF 5×5 dans le champ, objet à l'infini inversé (scène +v ↔ champ −y).
 - Aide : `src/help.js` (tableau `HELP`) — à tenir à jour avec chaque nouvelle fonction.
+- Détecteur : `sys.det` {on, p (µm), nx, ny, ff (%), bits, fw, rn, lvl, noise} ; `binPSF`, `binImage`, `detMTF` ; `imageSim(..., { pix })` échantillonne sur les pixels. Source étendue : `extSource(M, f, { type: point|disk|gauss|rect, d, na, w, h })` (unités µm objet fini, ″ objet à l'infini).

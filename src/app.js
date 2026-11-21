@@ -61,6 +61,7 @@ function normalize(s) {
   s.wavelengths = (s.wavelengths && s.wavelengths.length) ? s.wavelengths : [{ um: 0.5875618, w: 1 }];
   s.primary = Math.min(Math.max(0, s.primary | 0), s.wavelengths.length - 1);
   s.merit = s.merit || { image: 'SPOT', ops: [] }; s.merit.ops = s.merit.ops || [];
+  s.det = { on: false, p: 3.45, nx: 2448, ny: 2048, ff: 100, bits: 12, fw: 10000, rn: 3, lvl: 70, noise: false, ...(s.det || {}) };
   s.surfaces = s.surfaces.map(x => newSurf(x));
   if (s.userGlass) { OE.addGlasses(Object.values(s.userGlass).map(g => ({ ...g, user: true })), false); delete s.userGlass; rebuildGlassList(); }
   return s;
@@ -259,6 +260,7 @@ function renderSide() {
     ${s.wavelengths.map((w, i) => `<tr><td><span class="sw" style="background:${wlCol(w.um)}"></span></td><td><input class="in" data-f="wum" data-i="${i}" value="${fmt(w.um, 7)}"></td><td><input class="in" data-f="ww" style="width:48px" data-i="${i}" value="${fmt(w.w ?? 1, 4)}"></td><td style="text-align:center"><input type="radio" name="prim" data-f="wp" data-i="${i}" ${i === s.primary ? 'checked' : ''}></td><td><button class="x" data-a="wdel" data-i="${i}">✕</button></td></tr>`).join('')}
     </table><button class="add" data-a="wadd">+ Ajouter une longueur d'onde</button>
     <div class="chips"><button class="chip" data-a="wpre" data-v="FdC">F, d, C</button><button class="chip" data-a="wpre" data-v="vis">Visible</button><button class="chip" data-a="wpre" data-v="hene">632,8 nm</button><button class="chip" data-a="wpre" data-v="nir">NIR</button><button class="chip" data-a="wpre" data-v="d">d seule</button></div>`);
+  h += detCard();
   if (M && M.ok) {
     const p = M.par;
     h += card('par', 'Données paraxiales', `<div class="kv">
@@ -352,6 +354,22 @@ function elemEditor(x, j, N) {
   }
   return h ? h + '<div style="border-top:1px solid var(--line);margin:8px 0 6px"></div>' : '';
 }
+const DETPRE = { imx250: ['CMOS 3,45 µm 2448×2048', 3.45, 2448, 2048, 10000, 3, 12], scmos: ['sCMOS 6,5 µm 2048×2048', 6.5, 2048, 2048, 30000, 1.6, 16], ccd: ['CCD 13 µm 1024×1024', 13, 1024, 1024, 100000, 5, 16], ingaas: ['InGaAs 15 µm 640×512', 15, 640, 512, 1000000, 100, 14], phone: ['Smartphone 1 µm 4000×3000', 1, 4000, 3000, 6000, 2, 10] };
+const det = () => App.sys.det || {};
+function detCard() {
+  const d = det(), M = App.M;
+  if (!d.on) return card('det', 'Détecteur', `<div class="row"><label>Ajouter un détecteur au plan image</label><input type="checkbox" data-f="det" data-k="on"></div><div class="hint">Pour comparer PSF, spot, footprint et image simulée à la taille des pixels.</div>`);
+  const inp = (k, l, u) => `<div><div class="hint">${l}${u ? ' <span style="opacity:.7">' + u + '</span>' : ''}</div><input class="in" style="width:100%" data-f="det" data-k="${k}" value="${fmt(d[k], 6)}"></div>`;
+  let info = '';
+  if (M && M.ok) {
+    const pmm = d.p * 1e-3, lF = M.ctxs[M.pw].lmm * M.par.wfno;
+    info = `<div class="kv" style="margin-top:6px"><span>Capteur</span><span>${fx(d.nx * d.p * 1e-3, 2)} × ${fx(d.ny * d.p * 1e-3, 2)} mm</span><span>Nyquist</span><span>${fx(1 / (2 * pmm), 1)} cy/mm</span><span>Coupure optique</span><span>${fx(1 / lF, 1)} cy/mm</span><span>Q = λF/p</span><span>${fx(lF / pmm, 2)}</span><span>Ø Airy</span><span>${fx(2.44 * lF / pmm, 2)} px</span></div>`;
+  }
+  return card('det', 'Détecteur', `<div class="row"><label>Détecteur actif</label><input type="checkbox" data-f="det" data-k="on" checked></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px">${inp('p', 'Pas', 'µm')}${inp('nx', 'Pixels X', '')}${inp('ny', 'Pixels Y', '')}${inp('ff', 'Remplissage', '%')}${inp('bits', 'Bits', '')}${inp('fw', 'Puits', 'e⁻')}${inp('rn', 'Bruit lecture', 'e⁻')}${inp('lvl', 'Signal', '% puits')}</div>
+    <div class="row"><label>Bruit dans la simulation d'image</label><input type="checkbox" data-f="det" data-k="noise" ${d.noise ? 'checked' : ''}></div>
+    <div class="chips">${Object.entries(DETPRE).map(([k, v]) => `<button class="chip" data-a="detpre" data-v="${k}">${v[0]}</button>`).join('')}</div>${info}`);
+}
 function inspector() {
   const s = App.sys, j = App.sel, x = s.surfaces[j]; if (!x) return '';
   const N = s.surfaces.length - 1;
@@ -384,6 +402,7 @@ function setupSide() {
       case 'fdel': if (App.sys.fields.length > 1) commit(s => s.fields.splice(i, 1)); break;
       case 'fspread': commit(s => { const m = Math.max(...s.fields.map(f => Math.hypot(f.x || 0, f.y))) || 1; s.fields = [0, 0.7, 1].map(k => ({ x: 0, y: +(m * k).toPrecision(6), w: 1 })); }); break;
       case 'fold45': commit(s => { const x = s.surfaces[App.sel]; x.glass = 'MIRROR'; x.r = Infinity; x.tx = 45; x.ty = 0; x.tz = 0; x.dx = x.dy = x.dz = 0; x.dmode = 'BEN'; }); toast('Miroir de renvoi à 45° : pensez au signe de l\'épaisseur suivante'); break;
+      case 'detpre': { const q = DETPRE[b.dataset.v]; commit(s => Object.assign(s.det, { on: true, p: q[1], nx: q[2], ny: q[3], fw: q[4], rn: q[5], bits: q[6] })); toast(q[0]); break; }
       case 'ret4': commit(s => s.surfaces[App.sel].ret = 0.25); break;
       case 'ret2': commit(s => s.surfaces[App.sel].ret = 0.5); break;
       case 'galign': {
@@ -418,6 +437,7 @@ function setupSide() {
       case 'dmode': commit(s => s.surfaces[App.sel].dmode = t.value); break;
       case 'stype': commit(s => { const x = s.surfaces[App.sel]; x.type = t.value; if (t.value === 'ZERN' && !x.zr) x.zr = Math.max(1, App.M && App.M.ok ? +App.M.S[App.sel].sd.toPrecision(3) : 10); }); break;
       case 'dec': if ((v = num()) != null) commit(s => s.surfaces[App.sel][t.dataset.k] = v); break;
+      case 'det': { const k = t.dataset.k; if (k === 'on' || k === 'noise') { commit(s => s.det[k] = t.checked); break; } if ((v = num(x => x > 0)) != null) commit(s => s.det[k] = ['nx', 'ny', 'bits'].includes(k) ? Math.round(v) : v); break; }
       case 'ep': if ((v = num()) != null) { if (t.dataset.k === 'fid' && v === 0) { toast('Focale non nulle requise'); renderSide(); break; } commit(s => s.surfaces[App.sel][t.dataset.k] = v); } break;
       case 'coef': { const k = t.dataset.k; v = t.value.trim() === '' ? 0 : parseNum(t.value, false); if (!isFinite(v)) { toast('Valeur invalide'); renderSide(); break; }
         commit(s => { const x = s.surfaces[App.sel]; if (k === 'zr') x.zr = v; else if (k.startsWith('z')) { x.zc = x.zc || []; x.zc[+k.slice(1)] = v; } else { x.xy = x.xy || {}; if (v) x.xy[k] = v; else delete x.xy[k]; } }); break; }
@@ -716,6 +736,8 @@ const PT = {
   chrom: { l: 'Décalage focal chromatique' },
   glass: { l: 'Carte des verres (nd / νd)' },
   polar: { l: 'Polarisation (pupille de sortie)', f: 1, w: 1 },
+  detector: { l: 'Échantillonnage détecteur', f: 1, w: 1 },
+  source: { l: 'Source étendue (fibre, fente…)', f: 1 },
   imgsim: { l: 'Simulation d\'image' },
   presc: { l: 'Prescription & synthèse', html: 1 },
 };
@@ -735,12 +757,24 @@ function paneHeader(pi) {
   if (t.f) { p.fi = Math.min(p.fi || 0, s.fields.length - 1); h += `<select data-p="fi">${s.fields.map((f, i) => `<option value="${i}" ${i === p.fi ? 'selected' : ''}>Champ ${i + 1} (${M && M.ok ? fLabel(M, i) : fmt(f.y, 4)})</option>`).join('')}</select>`; }
   if (t.w) { if (p.wi != null && p.wi >= s.wavelengths.length) p.wi = null; const we = p.wi ?? s.primary; h += `<select data-p="wi">${s.wavelengths.map((w, i) => `<option value="${i}" ${i === we ? 'selected' : ''}>${fmt(w.um * 1000, 5)} nm</option>`).join('')}</select>`; }
   if (t.s) h += `<select data-p="si"><option value="">Surface sélectionnée</option>${s.surfaces.map((x, i) => i ? `<option value="${i}" ${p.si === i ? 'selected' : ''}>Surface ${i}${x.comment ? ' · ' + esc(x.comment) : ''}</option>` : '').join('')}</select>`;
+  if (p.type === 'detector') h += `<select data-p="phase"><option value="centre" ${(p.phase || 'centre') === 'centre' ? 'selected' : ''}>centrée sur un pixel</option><option value="coin" ${p.phase === 'coin' ? 'selected' : ''}>centrée sur un coin</option></select>`;
+  if (p.type === 'source') {
+    const inf = M && M.ok && M.objInf, u = inf ? '″' : 'µm', st = p.stype || 'disk';
+    h += `<select data-p="stype">${(inf ? [['disk', 'Disque uniforme (étoile, disque)'], ['gauss', 'Gaussienne'], ['rect', 'Rectangle / fente'], ['point', 'Point']] : [['disk', 'Fibre multimode (Ø, ON)'], ['gauss', 'Fibre monomode (diamètre de mode)'], ['rect', 'Fente / rectangle'], ['point', 'Point source']]).map(([k, l]) => `<option value="${k}" ${st === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+    const ni = (k, l, v, ph) => `<label>${l} <input class="in" data-p="${k}" style="width:54px;height:22px" value="${v ?? ''}" placeholder="${ph}"></label>`;
+    if (st === 'disk') h += ni('sd', 'Ø ' + u, p.sd, inf ? '10' : '50') + (inf ? '' : ni('sna', 'ON', p.sna, '0.22'));
+    if (st === 'gauss') h += ni('sd', (inf ? 'Ø 1/e² ' : 'MFD ') + u, p.sd, inf ? '2' : '5');
+    if (st === 'rect') h += ni('sw', 'l ' + u, p.sw, inf ? '2' : '20') + ni('sh', 'h ' + u, p.sh, inf ? '20' : '200');
+    if (det().on) h += `<label><input type="checkbox" data-p="pix" ${p.pix ? 'checked' : ''}>pixels</label>`;
+  }
+  if (p.type === 'imgsim' && det().on) h += `<label title="Échantillonner l'image sur les pixels du détecteur (bruit inclus si activé)"><input type="checkbox" data-p="det" ${p.det !== false ? 'checked' : ''}>détecteur</label>`;
   if (p.type === 'polar') h += `<select data-p="st">${[['X', 'Linéaire X'], ['Y', 'Linéaire Y'], ['P45', 'Linéaire +45°'], ['M45', 'Linéaire −45°'], ['RCP', 'Circulaire droite'], ['LCP', 'Circulaire gauche'], ['NONE', 'Non polarisée']].map(([k, l]) => `<option value="${k}" ${(p.st || 'X') === k ? 'selected' : ''}>${l}</option>`).join('')}</select><label title="Pertes et déphasages de Fresnel aux dioptres non traités"><input type="checkbox" data-p="fresnel" ${p.fresnel !== false ? 'checked' : ''}>Fresnel</label>`;
   if (p.type === 'imgsim') h += `<select data-p="src">${SIMSRC.map(([k, l]) => `<option value="${k}" ${(p.src || 'mire') === k ? 'selected' : ''}>${l}</option>`).join('')}${App.userImg ? `<option value="user" ${p.src === 'user' ? 'selected' : ''}>${esc(App.userImg.name)}</option>` : ''}</select><button class="bt" data-p="load" style="height:24px">Image…</button>
     <select data-p="res">${[128, 192, 256, 384].map(r => `<option value="${r}" ${(p.res || 192) == r ? 'selected' : ''}>${r} px</option>`).join('')}</select>
     <label title="Demi-champ objet couvert par l'image (vide : champ max du système)">½ champ <input class="in" data-p="fov" style="width:52px;height:22px" value="${p.fov || ''}" placeholder="auto"></label>
     <label><input type="checkbox" data-p="upright" ${p.upright ? 'checked' : ''}>redresser</label><button class="bt" data-p="run" style="height:24px">▶ Simuler</button>`;
   if (p.type === 'glass') h += `<select data-p="cat"><option value="">Tous les catalogues</option>${OE.cats().map(k => `<option ${p.cat === k ? 'selected' : ''}>${k}</option>`).join('')}</select>`;
+  if (p.type === 'psf' && det().on) h += `<label title="PSF intégrée sur les pixels du détecteur"><input type="checkbox" data-p="pix" ${p.pix ? 'checked' : ''}>pixels</label>`;
   if (p.type === 'psf') h += `<label><input type="checkbox" data-p="log" ${p.log ? 'checked' : ''}>log</label><select data-p="zoom">${[1, 2, 4].map(z => `<option value="${z}" ${(p.zoom || 2) == z ? 'selected' : ''}>×${z}</option>`).join('')}</select>`;
   if (p.type === 'wfe') h += `<label><input type="checkbox" data-p="tilt" ${p.tilt !== false ? 'checked' : ''}>sans tilt</label>`;
   if (p.type === 'mtf') h += `<label>f max <input class="in" data-p="fmax" style="width:56px;height:22px" value="${p.fmax || ''}" placeholder="auto"></label>`;
@@ -753,7 +787,9 @@ function setupPanes() {
   el.addEventListener('change', e => {
     const t = e.target, k = t.dataset.p; if (!k) return; const pi = +t.closest('.pane').dataset.i, p = App.panes[pi];
     if (k === 'type') { App.panes[pi] = { type: t.value }; }
-    else if (k === 'log' || k === 'tilt' || k === 'chief' || k === 'fresnel' || k === 'upright') p[k] = t.checked;
+    else if (['log', 'tilt', 'chief', 'fresnel', 'upright', 'pix', 'det', 'grid'].includes(k)) p[k] = t.checked;
+    else if (['stype', 'phase'].includes(k)) p[k] = t.value;
+    else if (['sd', 'sna', 'sw', 'sh'].includes(k)) { const v = parseFloat(String(t.value).replace(',', '.')); p[k] = isFinite(v) && v >= 0 ? v : null; }
     else if (k === 'st' || k === 'src') p[k] = t.value;
     else if (k === 'fov') { const v = parseFloat(String(t.value).replace(',', '.')); p.fov = isFinite(v) && v > 0 ? v : null; }
     else if (k === 'si') p.si = t.value === '' ? null : +t.value;
@@ -803,13 +839,14 @@ const R = {
       const A = axes(c, { x: col * cw, y: row * ch, w: cw, h: ch }, [-half, half], [-half, half], { equal: true, title: `Champ ${fLabel(M, i)}`, ml: 44, mb: 44 });
       clip(c, A.P);
       const ra = s.airy * 1e3; c.strokeStyle = TH.mut; c.setLineDash([3, 3]); c.beginPath(); c.arc(A.X(0), A.Y(0), Math.abs(A.X(ra) - A.X(0)), 0, 2 * Math.PI); c.stroke(); c.setLineDash([]);
+      c.restore(); if (det().on) pixGrid(c, A, det().p); clip(c, A.P);
       const cols = M.wls.map(wlCol);
       for (const q of s.pts) { c.fillStyle = cols[q.wi]; c.fillRect(A.X((q.x - ref[i][0]) * 1e3) - 1, A.Y((q.y - ref[i][1]) * 1e3) - 1, 2, 2); }
       c.restore();
       text(c, `RMS ${fx(s.rms * 1e3, 2)} µm`, A.P.x, A.P.y + A.P.h + 16, { col: TH.fg, size: 10.5, mono: true });
       text(c, `GEO ${fx(s.geo * 1e3, 2)} µm${s.nv ? ' · vign. ' + Math.round(100 * s.nv / s.ntot) + '%' : ''}`, A.P.x, A.P.y + A.P.h + 29, { col: TH.mut, size: 10.5, mono: true });
     });
-    legend(c, 8, h - 10, [...wlLegend(M), { col: TH.mut, dash: [3, 3], l: `Airy r=${fx(sp[0].airy * 1e3, 2)} µm` }]);
+    legend(c, 8, h - 10, [...wlLegend(M), { col: TH.mut, dash: [3, 3], l: `Airy r=${fx(sp[0].airy * 1e3, 2)} µm` }, ...(det().on ? [{ col: 'rgba(120,140,170,.7)', l: `pixel ${det().p} µm` }] : [])]);
   },
   rayfan(p, M, c, w, h) { fans(c, w, h, M, M.sys.fields.map((_, i) => OE.rayFan(M, i, 61)), 1e3, 'µm'); },
   opdfan(p, M, c, w, h) { fans(c, w, h, M, M.sys.fields.map((_, i) => OE.opdFan(M, i, 61)), 1, 'λ'); },
@@ -844,6 +881,13 @@ const R = {
     const ra = 1.22 * M.ctxs[p.wi ?? M.pw].lmm * M.par.wfno * 1e3;
     c.strokeStyle = 'rgba(255,255,255,.45)'; c.setLineDash([3, 3]); c.beginPath(); c.arc(A.X(0), A.Y(0), A.X(ra) - A.X(0), 0, 2 * Math.PI); c.stroke(); c.setLineDash([]);
     cbar(c, w - 58, 30, 12, Math.max(40, h - 70), p.log ? -6 : 0, p.log ? 0 : mx, 'inferno', p.log ? 'log₁₀' : 'Strehl');
+    if (det().on) {
+      const pu = det().p, bp = OE.binPSF(ps.I, ps.P, ps.dx, pu * 1e-3, 'centre', 3);
+      if (p.pix) { const L = lut('inferno'), mxp = Math.max(...bp.G); const nb = Math.ceil(ext / pu) * 2 + 1, b2 = OE.binPSF(ps.I, ps.P, ps.dx, pu * 1e-3, 'centre', nb); const m2 = Math.max(...b2.G);
+        clip(c, A.P); for (let iy = 0; iy < nb; iy++) for (let ix = 0; ix < nb; ix++) { const v = b2.G[iy * nb + ix] / m2, k = Math.round(Math.max(0, Math.min(1, v)) * 255); c.fillStyle = `rgb(${L[k * 3]},${L[k * 3 + 1]},${L[k * 3 + 2]})`; const x0 = A.X((ix - (nb >> 1) - 0.5) * pu), y0 = A.Y((iy - (nb >> 1) + 0.5) * pu); c.fillRect(x0, y0, A.X(pu) - A.X(0) + 0.5, A.Y(0) - A.Y(pu) + 0.5); } c.restore(); void mxp; }
+      pixGrid(c, A, pu, 'rgba(255,255,255,.35)');
+      text(c, `pixel ${pu} µm · énergie pixel central ${fx(bp.G[4] * 100, 1)} % · 3×3 ${fx(bp.G.reduce((a, b) => a + b, 0) * 100, 1)} %`, A.P.x + 4, A.P.y + A.P.h - 14, { col: '#fff', size: 10.5 });
+    }
   },
   mtf(p, M, c, w, h) {
     const res = M.sys.fields.map((_, i) => OE.mtf(M, i, { fmax: p.fmax }));
@@ -851,7 +895,15 @@ const R = {
     const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, [0, f[f.length - 1]], [0, 1.02], { xl: 'Fréquence spatiale (cycles/mm)', yl: 'Module FTM', title: 'FTM polychromatique (diffraction)' });
     pline(c, A, f, res[0].DL, TH.fg, 1.2, [2, 2]);
     res.forEach((r, i) => { pline(c, A, r.f, r.T, fcol(i), 1.7); pline(c, A, r.f, r.S, fcol(i), 1.7, [6, 4]); });
-    legend(c, 8, h - 8, [{ col: TH.fg, dash: [2, 2], l: 'Limite de diffraction' }, { col: TH.mut, l: 'Tangentiel' }, { col: TH.mut, dash: [6, 4], l: 'Sagittal' }, ...M.sys.fields.map((_, i) => ({ col: fcol(i), l: fLabel(M, i) }))]);
+    const dd = det(); let dl = [];
+    if (dd.on) {
+      const pm = dd.p * 1e-3, ny = 1 / (2 * pm), D = f.map(x => OE.detMTF(x, pm, dd.ff / 100));
+      pline(c, A, f, D, '#ea580c', 1.2, [1, 3]);
+      res.forEach((r, i) => pline(c, A, r.f, r.T.map((v, k) => v * D[k]), fcol(i), 1.1, [1, 2]));
+      if (ny < f[f.length - 1]) { c.strokeStyle = '#ea580c'; c.setLineDash([4, 3]); c.beginPath(); c.moveTo(A.X(ny), A.P.y); c.lineTo(A.X(ny), A.P.y + A.P.h); c.stroke(); c.setLineDash([]); text(c, `Nyquist ${fx(ny, 0)}`, A.X(ny) + 3, A.P.y + 3, { col: '#ea580c', size: 10 }); }
+      dl = [{ col: '#ea580c', dash: [1, 3], l: 'FTM pixel' }, { col: TH.mut, dash: [1, 2], l: 'système × pixel (T)' }];
+    }
+    legend(c, 8, h - 8, [...dl, { col: TH.fg, dash: [2, 2], l: 'Limite de diffraction' }, { col: TH.mut, l: 'Tangentiel' }, { col: TH.mut, dash: [6, 4], l: 'Sagittal' }, ...M.sys.fields.map((_, i) => ({ col: fcol(i), l: fLabel(M, i) }))]);
   },
   ee(p, M, c, w, h) {
     const e = OE.encircled(M, p.fi || 0);
@@ -866,9 +918,11 @@ const R = {
     const si = Math.min(p.si ?? App.sel, M.N) || 1;
     const fp = OE.footprint(M, si, { n: 13 });
     let m = fp.sd; for (const f of fp.fields) for (const q of f.pts) m = Math.max(m, Math.abs(q[0]), Math.abs(q[1]));
+    if (det().on && si === M.N) m = Math.max(m, det().nx * det().p * 5e-4, det().ny * det().p * 5e-4);
     m *= 1.08;
     const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, [-m, m], [-m, m], { equal: true, xl: 'X (mm)', title: `Surface ${si}${M.S[si].comment ? ' · ' + M.S[si].comment : ''} — ½Ø ${fx(fp.sd, 3)} mm${M.S[si].sdFixed ? ' (fixe)' : ''}` });
     c.strokeStyle = TH.fg; c.lineWidth = 1.4; c.beginPath(); c.arc(A.X(0), A.Y(0), A.X(fp.sd) - A.X(0), 0, 2 * Math.PI); c.stroke();
+    if (det().on && si === M.N) { const d = det(), W2 = d.nx * d.p * 5e-4, H2 = d.ny * d.p * 5e-4; c.strokeStyle = '#ea580c'; c.lineWidth = 1.8; c.setLineDash([6, 3]); c.strokeRect(A.X(-W2), A.Y(H2), A.X(W2) - A.X(-W2), A.Y(-H2) - A.Y(H2)); c.setLineDash([]); text(c, `Détecteur ${d.nx}×${d.ny} px · ${fx(2 * W2, 2)}×${fx(2 * H2, 2)} mm`, A.X(-W2) + 4, A.Y(H2) + 4, { col: '#ea580c', size: 10.5 }); }
     clip(c, A.P);
     fp.fields.forEach(f => { c.fillStyle = fcol(f.fi); for (const q of f.pts) { c.fillRect(A.X(q[0]) - 1, A.Y(q[1]) - 1, 2, 2); } });
     c.restore();
@@ -937,6 +991,58 @@ const R = {
     legend(c, 8, h - 7, st === 'NONE' ? [{ col: TH.mut, l: 'transmission par point de pupille (lumière non polarisée)' }] : [{ col: TH.fg, l: 'linéaire' }, { col: '#dc2626', l: 'elliptique droite' }, { col: '#2563eb', l: 'elliptique gauche' }, { col: TH.mut, l: n ? `ψ moy. ${fx(sc / n * 180 / Math.PI, 1)}° · ellipticité moy. ${fx(ss / n, 3)}` : '' }]);
   },
   imgsim(p, M, c, w, h) { simPane(p, M, c, w, h); },
+  detector(p, M, c, w, h) {
+    const d = det();
+    if (!d.on) { text(c, 'Activez un détecteur dans le panneau de gauche (carte « Détecteur »).', 14, 14, { col: TH.mut }); return; }
+    const wi = p.wi ?? M.pw, ps = OE.psf(M, p.fi || 0, wi, 64, 256), pm = d.p * 1e-3, nb = 7, b = OE.binPSF(ps.I, ps.P, ps.dx, pm, p.phase || 'centre', nb);
+    const sz = Math.min(w * 0.52, h - 40), cell = sz / nb, x0 = 12, y0 = 28, L = lut('vir'), mx = Math.max(...b.G);
+    text(c, `PSF intégrée sur les pixels (${d.p} µm) — champ ${fLabel(M, p.fi || 0)}, ${fmt(M.wls[wi] * 1000, 5)} nm`, x0, 8, { b: true });
+    for (let iy = 0; iy < nb; iy++) for (let ix = 0; ix < nb; ix++) {
+      const v = b.G[iy * nb + ix], k = Math.round(Math.min(1, v / mx) * 255), X = x0 + ix * cell, Y = y0 + (nb - 1 - iy) * cell;
+      c.fillStyle = `rgb(${L[k * 3]},${L[k * 3 + 1]},${L[k * 3 + 2]})`; c.fillRect(X, Y, cell - 1, cell - 1);
+      if (cell > 26 && v > 0.0005) text(c, (v * 100).toFixed(v >= 0.1 ? 1 : 2), X + cell / 2, Y + cell / 2 - 5, { align: 'center', size: Math.min(11, cell / 3.4), col: k > 150 ? '#111' : '#fff', mono: true });
+    }
+    const G = b.G, c0 = nb >> 1, sum = (r) => { let a = 0; for (let iy = c0 - r; iy <= c0 + r; iy++) for (let ix = c0 - r; ix <= c0 + r; ix++) a += G[iy * nb + ix]; return a; };
+    const q2 = Math.max(...[[0, 0], [0, -1], [-1, 0], [-1, -1]].map(([a, bb]) => G[(c0 + a) * nb + c0 + bb] + G[(c0 + a) * nb + c0 + bb + 1] + G[(c0 + a + 1) * nb + c0 + bb] + G[(c0 + a + 1) * nb + c0 + bb + 1]));
+    const lF = M.ctxs[wi].lmm * M.par.wfno, sp = OE.spot(M, p.fi || 0, 21);
+    const rows = [['Pixel central', fx(G[c0 * nb + c0] * 100, 2) + ' %'], ['Meilleur carré 2×2', fx(q2 * 100, 2) + ' %'], ['Carré 3×3', fx(sum(1) * 100, 2) + ' %'], ['Carré 5×5', fx(sum(2) * 100, 2) + ' %'],
+      ['Strehl', fx(ps.strehl, 3)], ['Q = λF / p', fx(lF / pm, 2) + (lF / pm >= 2 ? ' ✓ Nyquist' : ' < 2')], ['Ø Airy', fx(2.44 * lF / pm, 2) + ' px'], ['Spot RMS', fx(sp.rms / pm, 2) + ' px'],
+      ['Nyquist détecteur', fx(1 / (2 * pm), 1) + ' cy/mm'], ['Coupure optique', fx(1 / lF, 1) + ' cy/mm']];
+    const tx = x0 + sz + 18; kvList(c, tx, y0, w - tx - 10, rows, h - y0 - 8);
+    text(c, 'valeurs en % de l\'énergie', x0, y0 + sz + 6, { col: TH.mut, size: 10 });
+  },
+  source(p, M, c, w, h) {
+    const inf = M.objInf, st = p.stype || 'disk';
+    const o = { type: st, d: p.sd ?? (inf ? (st === 'gauss' ? 2 : 10) : (st === 'gauss' ? 5 : 50)), na: p.sna ?? 0.22, w: p.sw ?? (inf ? 2 : 20), h: p.sh ?? (inf ? 20 : 200) };
+    const r = OE.extSource(M, p.fi || 0, o); if (!r) { text(c, 'Rayon principal vignetté pour ce champ', 12, 12, { col: '#dc2626' }); return; }
+    const Q = r.Q, pu = r.pq * 1e3, half = Q / 2 * pu, cxu = r.cx * 1e3, cyu = r.cy * 1e3, ext = Math.min(half, Math.max(r.d95 * 1e3 * 0.75, r.fwhmX * 1e3 * 1.5, 3 * pu));
+    const wl = Math.min(w * 0.5, h - 10);
+    const A = axes(c, { x: 0, y: 0, w: wl, h: h - 4 }, [cxu - ext, cxu + ext], [cyu - ext, cyu + ext], { equal: true, xl: 'µm (plan image)', title: `Image de la source — champ ${fLabel(M, p.fi || 0)}`, ml: 44, zero: false });
+    A.xr0 = -half - pu / 2; A.xr1 = half - pu / 2; A.yr0 = -half - pu / 2; A.yr1 = half - pu / 2;
+    clip(c, A.P); heat(c, A, r.img, Q, Q, 0, r.peak, 'inferno', true);
+    // contour géométrique de la source
+    c.strokeStyle = 'rgba(255,255,255,.7)'; c.setLineDash([4, 3]); c.lineWidth = 1.2; c.beginPath();
+    const J = r.J, pt = (u, v) => [A.X(J[0] * u * 1e3 + J[1] * v * 1e3), A.Y(J[2] * u * 1e3 + J[3] * v * 1e3)];
+    if (st === 'rect') { [[1, 1], [-1, 1], [-1, -1], [1, -1], [1, 1]].forEach(([a, b], k) => { const q = pt(a * o.w / 2, b * o.h / 2); k ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]); }); }
+    else if (st !== 'point') { const rr = o.d / 2; for (let k = 0; k <= 64; k++) { const q = pt(rr * Math.cos(2 * Math.PI * k / 64), rr * Math.sin(2 * Math.PI * k / 64)); k ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]); } }
+    c.stroke(); c.setLineDash([]); c.restore();
+    const d = det(); let inPix = null;
+    if (d.on) {
+      const b = OE.binImage(r.img, Q, r.pq, d.p * 1e-3, r.cx, r.cy, 1, 'centre'); inPix = b.G[0];
+      if (p.pix) { const nb = Math.ceil(2 * ext / d.p) + 3, bb = OE.binImage(r.img, Q, r.pq, d.p * 1e-3, r.cx, r.cy, nb, 'centre'), m2 = Math.max(...bb.G), L = lut('inferno'); clip(c, A.P);
+        for (let iy = 0; iy < nb; iy++) for (let ix = 0; ix < nb; ix++) { const k = Math.round(bb.G[iy * nb + ix] / m2 * 255); c.fillStyle = `rgb(${L[k * 3]},${L[k * 3 + 1]},${L[k * 3 + 2]})`; const x0 = A.X(cxu + (ix - (nb >> 1) - 0.5) * d.p), y0 = A.Y(cyu + (iy - (nb >> 1) + 0.5) * d.p); c.fillRect(x0, y0, A.X(d.p) - A.X(0) + 0.5, A.Y(0) - A.Y(d.p) + 0.5); } c.restore(); }
+      const A2 = { ...A, xr: [cxu - ext - cxu, cxu + ext - cxu], yr: A.yr, X: v => A.X(v + cxu), Y: v => A.Y(v + cyu) }; A2.xr = [-ext, ext]; A2.yr = [-ext, ext]; pixGrid(c, A2, d.p, 'rgba(255,255,255,.3)');
+    }
+    // profils + métriques
+    const B = axes(c, { x: wl + 6, y: 0, w: w - wl - 6, h: h * 0.36 }, [-ext, ext], [0, 1.05], { xl: 'µm', title: 'Profils X (plein) / Y (tirets)', ml: 34 });
+    const xs = Array.from({ length: Q }, (_, k) => (k - Q / 2) * pu), mxx = Math.max(...r.px), mxy = Math.max(...r.py);
+    pline(c, B, xs.map(v => v - cxu), Array.from(r.px, v => v / mxx), TH.acc, 1.8); pline(c, B, xs.map(v => v - cyu), Array.from(r.py, v => v / mxy), '#ea580c', 1.6, [5, 3]);
+    const mag = Math.sqrt(Math.abs(r.J[0] * r.J[3] - r.J[1] * r.J[2])) * 1e3;
+    const lines = [['Grandissement local', inf ? `${fx(mag, 4)} µm/″` : `× ${fx(mag, 4)}`], ['Taille géométrique', st === 'point' ? '—' : st === 'rect' ? `${fx(o.w * mag, 2)} × ${fx(o.h * mag, 2)} µm` : `Ø ${fx(o.d * mag, 2)} µm`],
+      ['FWHM X / Y', `${fx(r.fwhmX * 1e3, 2)} / ${fx(r.fwhmY * 1e3, 2)} µm`], ['Ø 50 / 80 / 95 % énergie', `${fx(r.d50 * 1e3, 2)} / ${fx(r.d80 * 1e3, 2)} / ${fx(r.d95 * 1e3, 2)} µm`],
+      ['Couplage dans le système', inf ? '—' : `${fx(r.coupling * 100, 1)} %${st === 'disk' && o.na > r.NAs ? ` (ON ${o.na} > ${fx(r.NAs, 3)})` : ''}`], ...(inPix != null ? [['Énergie dans 1 pixel', `${fx(inPix * 100, 1)} % (${d.p} µm)`], ['Taille image', `${fx(r.d80 * 1e3 / d.p, 2)} px (Ø80)`]] : [])];
+    kvList(c, wl + 12, h * 0.39, w - wl - 20, lines, h * 0.61 - 6);
+  },
   presc(p, M) {
     const S = M.S, par = M.par;
     const sp = M.sys.fields.map((_, i) => OE.spot(M, i, 21)), wf = M.sys.fields.map((_, i) => OE.wavefront(M, i, M.pw, 48));
@@ -950,35 +1056,62 @@ const R = {
   },
 };
 /* ---------------- Simulation d'image ---------------- */
-const SIMSRC = [['mire', 'Mire de résolution'], ['lettres', 'Texte'], ['grille', 'Grille (distorsion)'], ['etoiles', 'Champ d\'étoiles'], ['siemens', 'Étoile de Siemens'], ['damier', 'Damier'], ['couleurs', 'Mire couleur']];
+const SIMSRC = [['mire', 'Mire USAF 1951'], ['lettres', 'Texte'], ['grille', 'Grille (distorsion)'], ['etoiles', 'Champ d\'étoiles'], ['siemens', 'Étoile de Siemens'], ['damier', 'Damier'], ['couleurs', 'Mire couleur']];
 const SIM = { cache: new Map(), queue: new Map(), timer: null, force: false, forceKey: null };
 function makeSource(kind) {
   if (kind === 'user' && App.userImg) return App.userImg;
-  const N = 256, cv = document.createElement('canvas'); cv.width = cv.height = N; const g = cv.getContext('2d');
+  SIM.src = SIM.src || {}; if (SIM.src[kind]) return SIM.src[kind];
+  if (kind === 'mire') { const cvm = document.createElement('canvas'); cvm.width = cvm.height = 1024; drawUSAF(cvm.getContext('2d'), 1024); return (SIM.src[kind] = imgToSrc(cvm, kind)); }
+  const N = 512, cv = document.createElement('canvas'); cv.width = cv.height = N; const g = cv.getContext('2d');
   const W = '#fff', B = '#000';
-  if (kind === 'mire') {
-    g.fillStyle = W; g.fillRect(0, 0, N, N); g.fillStyle = B;
-    let x = 10; for (const bw of [10, 7, 5, 3.5, 2.5, 1.8, 1.3, 1]) { for (let k = 0; k < 3; k++) g.fillRect(x + k * 2 * bw, 12, bw, 5 * bw + 8); x += 6 * bw + 6; }
-    let y = 120; for (const bw of [10, 7, 5, 3.5, 2.5, 1.8, 1.3]) { for (let k = 0; k < 3; k++) g.fillRect(14, y + k * 2 * bw, 5 * bw + 8, bw); y += 0; break; }
-    let yy = 100; for (const bw of [8, 5.5, 4, 2.8, 2, 1.4]) { for (let k = 0; k < 3; k++) g.fillRect(16, yy + k * 2 * bw, 46, bw); yy += 6 * bw + 5; }
-    g.font = 'bold 22px sans-serif'; g.fillText('FOCALE', 96, 132); g.font = '13px sans-serif'; g.fillText('résolution · contraste', 92, 156);
-    g.lineWidth = 2; g.strokeRect(80, 176, 160, 66); g.beginPath(); for (let k = 0; k < 9; k++) { g.moveTo(90 + k * 17, 184); g.lineTo(90 + k * 17, 234); } g.stroke();
-  } else if (kind === 'lettres') {
-    g.fillStyle = W; g.fillRect(0, 0, N, N); g.fillStyle = B; let y = 30;
-    for (const sz of [30, 22, 16, 12, 9, 7, 5.5]) { g.font = `${sz}px serif`; g.fillText('Focale optique', 10, y); y += sz * 1.35 + 4; }
+  if (false) { }
+  else if (kind === 'lettres') {
+    g.fillStyle = W; g.fillRect(0, 0, N, N); g.fillStyle = B; let y = 56;
+    for (const sz of [56, 40, 30, 22, 16, 12, 9, 7]) { g.font = `${sz}px Georgia, serif`; g.fillText('Focale optique', 18, y); y += sz * 1.3 + 6; }
   } else if (kind === 'grille') {
-    g.fillStyle = B; g.fillRect(0, 0, N, N); g.strokeStyle = W; g.lineWidth = 2; g.beginPath(); for (let k = 0; k <= 16; k++) { const q = k * 16; g.moveTo(q, 0); g.lineTo(q, N); g.moveTo(0, q); g.lineTo(N, q); } g.stroke();
+    g.fillStyle = B; g.fillRect(0, 0, N, N); g.strokeStyle = W; g.lineWidth = 3; g.beginPath(); for (let k = 0; k <= 16; k++) { const q = Math.min(N - 1.5, k * 32 + 1.5); g.moveTo(q, 0); g.lineTo(q, N); g.moveTo(0, q); g.lineTo(N, q); } g.stroke();
   } else if (kind === 'etoiles') {
-    g.fillStyle = B; g.fillRect(0, 0, N, N); g.fillStyle = W; for (let i = 0; i < 9; i++) for (let j = 0; j < 9; j++) g.fillRect(8 + j * 30, 8 + i * 30, 2, 2);
+    g.fillStyle = B; g.fillRect(0, 0, N, N); g.fillStyle = W; for (let i = 0; i < 9; i++) for (let j = 0; j < 9; j++) g.fillRect(16 + j * 60, 16 + i * 60, 3, 3);
   } else if (kind === 'siemens') {
-    g.fillStyle = W; g.fillRect(0, 0, N, N); g.fillStyle = B; const n = 36; for (let k = 0; k < n; k += 2) { g.beginPath(); g.moveTo(128, 128); g.arc(128, 128, 125, 2 * Math.PI * k / n, 2 * Math.PI * (k + 1) / n); g.fill(); }
+    g.fillStyle = W; g.fillRect(0, 0, N, N); g.fillStyle = B; const n = 48; for (let k = 0; k < n; k += 2) { g.beginPath(); g.moveTo(256, 256); g.arc(256, 256, 250, 2 * Math.PI * k / n, 2 * Math.PI * (k + 1) / n); g.fill(); }
   } else if (kind === 'damier') {
-    for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) { g.fillStyle = (i + j) & 1 ? B : W; g.fillRect(j * 32, i * 32, 32, 32); }
+    for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) { g.fillStyle = (i + j) & 1 ? B : W; g.fillRect(j * 64, i * 64, 64, 64); }
   } else if (kind === 'couleurs') {
-    g.fillStyle = B; g.fillRect(0, 0, N, N); const cs = ['#ff0000', '#00ff00', '#0000ff', '#ffffff']; for (let k = 0; k < 4; k++) { g.fillStyle = cs[k]; for (let l = 0; l < 6; l++) g.fillRect(14 + l * 40, 14 + k * 60, 4, 50); g.fillRect(14 + 4 * 60, 14 + k * 60, 1, 1); }
-    g.fillStyle = '#fff'; g.font = 'bold 18px sans-serif'; g.fillText('R V B', 20, 250);
+    g.fillStyle = B; g.fillRect(0, 0, N, N); const cs = ['#ff0000', '#00ff00', '#0000ff', '#ffffff']; for (let k = 0; k < 4; k++) { g.fillStyle = cs[k]; for (let l = 0; l < 7; l++) g.fillRect(28 + l * 68, 28 + k * 118, 6, 96); }
   }
-  return imgToSrc(cv, kind);
+  return (SIM.src[kind] = imgToSrc(cv, kind));
+}
+/** mire de résolution type USAF 1951, disposition auto-similaire : à chaque niveau, groupe pair à gauche, groupe impair à droite,
+ *  niveau suivant à mi-échelle au centre. Élément : 3 barres horizontales + 3 verticales de largeur l et de longueur 5 l, pas 2^(1/6). */
+function drawUSAF(g, N) {
+  g.fillStyle = '#fff'; g.fillRect(0, 0, N, N); g.fillStyle = '#000'; g.strokeStyle = '#000';
+  const k0 = N / 1024;
+  const el = (x, y, w) => { for (let k = 0; k < 3; k++) { g.fillRect(x, y + 2 * k * w, 5 * w, w); g.fillRect(x + 6 * w + 2 * k * w, y, w, 5 * w); } };
+  const column = (grp, x0, y0, colW, F) => {
+    const w0 = 20 * k0 * Math.pow(2, -grp); let y = y0 + 0.07 * F;
+    const fs = Math.max(7, Math.round(F * 0.035));
+    g.font = `bold ${Math.round(fs * 1.25)}px sans-serif`; g.textAlign = 'center'; g.fillText(String(grp), x0 + colW / 2, y0 + 0.055 * F); g.textAlign = 'left';
+    for (let e = 0; e < 6; e++) {
+      const w = w0 * Math.pow(2, -e / 6), ew = 11 * w, x = x0 + (colW - ew) / 2 - fs * 0.4;
+      el(x, y, w); if (fs >= 7) { g.font = `${fs}px sans-serif`; g.fillText(String(e + 1), x + ew + 3, y + 5 * w * 0.85); }
+      y += 6 * w + 0.012 * F;
+    }
+  };
+  let F = N, ox = 0, oy = 0;
+  for (let lev = 0; lev < 3; lev++) {
+    column(2 * lev, ox + F * 0.01, oy, F * 0.24, F);
+    column(2 * lev + 1, ox + F * 0.75, oy, F * 0.24, F);
+    if (lev === 0) {
+      g.font = `bold ${Math.round(30 * k0)}px sans-serif`; g.textAlign = 'center'; g.fillText('USAF 1951', N / 2, 0.09 * N); g.font = `${Math.round(17 * k0)}px sans-serif`; g.fillText('mire de résolution · Focale', N / 2, 0.125 * N); g.fillText('groupes 0 → 5 · pas 2^(1/6) entre éléments', N / 2, 0.155 * N); g.textAlign = 'left';
+      g.save(); g.translate(0.37 * N, 0.865 * N); g.rotate(5 * Math.PI / 180); g.fillRect(-0.085 * N, -0.085 * N, 0.17 * N, 0.17 * N); g.restore();
+      const cx = 0.63 * N, cy = 0.865 * N, R = 0.105 * N, n = 40; for (let k = 0; k < n; k += 2) { g.beginPath(); g.moveTo(cx, cy); g.arc(cx, cy, R, 2 * Math.PI * k / n, 2 * Math.PI * (k + 1) / n); g.fill(); }
+    }
+    g.lineWidth = Math.max(1, 2 * k0 * Math.pow(0.5, lev)); g.strokeRect(ox + F * 0.25, oy + F * 0.25, F * 0.5, F * 0.5);
+    ox += F * 0.25; oy += F * 0.25; F /= 2;
+  }
+  // centre : étoile de Siemens miniature
+  const cx = ox + F / 2, cy = oy + F / 2, R = F * 0.42, n = 24; for (let k = 0; k < n; k += 2) { g.beginPath(); g.moveTo(cx, cy); g.arc(cx, cy, R, 2 * Math.PI * k / n, 2 * Math.PI * (k + 1) / n); g.fill(); }
+  g.lineWidth = 4 * k0; g.strokeRect(2, 2, N - 4, N - 4);
 }
 function imgToSrc(cv, name) {
   const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data, n = cv.width * cv.height, ch = [0, 1, 2].map(() => new Float32Array(n));
@@ -992,7 +1125,8 @@ function loadUserImage(file) {
 }
 function simPane(p, M, c, w, h) {
   const src = makeSource(p.src || 'mire'), size = p.res || 192, fm = p.fov || (M.par.fmax > 1e-6 ? M.par.fmax : 1);
-  const key = toJSON(App.sys) + '|' + [p.src, size, fm].join('|') + (p.src === 'user' && App.userImg ? App.userImg.name : '');
+  const dd = det(), onDet = dd.on && p.det !== false, pixD = onDet ? dd.p * 1e-3 : 0;
+  const key = toJSON(App.sys) + '|' + [p.src, size, fm, pixD].join('|') + (p.src === 'user' && App.userImg ? App.userImg.name : '');
   const half = w / 2, pad = 26, box = Math.min(half - 20, h - pad - 24);
   const drawSrc = () => { c.imageSmoothingEnabled = true; c.drawImage(src.cv, 10 + (half - 20 - box) / 2, pad, box * src.w / Math.max(src.w, src.h), box * src.h / Math.max(src.w, src.h)); text(c, `Objet — ½ champ ${fmt(fm, 4)}${M.objInf ? '°' : ' mm'}`, 10, 6, { b: true }); };
   drawSrc();
@@ -1000,25 +1134,54 @@ function simPane(p, M, c, w, h) {
   const drawRes = (r, stale) => {
     if (!r) { text(c, 'Image impossible (champ entièrement vignetté ?)', half + 10, pad, { col: '#dc2626' }); return; }
     const S = r.S, off = document.createElement('canvas'); off.width = off.height = S; const oc = off.getContext('2d'), im = oc.createImageData(S, S);
-    for (let q = 0; q < S * S; q++) { const qq = p.upright ? S * S - 1 - q : q; for (let k = 0; k < 3; k++) im.data[qq * 4 + k] = Math.max(0, Math.min(255, Math.round(r.ch[k][q] * 255))); im.data[qq * 4 + 3] = 255; }
+    const W2 = onDet ? dd.nx * dd.p * 5e-4 : Infinity, H2 = onDet ? dd.ny * dd.p * 5e-4 : Infinity;
+    if (onDet && dd.noise && !r.noisy) { // bruit de photons + lecture + quantification
+      const g = () => { let u = 0; for (let k = 0; k < 6; k++) u += Math.random(); return (u - 3) * Math.SQRT2; }, Nmax = dd.fw * dd.lvl / 100, lv = Math.pow(2, dd.bits) - 1;
+      r.noisy = r.ch.map(a => Float32Array.from(a, v => { const N = Math.max(0, v) * Nmax; let e = N + Math.sqrt(N) * g() + dd.rn * g(); e = Math.max(0, Math.min(dd.fw, e)); return Math.round(e / dd.fw * lv) / lv * dd.fw / Nmax; }));
+    }
+    const chs = onDet && dd.noise && r.noisy ? r.noisy : r.ch;
+    for (let q = 0; q < S * S; q++) {
+      const row = Math.floor(q / S), col = q % S, x = -r.H + (col + 0.5) * r.pix, y = r.H - (row + 0.5) * r.pix, outS = Math.abs(x) > W2 || Math.abs(y) > H2;
+      const qq = p.upright ? S * S - 1 - q : q; for (let k = 0; k < 3; k++) im.data[qq * 4 + k] = outS ? 18 : Math.max(0, Math.min(255, Math.round(chs[k][q] * 255))); im.data[qq * 4 + 3] = 255;
+    }
     oc.putImageData(im, 0, 0); c.imageSmoothingEnabled = S < box; c.globalAlpha = stale ? 0.45 : 1; c.drawImage(off, half + 10, pad, box, box); c.globalAlpha = 1;
-    text(c, `Image simulée${p.upright ? ' (redressée)' : ''} — ${fx(2 * r.H, 3)} mm de côté`, half + 10, 6, { b: true });
+    text(c, `${onDet ? 'Image sur le détecteur' : 'Image simulée'}${p.upright ? ' (redressée)' : ''} — ${fx(2 * r.H, 3)} mm${onDet ? (r.under ? ` · affichage ${S} px (1 point ≈ ${fx(r.pix / pixD, 1)} pixels)` : ` · ${S}×${S} pixels de ${dd.p} µm`) : ''}`, half + 10, 6, { b: true });
+    if (onDet) { const sc = box / (2 * r.H), W2c = Math.min(W2, r.H), H2c = Math.min(H2, r.H); c.strokeStyle = '#ea580c'; c.setLineDash([5, 3]); c.lineWidth = 1.4; c.strokeRect(half + 10 + (r.H - W2c) * sc, pad + (r.H - H2c) * sc, 2 * W2c * sc, 2 * H2c * sc); c.setLineDash([]); }
     const sl = niceStep(2 * r.H, 4), L = sl / (2 * r.H) * box; c.strokeStyle = TH.fg; c.lineWidth = 2; c.beginPath(); c.moveTo(half + 10, pad + box + 10); c.lineTo(half + 10 + L, pad + box + 10); c.stroke();
     text(c, `${tl(sl, sl)} mm · PSF ${r.K}×${r.K} px · ${r.chW.length ? 'RVB = ' + [...new Set(r.chW)].length + ' λ' : ''}`, half + 16 + L, pad + box + 4, { col: TH.mut, size: 10.5 });
   };
   if (SIM.cache.has(key) && !(SIM.force && SIM.forceKey === key)) { drawRes(res, false); return; }
   if (p._last) drawRes(p._last, true);
   text(c, 'Calcul…', half + 14, pad + box / 2, { col: TH.mut });
-  SIM.queue.set(key, { p, src, size, fm });
+  SIM.queue.set(key, { p, src, size, fm, pix: pixD });
   clearTimeout(SIM.timer); SIM.timer = setTimeout(simRun, SIM.force ? 10 : 450);
 }
 function simRun() {
   const it = SIM.queue.entries().next(); if (it.done) return;
   const [key, job] = it.value; SIM.queue.delete(key); SIM.force = false; SIM.forceKey = null;
-  let r = null; try { r = OE.imageSim(App.M, job.src, { size: job.size, fm: job.fm }); } catch (e) { console.error(e); }
+  let r = null; try { r = OE.imageSim(App.M, job.src, { size: job.size, fm: job.fm, pix: job.pix, maxS: Math.max(256, job.size * 2) }); } catch (e) { console.error(e); }
   SIM.cache.set(key, r); job.p._last = r; while (SIM.cache.size > 8) SIM.cache.delete(SIM.cache.keys().next().value);
   $$('#panes .pane').forEach(d => { if (App.panes[+d.dataset.i] === job.p) renderPane(+d.dataset.i); });
   if (SIM.queue.size) SIM.timer = setTimeout(simRun, 20);
+}
+/** liste libellé / valeur : sur une ligne si la largeur le permet, sinon empilée */
+function kvList(c, x, y, w, rows, maxH) {
+  c.save(); c.font = '11px Inter, sans-serif'; const lw = Math.max(...rows.map(r => c.measureText(r[0]).width)); c.font = '11px JetBrains Mono, monospace'; const vw = Math.max(...rows.map(r => c.measureText(r[1]).width)); c.restore();
+  const one = lw + vw + 16 <= w, lh = one ? 18 : 30, step = maxH ? Math.min(lh, maxH / rows.length) : lh;
+  rows.forEach(([a, v], k) => {
+    const yy = y + k * step;
+    if (one) { text(c, a, x, yy, { col: TH.mut, size: 11 }); text(c, v, x + w, yy, { mono: true, size: 11, align: 'right' }); }
+    else { text(c, a, x, yy, { col: TH.mut, size: 10.5 }); text(c, v, x, yy + 13, { mono: true, size: 11 }); }
+  });
+}
+/** grille de pixels du détecteur sur un repère A (unités : µm), centrée sur 0 */
+function pixGrid(c, A, pUm, col) {
+  const xr = [Math.min(A.xr[0], A.xr[1]), Math.max(A.xr[0], A.xr[1])], yr = [Math.min(A.yr[0], A.yr[1]), Math.max(A.yr[0], A.yr[1])];
+  if (Math.abs(A.X(pUm) - A.X(0)) < 4) return false;
+  clip(c, A.P); c.strokeStyle = col || 'rgba(120,140,170,.45)'; c.lineWidth = 0.8; c.beginPath();
+  for (let k = Math.ceil(xr[0] / pUm - 0.5); k * pUm - pUm / 2 <= xr[1]; k++) { const x = A.X(k * pUm - pUm / 2); c.moveTo(x, A.P.y); c.lineTo(x, A.P.y + A.P.h); }
+  for (let k = Math.ceil(yr[0] / pUm - 0.5); k * pUm - pUm / 2 <= yr[1]; k++) { const y = A.Y(k * pUm - pUm / 2); c.moveTo(A.P.x, y); c.lineTo(A.P.x + A.P.w, y); }
+  c.stroke(); c.restore(); return true;
 }
 function fans(c, w, h, M, data, k, unit) {
   const nf = data.length, rowH = (h - 18) / nf;
