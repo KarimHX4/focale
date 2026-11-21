@@ -595,7 +595,7 @@ function paneHeader(pi) {
   if (p.type === 'wfe') h += `<label><input type="checkbox" data-p="tilt" ${p.tilt !== false ? 'checked' : ''}>sans tilt</label>`;
   if (p.type === 'mtf') h += `<label>f max <input class="in" data-p="fmax" style="width:56px;height:22px" value="${p.fmax || ''}" placeholder="auto"></label>`;
   if (p.type === 'spot') h += `<label><input type="checkbox" data-p="chief" ${p.chief ? 'checked' : ''}>réf. principal</label>`;
-  h += `<span class="grow"></span><button class="x" data-p="max" title="Agrandir / réduire">⤢</button>`;
+  h += `<span class="grow"></span>${t.html ? '' : '<button class="x" data-p="png" title="Enregistrer l\'image (PNG)">⤓</button>'}<button class="x" data-p="max" title="Agrandir / réduire">⤢</button>`;
   return h;
 }
 function setupPanes() {
@@ -609,7 +609,10 @@ function setupPanes() {
     else p[k] = +t.value;
     save(); renderPane(pi);
   });
-  el.addEventListener('click', e => { const b = e.target.closest('[data-p="max"]'); if (b) { const pane = b.closest('.pane'); pane.classList.toggle('max'); renderPane(+pane.dataset.i); } });
+  el.addEventListener('click', e => {
+    const g = e.target.closest('[data-p="png"]');
+    if (g) { const pane = g.closest('.pane'), cv = pane.querySelector('canvas'), p = App.panes[+pane.dataset.i]; const o = document.createElement('canvas'); o.width = cv.width; o.height = cv.height; const oc = o.getContext('2d'); oc.fillStyle = TH.panel || '#fff'; oc.fillRect(0, 0, o.width, o.height); oc.drawImage(cv, 0, 0); o.toBlob(b => download(`${fileBase()}_${p.type}.png`, b)); return; }
+    const b = e.target.closest('[data-p="max"]'); if (b) { const pane = b.closest('.pane'); pane.classList.toggle('max'); renderPane(+pane.dataset.i); } });
   el.addEventListener('dblclick', e => { if (e.target.closest('.ph') && !e.target.closest('select,input')) { const pane = e.target.closest('.pane'); pane.classList.toggle('max'); renderPane(+pane.dataset.i); } });
   new ResizeObserver(() => { clearTimeout(App._rz); App._rz = setTimeout(() => { drawLayout(); renderPanes(); }, 80); }).observe(document.body);
 }
@@ -828,7 +831,7 @@ function setupDlg() {
     if (a === 'fmtjson') { $('#exTxt').value = toJSON(App.sys); }
     if (a === 'fmtseq') { $('#exTxt').value = toSeq(App.sys); }
     if (a === 'pick') $('#fileIn').click();
-    if (a === 'load') { importText($('#imTxt').value); }
+    if (a === 'load') { importFile('', $('#imTxt').value); }
   });
 }
 function runOpt() {
@@ -971,7 +974,63 @@ function openHelp() {
   <p><b>V</b> rend un paramètre variable pour l'optimisation ; <b>M</b> calcule l'épaisseur pour la mise au point paraxiale ; <b>🔒</b> fixe le demi-diamètre (les rayons au-delà sont vignettés). Double-cliquez sur la colonne Type pour placer le diaphragme.</p>
   <p><b>Analyses</b> : choisissez 1, 2, 4 ou 6 fenêtres en haut à droite, le type d'analyse dans chaque fenêtre, double-cliquez sur l'en-tête pour agrandir. Tout se recalcule en direct à chaque modification.</p>
   <p><b>Méthodes</b> : tracé de rayons réels (Snell vectoriel, coniques et asphères paires par Newton), pupilles paraxiales avec visée réelle optionnelle, OPD par rapport à une sphère de référence centrée sur le rayon principal et passant par la pupille de sortie, PSF par FFT de la pupille 64×64 dans une grille 256×256, FTM par FFT de la PSF, Seidel avec contributions des coniques/asphères, optimisation Levenberg-Marquardt à Jacobien numérique.</p>
-  <p><b>Raccourcis</b> : <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd> annuler/rétablir, <kbd>Inser</kbd> insérer après, <kbd>Ctrl</kbd>+<kbd>Suppr</kbd> supprimer la surface, <kbd>Ctrl</kbd>+<kbd>O</kbd> optimiser. Le système est sauvegardé automatiquement dans ce navigateur.</p></div>`);
+  <p><b>Raccourcis</b> : <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd> annuler/rétablir, <kbd>Inser</kbd> insérer après, <kbd>Ctrl</kbd>+<kbd>Suppr</kbd> supprimer la surface, <kbd>Ctrl</kbd>+<kbd>O</kbd> ouvrir, <kbd>Ctrl</kbd>+<kbd>S</kbd> enregistrer, <kbd>Ctrl</kbd>+<kbd>Maj</kbd>+<kbd>O</kbd> optimiser. Glissez-déposez un fichier .json, .seq ou .agf sur la fenêtre pour l'ouvrir. Le système est sauvegardé automatiquement dans ce navigateur.</p></div>`);
+}
+
+/* ---------------- Fichiers (ouvrir / enregistrer / glisser-déposer) ---------------- */
+const FS = { handle: null };
+const TOP = (() => { try { return window.top === window; } catch (e) { return false; } })();
+const fileBase = () => (App.sys.title || 'systeme').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w\-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'systeme';
+function sysJSON() { const s = structuredClone(App.sys); if (typeof usedUserGlasses === 'function') { const u = usedUserGlasses(s); if (Object.keys(u).length) s.userGlass = u; } return toJSON(s); }
+function download(name, text, type = 'application/json') {
+  const b = text instanceof Blob ? text : new Blob([text], { type }), a = document.createElement('a');
+  a.href = URL.createObjectURL(b); a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+}
+async function openFile() {
+  if (window.showOpenFilePicker && TOP) {
+    try {
+      const [h] = await showOpenFilePicker({ types: [{ description: 'Systèmes optiques et catalogues', accept: { 'application/json': ['.json'], 'text/plain': ['.seq', '.agf', '.txt'] } }] });
+      const f = await h.getFile(); importFile(f.name, await f.text()); FS.handle = /\.json$/i.test(f.name) ? h : null;
+    } catch (e) { if (e.name !== 'AbortError') toast('Ouverture impossible : ' + e.message); }
+  } else $('#fileIn').click();
+}
+async function saveFile(as) {
+  const txt = sysJSON();
+  if (window.showSaveFilePicker && TOP) {
+    try {
+      if (!FS.handle || as) FS.handle = await showSaveFilePicker({ suggestedName: fileBase() + '.json', types: [{ description: 'Système Focale', accept: { 'application/json': ['.json'] } }] });
+      const w = await FS.handle.createWritable(); await w.write(txt); await w.close(); toast('Enregistré : ' + FS.handle.name); return;
+    } catch (e) { if (e.name === 'AbortError') return; }
+  }
+  download(fileBase() + '.json', txt); toast('Fichier ' + fileBase() + '.json téléchargé' + (TOP ? '' : ' (si rien ne se passe, utilisez Fichier → Afficher / copier)'), 4000);
+}
+function importFile(name, t) {
+  if (/\.agf$/i.test(name) || /^\s*NM\s/m.test(t) && /^\s*CD\s/m.test(t)) { if (typeof importAGF === 'function') importAGF(name, t); else toast('Catalogues AGF non pris en charge'); return; }
+  importText(t);
+}
+let deferredInstall = null;
+function setupPlatform() {
+  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; $('#btnInstall').style.display = ''; });
+  window.addEventListener('appinstalled', () => { $('#btnInstall').style.display = 'none'; toast('Focale est installé'); });
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && TOP) {
+    navigator.serviceWorker.register('sw.js').then(reg => {
+      reg.addEventListener('updatefound', () => { const nw = reg.installing; if (nw && navigator.serviceWorker.controller) nw.addEventListener('statechange', () => { if (nw.state === 'activated') toast('Focale a été mis à jour', 4000); }); });
+      setInterval(() => reg.update().catch(() => { }), 3600e3);
+    }).catch(() => { });
+  }
+  if ('launchQueue' in window) launchQueue.setConsumer(async params => { for (const h of params.files || []) { const f = await h.getFile(); importFile(f.name, await f.text()); if (/\.json$/i.test(f.name)) FS.handle = h; } });
+  let dn = 0; const drop = $('#drop');
+  window.addEventListener('dragenter', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { dn++; drop.classList.add('on'); } });
+  window.addEventListener('dragleave', () => { if (--dn <= 0) { dn = 0; drop.classList.remove('on'); } });
+  window.addEventListener('dragover', e => e.preventDefault());
+  window.addEventListener('drop', e => { e.preventDefault(); dn = 0; drop.classList.remove('on'); const f = e.dataTransfer.files[0]; if (f) f.text().then(t => importFile(f.name, t)); });
+}
+function openAbout() {
+  dlg(`<h2>À propos de Focale <button class="x" data-d="close">✕</button></h2><div class="db" style="font-size:13px;line-height:1.6">
+  <p><b>Focale</b> — logiciel de conception optique séquentielle. Version <code>${FOCALE_VERSION}</code>.</p>
+  <p>Code source : <a href="https://github.com/KarimHX4/focale" target="_blank" rel="noopener">github.com/KarimHX4/focale</a>. Installé comme application (bouton « Installer » dans Chrome/Edge), Focale fonctionne hors ligne et se met à jour automatiquement à chaque nouvelle version publiée.</p>
+  <p class="hint">Données de verres : base refractiveindex.info (domaine public, CC0), d'après les catalogues des fabricants.</p></div>`);
 }
 
 /* ---------------- Initialisation ---------------- */
@@ -993,10 +1052,16 @@ function init() {
     const sb = e.target.closest('[data-samp]'); if (sb) { loadSystem(SAMPLES[sb.dataset.samp](), 'Exemple chargé'); return; }
     const a = e.target.closest('[data-act]'); if (!a) return;
     switch (a.dataset.act) {
-      case 'new': loadSystem({ title: 'Nouveau système', aperture: { type: 'EPD', value: 10, obscuration: 0 }, fields: [{ y: 0, w: 1 }, { y: 5, w: 1 }], wavelengths: [{ um: 0.4861327, w: 1 }, { um: 0.5875618, w: 1 }, { um: 0.6562725, w: 1 }], primary: 1, rayAiming: false, merit: { image: 'SPOT', ops: [] },
+      case 'new': FS.handle = null; loadSystem({ title: 'Nouveau système', aperture: { type: 'EPD', value: 10, obscuration: 0 }, fields: [{ y: 0, w: 1 }, { y: 5, w: 1 }], wavelengths: [{ um: 0.4861327, w: 1 }, { um: 0.5875618, w: 1 }, { um: 0.6562725, w: 1 }], primary: 1, rayAiming: false, merit: { image: 'SPOT', ops: [] },
         surfaces: [newSurf({ t: Infinity, comment: 'Objet' }), newSurf({ r: 50, t: 4, glass: 'N-BK7', stop: true }), newSurf({ r: -50, t: 45, tsolve: 'M' }), newSurf({ t: 0, comment: 'Image' })] }, 'Nouveau système'); break;
       case 'import': openImport(); break;
       case 'export': openExport(); break;
+      case 'open': openFile(); break;
+      case 'save': saveFile(false); break;
+      case 'saveAs': saveFile(true); break;
+      case 'dlSeq': download(fileBase() + '.seq', toSeq(App.sys), 'text/plain'); toast('Export CODE V téléchargé'); break;
+      case 'about': openAbout(); break;
+      case 'install': if (deferredInstall) { deferredInstall.prompt(); deferredInstall.userChoice.finally(() => { deferredInstall = null; $('#btnInstall').style.display = 'none'; }); } break;
       case 'undo': undo(); break; case 'redo': redo(); break;
       case 'optim': openOptim(); break;
       case 'theme': { const d = document.documentElement; d.dataset.theme = d.dataset.theme === 'dark' ? '' : 'dark'; save(); readTheme(); drawLayout(); renderPanes(); break; }
@@ -1009,12 +1074,14 @@ function init() {
   $('#laySeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; App.mode = b.dataset.m; drawLayout(); });
   $('#nRays').addEventListener('change', e => { App.nRays = +e.target.value; drawLayout(); });
   $('#showAsph').addEventListener('change', e => { App.showAsph = e.target.checked; renderLDE(); });
-  $('#fileIn').addEventListener('change', e => { const f = e.target.files[0]; if (!f) return; f.text().then(importText); e.target.value = ''; });
+  $('#fileIn').addEventListener('change', e => { const f = e.target.files[0]; if (!f) return; f.text().then(t => importFile(f.name, t)); e.target.value = ''; });
+  setupPlatform();
   document.addEventListener('keydown', e => {
     const inInput = e.target.closest && e.target.closest('input,textarea,select');
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !inInput) { e.preventDefault(); e.shiftKey ? redo() : undo(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y' && !inInput) { e.preventDefault(); redo(); }
-    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') { e.preventDefault(); openOptim(); }
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') { e.preventDefault(); e.shiftKey ? openOptim() : openFile(); }
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveFile(e.shiftKey); }
     else if (e.key === 'Insert') { e.preventDefault(); lde('insA'); }
     else if ((e.ctrlKey || e.metaKey) && e.key === 'Delete') { e.preventDefault(); lde('del'); }
     else if (e.key === 'Escape') { closeDlg(); $$('.pane.max').forEach(p => { p.classList.remove('max'); renderPane(+p.dataset.i); }); }

@@ -9,7 +9,7 @@ Interface et commentaires en français. Unités : mm, longueurs d'onde en µm.
   pupilles paraxiales + visée réelle optionnelle, OPD/Zernike, PSF/FTM par FFT, Seidel, optimiseur DLS.
 - `src/app.js` : interface (éditeur de lentilles, layout 2D/3D canvas, panneaux d'analyse, optimiseur, import/export JSON & CODE V .seq).
 - `src/samples.js` : systèmes d'exemple. `src/shell.html` : HTML/CSS avec marqueurs `/*__ENGINE__*/` etc.
-- `index.html` est GÉNÉRÉ par `python3 build.py` : ne jamais l'éditer à la main, toujours régénérer et commiter.
+- `index.html`, `sw.js`, `manifest.webmanifest`, `icon.svg` sont GÉNÉRÉS par `python3 build.py` (version = hash du contenu, ce qui déclenche la mise à jour des applications installées) : ne jamais les éditer à la main, toujours régénérer et commiter.
 
 ## Conventions
 - Convention de signes Zemax/CODE V : épaisseurs négatives après un miroir, R > 0 centre à droite.
