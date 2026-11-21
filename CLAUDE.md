@@ -21,3 +21,6 @@ Interface et commentaires en français. Unités : mm, longueurs d'onde en µm.
   chaque tolérance est appliquée par décentrements DAR / champ `dn` (indice) ; compensateur = épaisseur avant l'image (encadrement + section dorée).
 - Verres : registre `glassRecord / addGlasses` (clé normalisée sans tirets ni espaces, suffixe `_CATALOGUE` pour lever les homonymies), formules refractiveindex.info `R2`/`R3` et Zemax AGF `A1`…`A13` dans `dispN`. `src/glasses.js` est généré : ne pas éditer à la main.
 - Surfaces de forme libre : `type` = STD | XY (`xy` : {"i,j": c}) | ZERN (`zc`[16], rayon `zr`) ; intersection par Newton ; ignorées par le paraxial et les Seidel.
+- Types d'éléments (`elem`) : '' (dioptre) | grating (`lpmm`, `gm`, `gang` ; réflexion si verre MIRROR) | ideal (`fid`, plan, puissance ajoutée au paraxial) | polarizer (`pang`) | waveplate (`ret` en ondes, `wang`). Traités dans `trace()` après l'intersection.
+- Polarisation : `ray(..., { polState, fresnel })` propage un champ E complexe 3D (`polStep`) ; `polPupil` pour l'analyse. `imageSim` : cartographie des rayons principaux + PSF 5×5 dans le champ, objet à l'infini inversé (scène +v ↔ champ −y).
+- Aide : `src/help.js` (tableau `HELP`) — à tenir à jour avec chaque nouvelle fonction.

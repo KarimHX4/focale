@@ -110,7 +110,7 @@ const OE = (() => {
   }
 
   /* ---------------- Surfaces ---------------- */
-  const curv = s => (isFinite(s.r) && s.r !== 0) ? 1 / s.r : 0;
+  const curv = s => (s.elem === 'ideal') ? 0 : (isFinite(s.r) && s.r !== 0) ? 1 / s.r : 0;
   function sagR(sf, r2) {
     const c = sf.c; let z = 0;
     if (c !== 0) {
@@ -180,6 +180,7 @@ const OE = (() => {
     for (let j = 1; j <= N; j++) {
       if (j > 1) y[j] = y[j - 1] + S[j - 1].t * nu[j - 1] / n[j - 1];
       nu[j] = nu[j - 1] - y[j] * curv(S[j]) * (n[j] - n[j - 1]);
+      if (S[j].elem === 'ideal' && +S[j].fid) nu[j] -= y[j] * n[j] / +S[j].fid;
     }
     return { y, nu };
   }
@@ -303,7 +304,9 @@ const OE = (() => {
       return {
         wi, l, lmm: l * 1e-3, n, nAbs: n.map(Math.abs),
         s: S.map(s => { const f = ffTerms(s); return { c: curv(s), k: s.k, a4: s.a4, a6: s.a6, a8: s.a8, a10: s.a10, ...f,
-          asph: !!(s.a4 || s.a6 || s.a8 || s.a10 || f.ff), t: s.t, mirror: isMirror(s), sd: s.sd, clip: !!s.sdFixed }; }),
+          asph: !!(s.a4 || s.a6 || s.a8 || s.a10 || f.ff), t: s.t, mirror: isMirror(s), sd: s.sd, clip: !!s.sdFixed,
+          elem: s.elem || '', lpmm: +s.lpmm || 0, gm: s.gm == null ? 1 : +s.gm, gang: (+s.gang || 0) * DEG, fid: +s.fid || 100,
+          pang: (+s.pang || 0) * DEG, ret: s.ret == null ? 0.25 : +s.ret, wang: (+s.wang || 0) * DEG }; }),
       };
     });
     const M = { sys, S, N, wls, pw, stopIdx, objInf, nW, par, zg, fr, ctxs, aimCache: new Map(), ok: true, errors: [], warnings: [...new Set(warnings)],
@@ -364,6 +367,13 @@ const OE = (() => {
         lx = r[0] * qx + r[3] * qy + r[6] * qz; ly = r[1] * qx + r[4] * qy + r[7] * qz; lz = r[2] * qx + r[5] * qy + r[8] * qz;
         dL = r[0] * L + r[3] * Mm + r[6] * Nn; dM = r[1] * L + r[4] * Mm + r[7] * Nn; dN = r[2] * L + r[5] * Mm + r[8] * Nn;
       }
+      const pol = opts.pol;
+      let Ex, Ey, Ez, Fx, Fy, Fz; // champ électrique (re, im) dans le repère local
+      if (pol) {
+        const E = pol.E;
+        if (F.id) { Ex = E[0]; Ey = E[1]; Ez = E[2]; Fx = E[3]; Fy = E[4]; Fz = E[5]; }
+        else { Ex = r[0] * E[0] + r[3] * E[1] + r[6] * E[2]; Ey = r[1] * E[0] + r[4] * E[1] + r[7] * E[2]; Ez = r[2] * E[0] + r[5] * E[1] + r[8] * E[2]; Fx = r[0] * E[3] + r[3] * E[4] + r[6] * E[5]; Fy = r[1] * E[3] + r[4] * E[4] + r[7] * E[5]; Fz = r[2] * E[3] + r[5] * E[4] + r[8] * E[5]; }
+      }
       const t = intersect(sf, lx, ly, lz, dL, dM, dN);
       if (!isFinite(t)) return { vig: j, why: 'miss' };
       lx += t * dL; ly += t * dM; lz += t * dN;
@@ -371,26 +381,104 @@ const OE = (() => {
       opl += ctx.nAbs[j - 1] * t;
       if (clip && sf.clip && lx * lx + ly * ly > sf.sd * sf.sd * (1 + 1e-9)) return { vig: j, why: 'clip' };
       if (pts) pts.push([x, y, z, lx, ly]);
-      if (j === M.N) return { vig: 0, x: lx, y: ly, z: lz, L: dL, M: dM, N: dN, opl, gx: x, gy: y, gz: z };
+      if (j === M.N) return { vig: 0, x: lx, y: ly, z: lz, L: dL, M: dM, N: dN, opl, gx: x, gy: y, gz: z, E: pol ? [Ex, Ey, Ez, Fx, Fy, Fz] : null };
       // normale locale
       const g = sGrad(sf, lx, ly);
       let nx = -g[0], ny = -g[1], nz = 1;
       const nn = Math.hypot(nx, ny, nz); nx /= nn; ny /= nn; nz /= nn;
       let cosI = -(dL * nx + dM * ny + dN * nz);
       if (cosI < 0) { nx = -nx; ny = -ny; nz = -nz; cosI = -cosI; }
-      if (sf.mirror) { dL += 2 * cosI * nx; dM += 2 * cosI * ny; dN += 2 * cosI * nz; }
+      const iL = dL, iM = dM, iN = dN, n1 = ctx.nAbs[j - 1], n2 = ctx.nAbs[j];
+      let cosT = cosI, mode = 0; // 0 réfraction, 1 miroir, 2 sans perte (réseau, lentille idéale)
+      if (sf.elem === 'ideal') {
+        const sg = dN >= 0 ? 1 : -1, az = Math.abs(dN) || 1e-12, tx = dL / az, ty = dM / az, f = sf.fid;
+        const tx2 = tx - lx / f, ty2 = ty - ly / f, q = Math.hypot(tx2, ty2, 1);
+        const Lq = Math.hypot(f * tx - lx, f * ty - ly, f), Lq0 = Math.abs(f) * Math.hypot(tx, ty, 1);
+        opl += n1 * (-(lx * dL + ly * dM) - Math.sign(f) * (Lq - Lq0));
+        dL = tx2 / q; dM = ty2 / q; dN = sg / q; mode = 2;
+      } else if (sf.elem === 'grating' && sf.lpmm) {
+        const fx = -nx, fy = -ny, fz = -nz; // normale dans le sens de propagation
+        const ux0 = -Math.sin(sf.gang), uy0 = Math.cos(sf.gang), ud = ux0 * fx + uy0 * fy;
+        let ux = ux0 - ud * fx, uy = uy0 - ud * fy, uz = -ud * fz; const un = Math.hypot(ux, uy, uz); ux /= un; uy /= un; uz /= un;
+        const G = sf.gm * ctx.lmm * sf.lpmm, dd = dL * fx + dM * fy + dN * fz;
+        const tx = n1 * (dL - dd * fx) + G * ux, ty = n1 * (dM - dd * fy) + G * uy, tz = n1 * (dN - dd * fz) + G * uz;
+        const t2 = tx * tx + ty * ty + tz * tz, no = sf.mirror ? n1 : n2;
+        if (t2 >= no * no) return { vig: j, why: 'evan' };
+        const w = Math.sqrt(no * no - t2) * (sf.mirror ? -1 : 1);
+        dL = (tx + w * fx) / no; dM = (ty + w * fy) / no; dN = (tz + w * fz) / no;
+        opl += G * (lx * ux0 + ly * uy0); mode = 2;
+      } else if (sf.mirror) { dL += 2 * cosI * nx; dM += 2 * cosI * ny; dN += 2 * cosI * nz; mode = 1; }
       else {
-        const mu = ctx.nAbs[j - 1] / ctx.nAbs[j];
+        const mu = n1 / n2;
         const k = 1 - mu * mu * (1 - cosI * cosI);
         if (k < 0) return { vig: j, why: 'tir' };
-        const a = mu * cosI - Math.sqrt(k);
+        cosT = Math.sqrt(k);
+        const a = mu * cosI - cosT;
         dL = mu * dL + a * nx; dM = mu * dM + a * ny; dN = mu * dN + a * nz;
       }
       const dn = Math.hypot(dL, dM, dN); dL /= dn; dM /= dn; dN /= dn;
+      if (pol) {
+        const P = polStep([Ex, Ey, Ez, Fx, Fy, Fz], [iL, iM, iN], [dL, dM, dN], [nx, ny, nz], n1, n2, cosI, cosT, mode, pol.fresnel, sf);
+        if (F.id) pol.E = P; else pol.E = [r[0] * P[0] + r[1] * P[1] + r[2] * P[2], r[3] * P[0] + r[4] * P[1] + r[5] * P[2], r[6] * P[0] + r[7] * P[1] + r[8] * P[2], r[0] * P[3] + r[1] * P[4] + r[2] * P[5], r[3] * P[3] + r[4] * P[4] + r[5] * P[5], r[6] * P[3] + r[7] * P[4] + r[8] * P[5]];
+      }
       if (F.id) { L = dL; Mm = dM; Nn = dN; }
       else { L = r[0] * dL + r[1] * dM + r[2] * dN; Mm = r[3] * dL + r[4] * dM + r[5] * dN; Nn = r[6] * dL + r[7] * dM + r[8] * dN; }
     }
     return { vig: 0, x, y, z, L, M: Mm, N: Nn, opl, partial: true };
+  }
+
+  /* ---------------- Polarisation (champ E complexe 3D le long du rayon) ---------------- */
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const nrm = v => { const n = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / n, v[1] / n, v[2] / n]; };
+  const cdot = (E, v) => [E[0] * v[0] + E[1] * v[1] + E[2] * v[2], E[3] * v[0] + E[4] * v[1] + E[5] * v[2]];
+  /** a·u + b·v avec a, b complexes [re, im] et u, v réels */
+  const comb = (a, u, b, v) => [a[0] * u[0] + b[0] * v[0], a[0] * u[1] + b[0] * v[1], a[0] * u[2] + b[0] * v[2], a[1] * u[0] + b[1] * v[0], a[1] * u[1] + b[1] * v[1], a[1] * u[2] + b[1] * v[2]];
+  const cmul = (a, b) => [a[0] * b[0] - a[1] * b[1], a[0] * b[1] + a[1] * b[0]];
+  const sc = (a, k) => [a[0] * k, a[1] * k];
+  function sBasis(d, N) { let s = cross(d, N); if (Math.hypot(s[0], s[1], s[2]) < 1e-9) s = Math.abs(d[0]) < 0.9 ? cross(d, [1, 0, 0]) : cross(d, [0, 1, 0]); return nrm(s); }
+  function polStep(E, dIn, dOut, N, n1, n2, cosI, cosT, mode, fresnel, sf) {
+    const s = sBasis(dIn, N), pIn = cross(dIn, s), pOut = cross(dOut, s);
+    let Es = cdot(E, s), Ep = cdot(E, pIn);
+    if (mode === 1) Es = sc(Es, -1);
+    else if (mode === 0 && fresnel) {
+      const ts = 2 * n1 * cosI / (n1 * cosI + n2 * cosT), tp = 2 * n1 * cosI / (n2 * cosI + n1 * cosT), k = Math.sqrt(n2 * cosT / (n1 * cosI));
+      Es = sc(Es, ts * k); Ep = sc(Ep, tp * k);
+    }
+    let O = comb(Es, s, Ep, pOut);
+    if (sf.elem === 'polarizer') {
+      let a = [Math.cos(sf.pang), Math.sin(sf.pang), 0]; const ad = a[0] * dOut[0] + a[1] * dOut[1]; a = nrm([a[0] - ad * dOut[0], a[1] - ad * dOut[1], -ad * dOut[2]]);
+      O = comb(cdot(O, a), a, [0, 0], a);
+    } else if (sf.elem === 'waveplate') {
+      let f = [Math.cos(sf.wang), Math.sin(sf.wang), 0]; const fd = f[0] * dOut[0] + f[1] * dOut[1]; f = nrm([f[0] - fd * dOut[0], f[1] - fd * dOut[1], -fd * dOut[2]]);
+      const g = cross(dOut, f), ph = 2 * Math.PI * sf.ret;
+      O = comb(cdot(O, f), f, cmul(cdot(O, g), [Math.cos(ph), Math.sin(ph)]), g);
+    }
+    return O;
+  }
+  const POLSTATES = { X: [[1, 0], [0, 0]], Y: [[0, 0], [1, 0]], P45: [[Math.SQRT1_2, 0], [Math.SQRT1_2, 0]], M45: [[Math.SQRT1_2, 0], [-Math.SQRT1_2, 0]], RCP: [[Math.SQRT1_2, 0], [0, -Math.SQRT1_2]], LCP: [[Math.SQRT1_2, 0], [0, Math.SQRT1_2]] };
+  function polInput(d, state) {
+    const J = POLSTATES[state] || POLSTATES.X;
+    const ex = nrm([1 - d[0] * d[0], -d[0] * d[1], -d[0] * d[2]]), ey = cross(d, ex);
+    return comb(J[0], ex, J[1], ey);
+  }
+  /** état de sortie (repère local de l'image) : intensité, Stokes, orientation ψ et ellipticité χ */
+  function polOut(E) {
+    const ax = E[0], bx = E[3], ay = E[1], by = E[4];
+    const Ix = ax * ax + bx * bx, Iy = ay * ay + by * by, I = Ix + Iy + E[2] * E[2] + E[5] * E[5];
+    const S1 = Ix - Iy, S2 = 2 * (ax * ay + bx * by), S3 = 2 * (bx * ay - ax * by), S0 = Ix + Iy || 1e-30;
+    return { I, S: [S0, S1, S2, S3], psi: 0.5 * Math.atan2(S2, S1), chi: 0.5 * Math.asin(Math.max(-1, Math.min(1, S3 / S0))) };
+  }
+  function polPupil(M, fi, wi, state, n = 15, fresnel = true) {
+    const f = typeof fi === 'object' ? fi : M.sys.fields[fi], pts = [];
+    const states = state === 'NONE' ? ['X', 'Y'] : [state];
+    let sI = 0, cnt = 0;
+    for (const [px, py] of pupilGrid(n, M.obs)) {
+      let I = 0, last = null;
+      for (const st of states) { const r = ray(M, wi, f, px, py, { polState: st, fresnel }); if (r.vig) { last = null; I = 0; break; } const o = polOut(r.E); I += o.I / states.length; last = o; }
+      pts.push({ px, py, I, o: state === 'NONE' ? null : last });
+      sI += I; cnt++;
+    }
+    return { pts, T: sI / (cnt || 1) };
   }
 
   /** point de départ d'un rayon visant (ax, ay) dans le plan de la pupille d'entrée */
@@ -437,6 +525,7 @@ const OE = (() => {
     const s = startAt(M, ctx, f, a[0], a[1]);
     let opl0 = 0;
     if (M.objInf) opl0 = ctx.nAbs[0] * ((a[0] - ca[0]) * s.d[0] + (a[1] - ca[1]) * s.d[1]);
+    if (opts && opts.polState) opts = { ...opts, pol: { E: polInput(s.d, opts.polState), fresnel: !!opts.fresnel } };
     return trace(M, ctx, s.p, s.d, opl0, opts);
   }
 
@@ -504,7 +593,7 @@ const OE = (() => {
 
   /* ---------------- Analyses ---------------- */
   function spot(M, fi, n = 21, wsel = null) {
-    const fy = M.sys.fields[fi], pts = [], grid = pupilGrid(n, M.obs);
+    const fy = typeof fi === 'object' ? fi : M.sys.fields[fi], pts = [], grid = pupilGrid(n, M.obs);
     let sx = 0, sy = 0, sw = 0, nv = 0;
     const wlist = wsel == null ? M.wls.map((_, i) => i) : [wsel];
     const chiefP = ray(M, M.pw, fy, 0, 0);
@@ -577,7 +666,7 @@ const OE = (() => {
     return x;
   }
   function wavefront(M, fi, wi, N = 64, removeTilt = true) {
-    const fy = M.sys.fields[fi], ref = opdRef(M, wi, fy);
+    const fy = typeof fi === 'object' ? fi : M.sys.fields[fi], ref = opdRef(M, wi, fy);
     const W = new Float64Array(N * N).fill(NaN);
     if (!ref) return { N, W, rms: NaN, pv: NaN, zern: [], ok: false };
     const samples = [];
@@ -621,8 +710,8 @@ const OE = (() => {
     for (let y = 0; y < n; y++) { for (let x = 0; x < n; x++) { rr[x] = re[y * n + x]; ri[x] = im[y * n + x]; } fft1(rr, ri, inv); for (let x = 0; x < n; x++) { re[y * n + x] = rr[x]; im[y * n + x] = ri[x]; } }
     for (let x = 0; x < n; x++) { for (let y = 0; y < n; y++) { rr[y] = re[y * n + x]; ri[y] = im[y * n + x]; } fft1(rr, ri, inv); for (let y = 0; y < n; y++) { re[y * n + x] = rr[y]; im[y * n + x] = ri[y]; } }
   }
-  function psf(M, fi, wi, N = 64, P = 256) {
-    const wf = wavefront(M, fi, wi, N, false);
+  function psf(M, fi, wi, N = 64, P = 256, wfIn) {
+    const wf = wfIn || wavefront(M, fi, wi, N, false);
     const re = new Float64Array(P * P), im = new Float64Array(P * P);
     const o = (P - N) >> 1; let sa = 0;
     for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
@@ -765,6 +854,112 @@ const OE = (() => {
       dz.push((p.imgDist - ref) * 1000);
     }
     return { l, dz };
+  }
+
+  /* ---------------- Simulation d'image ---------------- */
+  /**
+   * src : { w, h, ch: [R, G, B] Float32Array 0..1 } ; opt : { size, fm (demi-champ objet), np (grille de PSF) }
+   * Distorsion par les rayons principaux, PSF (diffraction ou géométrique) variable dans le champ par canal, vignetage.
+   */
+  function imageSim(M, src, opt = {}) {
+    const S = opt.size || 256, fm = opt.fm || M.par.fmax, NP = opt.np || 5, GM = 17;
+    const order = M.wls.map((l, i) => [l, i]).sort((a, b) => a[0] - b[0]).map(a => a[1]);
+    const chW = [order[order.length - 1], order[Math.floor(order.length / 2)], order[0]];
+    // objet à l'infini : un point de la scène en haut (+v) est vu sous un angle de champ négatif (rayons descendants)
+    const uniq = [...new Set(chW)], sg = M.objInf ? -1 : 1, fobj = (u, v) => ({ x: sg * u * fm, y: sg * v * fm });
+    // 1. cartographie objet → image (rayons principaux)
+    const maps = {}; let H = 0;
+    for (const wi of uniq) {
+      const m = new Float64Array(GM * GM * 2).fill(NaN);
+      for (let i = 0; i < GM; i++) for (let j = 0; j < GM; j++) {
+        const r = ray(M, wi, fobj(-1 + 2 * j / (GM - 1), -1 + 2 * i / (GM - 1)), 0, 0);
+        if (!r.vig) { m[(i * GM + j) * 2] = r.x; m[(i * GM + j) * 2 + 1] = r.y; H = Math.max(H, Math.abs(r.x), Math.abs(r.y)); }
+      }
+      maps[wi] = m;
+    }
+    if (!(H > 0)) return null;
+    H *= 1.06; const pix = 2 * H / S;
+    // 2. PSF sur une grille NP × NP du champ
+    const raw = {}; let Rmax = 0;
+    const tot = pupilGrid(32, M.obs).length;
+    for (const wi of uniq) {
+      raw[wi] = [];
+      for (let i = 0; i < NP; i++) for (let j = 0; j < NP; j++) {
+        const f = fobj(-1 + 2 * j / (NP - 1), -1 + 2 * i / (NP - 1));
+        const wf = wavefront(M, f, wi, 32, false); let pts = [];
+        if (wf.ok) {
+          const T = Math.min(1, wf.n / tot);
+          if (wf.rms > 1.5) {
+            const sp = spot(M, f, 41, wi); if (sp.chief && sp.pts.length) { const w = T / sp.pts.length; pts = sp.pts.map(q => [q.x - sp.chief[0], q.y - sp.chief[1], w]); }
+          } else {
+            const ps = psf(M, f, wi, 32, 128, wf), P = ps.P, h = P >> 1; let sum = 0, mx = 0;
+            for (const v of ps.I) { sum += v; if (v > mx) mx = v; }
+            for (let y = 0; y < P; y++) for (let x = 0; x < P; x++) { const v = ps.I[y * P + x]; if (v > mx * 1e-4) pts.push([(x - h) * ps.dx, (y - h) * ps.dx, v / sum * T]); }
+          }
+          // rayon à 99 % d'énergie
+          const rr = pts.map(q => [Math.hypot(q[0], q[1]), q[2]]).sort((a, b) => a[0] - b[0]); let acc = 0; const et = rr.reduce((a, b) => a + b[1], 0);
+          for (const [r, w] of rr) { acc += w; if (acc >= 0.99 * et) { Rmax = Math.max(Rmax, r); break; } }
+        }
+        raw[wi].push(pts);
+      }
+    }
+    const half = Math.max(1, Math.min(15, Math.ceil(Rmax / pix) + 1)), K = 2 * half + 1;
+    const kern = {};
+    for (const wi of uniq) kern[wi] = raw[wi].map(pts => {
+      const k = new Float32Array(K * K);
+      for (const [dx, dy, w] of pts) {
+        const cx = dx / pix + half, cy = half - dy / pix, x0 = Math.floor(cx), y0 = Math.floor(cy), fx = cx - x0, fy = cy - y0;
+        const add = (xx, yy, ww) => { if (xx >= 0 && xx < K && yy >= 0 && yy < K) k[yy * K + xx] += ww; };
+        add(x0, y0, w * (1 - fx) * (1 - fy)); add(x0 + 1, y0, w * fx * (1 - fy)); add(x0, y0 + 1, w * (1 - fx) * fy); add(x0 + 1, y0 + 1, w * fx * fy);
+      }
+      const idx = []; for (let q = 0; q < K * K; q++) if (k[q] > 1e-7) idx.push(q);
+      return { k, off: Int32Array.from(idx.map(q => (Math.floor(q / K) - half) * S + (q % K - half))), dr: Int32Array.from(idx.map(q => Math.floor(q / K) - half)), dc: Int32Array.from(idx.map(q => q % K - half)), w: Float32Array.from(idx.map(q => k[q])) };
+    });
+    // 3. échantillonnage de l'objet et projection géométrique (distorsion, couleur latérale)
+    const Sin = 2 * S, m2 = Math.max(src.w, src.h), out = [];
+    const bil = (A, x, y) => { const x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0, W = src.w, Hh = src.h; const g = (xx, yy) => A[Math.min(Hh - 1, Math.max(0, yy)) * W + Math.min(W - 1, Math.max(0, xx))]; return g(x0, y0) * (1 - fx) * (1 - fy) + g(x0 + 1, y0) * fx * (1 - fy) + g(x0, y0 + 1) * (1 - fx) * fy + g(x0 + 1, y0 + 1) * fx * fy; };
+    const geo = {};
+    for (const wi of uniq) {
+      const m = maps[wi], val = [new Float32Array(S * S), new Float32Array(S * S), new Float32Array(S * S)], wgt = new Float32Array(S * S);
+      for (let b = 0; b < Sin; b++) for (let a = 0; a < Sin; a++) {
+        const u = -1 + (2 * a + 1) / Sin, v = 1 - (2 * b + 1) / Sin;
+        const sx = u * m2 / 2 + src.w / 2 - 0.5, sy = -v * m2 / 2 + src.h / 2 - 0.5;
+        if (sx < -0.5 || sy < -0.5 || sx > src.w - 0.5 || sy > src.h - 0.5) continue;
+        const gu = (u + 1) / 2 * (GM - 1), gv = (v + 1) / 2 * (GM - 1), i0 = Math.min(GM - 2, Math.floor(gv)), j0 = Math.min(GM - 2, Math.floor(gu)), fu = gu - j0, fv = gv - i0;
+        const P = (i, j, c) => m[((i0 + i) * GM + j0 + j) * 2 + c];
+        const x = P(0, 0, 0) * (1 - fu) * (1 - fv) + P(0, 1, 0) * fu * (1 - fv) + P(1, 0, 0) * (1 - fu) * fv + P(1, 1, 0) * fu * fv;
+        const y = P(0, 0, 1) * (1 - fu) * (1 - fv) + P(0, 1, 1) * fu * (1 - fv) + P(1, 0, 1) * (1 - fu) * fv + P(1, 1, 1) * fu * fv;
+        if (!isFinite(x) || !isFinite(y)) continue;
+        const cc = (x + H) / pix - 0.5, rr = (H - y) / pix - 0.5, c0 = Math.floor(cc), r0 = Math.floor(rr), fc = cc - c0, fr = rr - r0;
+        const vs = [0, 1, 2].map(c => chW[c] === wi ? bil(src.ch[c], sx, sy) : 0);
+        const sp = (cI, rI, w) => { if (cI < 0 || rI < 0 || cI >= S || rI >= S) return; const q = rI * S + cI; wgt[q] += w; for (let c = 0; c < 3; c++) if (vs[c]) val[c][q] += w * vs[c]; };
+        sp(c0, r0, (1 - fc) * (1 - fr)); sp(c0 + 1, r0, fc * (1 - fr)); sp(c0, r0 + 1, (1 - fc) * fr); sp(c0 + 1, r0 + 1, fc * fr);
+      }
+      for (let c = 0; c < 3; c++) for (let q = 0; q < S * S; q++) if (wgt[q] > 1e-6) val[c][q] /= wgt[q]; else val[c][q] = 0;
+      geo[wi] = val;
+    }
+    // 4. convolution par la PSF locale (interpolation bilinéaire entre les 4 PSF voisines)
+    const ctr = uniq.map(wi => { const m = maps[wi], c = (GM - 1) / 2; return [wi, m[(c * GM + GM - 1) * 2], m[((GM - 1) * GM + c) * 2 + 1]]; });
+    for (let c = 0; c < 3; c++) {
+      const wi = chW[c], img = geo[wi][c], o = new Float32Array(S * S), Kw = kern[wi];
+      const [, Ex, Ey] = ctr.find(q => q[0] === wi);
+      for (let row = 0; row < S; row++) for (let col = 0; col < S; col++) {
+        const x = -H + (col + 0.5) * pix, y = H - (row + 0.5) * pix;
+        const u = Math.max(-1, Math.min(1, x / (Ex || 1))), v = Math.max(-1, Math.min(1, y / (Ey || 1)));
+        const gu = (u + 1) / 2 * (NP - 1), gv = (v + 1) / 2 * (NP - 1), i0 = Math.min(NP - 2, Math.floor(gv)), j0 = Math.min(NP - 2, Math.floor(gu)), fu = gu - j0, fv = gv - i0;
+        let acc = 0;
+        const W4 = [[i0, j0, (1 - fu) * (1 - fv)], [i0, j0 + 1, fu * (1 - fv)], [i0 + 1, j0, (1 - fu) * fv], [i0 + 1, j0 + 1, fu * fv]];
+        const p = row * S + col;
+        for (const [ii, jj, ww] of W4) {
+          if (ww < 1e-6) continue; const kk = Kw[ii * NP + jj]; let a = 0;
+          for (let q = 0; q < kk.w.length; q++) { const rr = row - kk.dr[q], cc = col - kk.dc[q]; if (rr >= 0 && rr < S && cc >= 0 && cc < S) a += img[p - kk.off[q]] * kk.w[q]; }
+          acc += ww * a;
+        }
+        o[p] = acc;
+      }
+      out.push(o);
+    }
+    return { S, ch: out, pix, H, fm, K, chW };
   }
 
   /* ---------------- Optimisation (moindres carrés amortis) ---------------- */
@@ -982,7 +1177,7 @@ const OE = (() => {
   function gaussTrunc(rnd) { let v; do { const u = 1 - rnd(), w = rnd(); v = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * w) / 2; } while (Math.abs(v) > 1); return v; }
   function tolDraw(dist, rnd) { return dist === 'uniform' ? 2 * rnd() - 1 : dist === 'end' ? (rnd() < 0.5 ? -1 : 1) : gaussTrunc(rnd); }
 
-  return { DEG, TOLT, tolBase, tolDefaults, tolFreeze, tolItems, tolApply, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
+  return { DEG, imageSim, polPupil, polOut, POLSTATES, TOLT, tolBase, tolDefaults, tolFreeze, tolItems, tolApply, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
     wavefront, psf, mtf, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
     OPS, getVars, residuals, meritOf, optStep, pupilGrid, indices, paraxial };
 })();

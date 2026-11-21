@@ -38,6 +38,22 @@ const SAMPLES = (() => {
       surfaces: [S(Infinity, Infinity, '', { comment: 'Objet' }), S(Infinity, 100, '', { comment: 'Entrée' }), S(-1600, -650, 'MIRROR', { k: -1, stop: true, comment: 'Primaire parabolique' }),
         S(Infinity, 150, 'MIRROR', { tx: 45, dmode: 'BEN', comment: 'Miroir plan de renvoi' }), S(Infinity, 0, '', { comment: 'Image' })],
     }),
+    'Spectrographe à réseau 600 traits/mm': () => base({
+      title: 'Spectrographe : réseau en transmission 600 tr/mm + objectif idéal f=100', aperture: { type: 'EPD', value: 10, obscuration: 0 },
+      fields: [{ y: 0, w: 1 }, { x: 0.5, y: 0, w: 1 }], wavelengths: [{ um: 0.5, w: 1 }, { um: 0.55, w: 1 }, { um: 0.6, w: 1 }], primary: 1,
+      surfaces: [S(Infinity, Infinity, '', { comment: 'Objet' }), S(Infinity, 20, '', { stop: true, comment: 'Pupille' }),
+        S(Infinity, 0, '', { elem: 'grating', lpmm: 600, gm: 1, comment: 'Réseau ordre +1' }),
+        S(Infinity, 30, '', { tx: -19.2697, dmode: 'DEC', comment: 'Axe de l\'ordre +1 à 550 nm' }),
+        S(Infinity, 100, '', { elem: 'ideal', fid: 100, comment: 'Objectif idéal f=100' }),
+        S(Infinity, 0, '', { comment: 'Plan focal' })],
+    }),
+    'Polariseur + lame quart d\'onde': () => base({
+      title: 'Polariseur linéaire, lame λ/4 à 45° et lentille idéale', aperture: { type: 'EPD', value: 10, obscuration: 0 },
+      fields: [{ y: 0, w: 1 }, { y: 3, w: 1 }], wavelengths: [{ um: 0.6328, w: 1 }], primary: 0,
+      surfaces: [S(Infinity, Infinity, '', { comment: 'Objet' }), S(Infinity, 10, '', { stop: true, elem: 'polarizer', pang: 0, comment: 'Polariseur (axe X)' }),
+        S(Infinity, 10, '', { elem: 'waveplate', ret: 0.25, wang: 45, comment: 'Lame λ/4 à 45°' }),
+        S(Infinity, 50, '', { elem: 'ideal', fid: 50, tsolve: 'M', comment: 'Lentille idéale f=50' }), S(Infinity, 0, '', { comment: 'Image' })],
+    }),
     'Télescope Cassegrain F/7.5': () => base({
       title: 'Cassegrain classique D=200 mm F/7.5', aperture: { type: 'EPD', value: 200, obscuration: 0.32 },
       fields: [{ y: 0, w: 1 }, { y: 0.1, w: 1 }, { y: 0.2, w: 1 }], wavelengths: [{ um: 0.5875618, w: 1 }], primary: 0,

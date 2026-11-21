@@ -38,6 +38,8 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 const newSurf = (o = {}) => ({ r: Infinity, t: 5, glass: '', sd: 0, sdFixed: false, k: 0, a4: 0, a6: 0, a8: 0, a10: 0, stop: false, comment: '', vr: false, vt: false, vk: false, tsolve: '',
   dx: 0, dy: 0, dz: 0, tx: 0, ty: 0, tz: 0, dmode: 'DEC', ...o });
 const isDec = s => !!(s.dx || s.dy || s.dz || s.tx || s.ty || s.tz);
+const ELEM = [['refr', 'Dioptre'], ['mirror', 'Miroir'], ['grating', 'Réseau (T)'], ['rgrating', 'Réseau (R)'], ['ideal', 'Lentille idéale'], ['polarizer', 'Polariseur'], ['waveplate', 'Lame d\'onde']];
+const elemOf = s => s.elem === 'grating' ? (OE.isMirror(s) ? 'rgrating' : 'grating') : s.elem || (OE.isMirror(s) ? 'mirror' : 'refr');
 
 /* ---------------- État ---------------- */
 const App = {
@@ -102,7 +104,7 @@ function renderLDE() {
   const S = App.sys.surfaces, N = S.length - 1, MS = App.M && App.M.ok ? App.M.S : null;
   const asph = App.showAsph;
   const tg = (i, k, lbl, on, cls = '', title = '') => `<button class="tg ${cls} ${on ? 'on' : ''}" data-tog="${k}" data-i="${i}" title="${title}">${lbl}</button>`;
-  let h = `<thead><tr><th>#</th><th>Type</th><th>Commentaire</th><th>Rayon</th><th>Épaisseur</th><th>Verre</th><th>Demi-diamètre</th><th>Conique</th>${asph ? '<th>A4 (r⁴)</th><th>A6 (r⁶)</th><th>A8 (r⁸)</th><th>A10 (r¹⁰)</th>' : ''}</tr></thead><tbody>`;
+  let h = `<thead><tr><th>#</th><th>Type</th><th>Élément</th><th>Commentaire</th><th>Rayon</th><th>Épaisseur</th><th>Verre</th><th>Demi-diamètre</th><th>Conique</th>${asph ? '<th>A4 (r⁴)</th><th>A6 (r⁶)</th><th>A8 (r⁸)</th><th>A10 (r¹⁰)</th>' : ''}</tr></thead><tbody>`;
   S.forEach((s, i) => {
     const obj = i === 0, img = i === N, mir = OE.isMirror(s);
     let badge = obj ? '<span class="b">OBJ</span>' : img ? '<span class="b">IMA</span>' : s.stop ? '<span class="b st">STO</span>' : mir ? '<span class="b mi">MIR</span>' : '';
@@ -112,6 +114,7 @@ function renderLDE() {
     const gOK = mir || OE.isAir(s.glass) || isFinite(OE.glassN(s.glass, 0.5876));
     h += `<tr data-i="${i}" class="${i === App.sel ? 'sel' : ''}">
       <td class="n">${i}</td><td class="ty">${badge}</td>
+      <td>${obj || img ? '' : `<select class="el" data-i="${i}" data-k="elem">${ELEM.map(([k, l]) => `<option value="${k}" ${elemOf(s) === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`}</td>
       <td><div class="cell"><input class="c" data-i="${i}" data-k="comment" value="${esc(s.comment)}"></div></td>
       <td><div class="cell"><input data-i="${i}" data-k="r" value="${obj ? '' : fmt(s.r, 7)}" ${obj ? 'disabled' : ''}>${obj || img ? '' : tg(i, 'vr', 'V', s.vr, '', 'Variable (optimisation)')}</div></td>
       <td><div class="cell"><input data-i="${i}" data-k="t" class="${s.tsolve === 'M' ? 'auto' : ''}" value="${img ? '' : fmt(tVal, 7)}" ${img ? 'disabled' : ''}>${img || obj ? '' : tg(i, 'vt', 'V', s.vt, '', 'Variable (optimisation)') + tg(i, 'tsolve', 'M', s.tsolve === 'M', 'm', 'Solve : hauteur marginale nulle à la surface suivante (focalisation paraxiale)')}</div></td>
@@ -130,6 +133,19 @@ function commitCell(i, k, raw) {
   const s = App.sys.surfaces[i]; if (!s) return false;
   let v;
   switch (k) {
+    case 'elem': {
+      if (elemOf(s) === raw) return false;
+      commit(S => {
+        const x = S.surfaces[i], wasM = OE.isMirror(x);
+        x.elem = ({ grating: 'grating', rgrating: 'grating', ideal: 'ideal', polarizer: 'polarizer', waveplate: 'waveplate' })[raw] || '';
+        if (raw === 'mirror' || raw === 'rgrating') x.glass = 'MIRROR'; else if (wasM) x.glass = '';
+        if (x.elem === 'grating') { x.lpmm = x.lpmm || 600; if (x.gm == null) x.gm = 1; }
+        if (x.elem === 'ideal') { x.fid = x.fid || 100; x.r = Infinity; }
+        if (x.elem === 'waveplate') { if (x.ret == null) x.ret = 0.25; if (x.wang == null) x.wang = 45; }
+        if (x.elem === 'polarizer' && x.pang == null) x.pang = 0;
+      });
+      if (raw !== 'refr') toast('Paramètres de l\'élément dans le panneau « Surface » à gauche'); return true;
+    }
     case 'comment': if (s.comment === raw) return false; commit(S => S.surfaces[i].comment = raw); return true;
     case 'glass': {
       let g = raw.trim(); const key = OE.glassKey(g); if (key) g = key; if (g.toUpperCase() === 'MIRROR') g = 'MIRROR';
@@ -318,6 +334,24 @@ function openGlasses() {
   $('#gt').addEventListener('click', e => { const tr = e.target.closest('[data-g]'); if (!tr) return; const j = App.sel, N = App.sys.surfaces.length - 1; if (j < 0 || j >= N) return toast('Sélectionnez une surface (pas l\'image)'); commit(s => s.surfaces[j].glass = tr.dataset.g); toast(`${tr.dataset.g} → surface ${j}`); });
   draw(); $('#gq').focus();
 }
+function elemEditor(x, j, N) {
+  const e = x.elem, inp = (k, l, u, v) => `<div class="row"><label>${l}${u ? ' <span style="opacity:.7">(' + u + ')</span>' : ''}</label><input class="in mini" data-f="ep" data-k="${k}" value="${fmt(v, 7)}"></div>`;
+  const head = t => `<div class="hint" style="margin:2px 0 4px;font-weight:600;color:var(--fg)">${t}</div>`;
+  let h = '';
+  if (e === 'grating') {
+    h = head(OE.isMirror(x) ? 'Réseau en réflexion' : 'Réseau en transmission') + inp('lpmm', 'Traits par mm', '', x.lpmm ?? 600) + inp('gm', 'Ordre', 'm', x.gm ?? 1) + inp('gang', 'Orientation des traits', '°', x.gang || 0)
+      + `<div class="hint">0° : traits parallèles à X local, dispersion selon Y. Équation : n′ sin θ′ = n sin θ + m λ / d.</div>`
+      + (j + 1 < N && !OE.isMirror(x) ? '<div class="chips"><button class="chip" data-a="galign">Aligner la suite sur l\'ordre m (λ primaire)</button></div>' : '');
+  } else if (e === 'ideal') {
+    h = head('Lentille idéale (mince, parfaitement stigmatique)') + inp('fid', 'Focale', 'mm', x.fid ?? 100) + '<div class="hint">Le rayon de courbure et la forme sont ignorés. Imagerie parfaite pour un objet à l\'infini.</div>';
+  } else if (e === 'polarizer') {
+    h = head('Polariseur linéaire idéal') + inp('pang', 'Axe de transmission', '° / X local', x.pang || 0) + '<div class="hint">Ne transmet que la composante du champ selon l\'axe (loi de Malus). Utilisez l\'analyse « Polarisation ».</div>';
+  } else if (e === 'waveplate') {
+    h = head('Lame d\'onde (retardateur idéal)') + inp('ret', 'Retard', 'λ', x.ret ?? 0.25) + inp('wang', 'Axe rapide', '° / X local', x.wang ?? 45)
+      + '<div class="chips"><button class="chip" data-a="ret4">λ/4</button><button class="chip" data-a="ret2">λ/2</button></div>';
+  }
+  return h ? h + '<div style="border-top:1px solid var(--line);margin:8px 0 6px"></div>' : '';
+}
 function inspector() {
   const s = App.sys, j = App.sel, x = s.surfaces[j]; if (!x) return '';
   const N = s.surfaces.length - 1;
@@ -328,6 +362,7 @@ function inspector() {
       <option value="STD" ${ty === 'STD' ? 'selected' : ''}>Standard (conique + asphère)</option>
       <option value="XY" ${ty === 'XY' ? 'selected' : ''}>Polynôme XY</option>
       <option value="ZERN" ${ty === 'ZERN' ? 'selected' : ''}>Zernike (Fringe)</option></select></div>`;
+  h = elemEditor(x, j, N) + h;
   if (typeof freeformEditor === 'function') h += freeformEditor(x);
   h += `<div class="hint" style="margin:8px 0 2px;font-weight:600;color:var(--fg)">Décentrement / bascule</div>
     <div class="row"><select class="in" style="flex:1" data-f="dmode">
@@ -349,6 +384,16 @@ function setupSide() {
       case 'fdel': if (App.sys.fields.length > 1) commit(s => s.fields.splice(i, 1)); break;
       case 'fspread': commit(s => { const m = Math.max(...s.fields.map(f => Math.hypot(f.x || 0, f.y))) || 1; s.fields = [0, 0.7, 1].map(k => ({ x: 0, y: +(m * k).toPrecision(6), w: 1 })); }); break;
       case 'fold45': commit(s => { const x = s.surfaces[App.sel]; x.glass = 'MIRROR'; x.r = Infinity; x.tx = 45; x.ty = 0; x.tz = 0; x.dx = x.dy = x.dz = 0; x.dmode = 'BEN'; }); toast('Miroir de renvoi à 45° : pensez au signe de l\'épaisseur suivante'); break;
+      case 'ret4': commit(s => s.surfaces[App.sel].ret = 0.25); break;
+      case 'ret2': commit(s => s.surfaces[App.sel].ret = 0.5); break;
+      case 'galign': {
+        const x = App.sys.surfaces[App.sel], M = App.M, l = M && M.ok ? M.wls[M.pw] : 0.55, sn = (x.gm ?? 1) * l * 1e-3 * (x.lpmm || 600);
+        if (Math.abs(sn) >= 1) { toast('Ordre évanescent à cette longueur d\'onde'); break; }
+        const a = Math.asin(sn) * 180 / Math.PI, ga = (x.gang || 0) * Math.PI / 180;
+        const j = App.sel;
+        commit(s => { const g = s.surfaces[j]; s.surfaces.splice(j + 1, 0, newSurf({ t: g.t, tx: +(-a * Math.cos(ga)).toFixed(5), ty: +(-a * Math.sin(ga)).toFixed(5), dmode: 'DEC', comment: `Axe de l'ordre ${g.gm ?? 1}` })); g.t = 0; });
+        toast(`Surface d'axe insérée : la suite est basculée de ${a.toFixed(3)}° pour suivre l'ordre ${x.gm ?? 1}`); break;
+      }
       case 'dreset': commit(s => { const x = s.surfaces[App.sel]; x.dx = x.dy = x.dz = x.tx = x.ty = x.tz = 0; x.dmode = 'DEC'; }); break;
       case 'wadd': commit(s => s.wavelengths.push({ um: 0.55, w: 1 })); break;
       case 'wdel': if (App.sys.wavelengths.length > 1) commit(s => { s.wavelengths.splice(i, 1); s.primary = Math.min(s.primary, s.wavelengths.length - 1); }); break;
@@ -373,6 +418,7 @@ function setupSide() {
       case 'dmode': commit(s => s.surfaces[App.sel].dmode = t.value); break;
       case 'stype': commit(s => { const x = s.surfaces[App.sel]; x.type = t.value; if (t.value === 'ZERN' && !x.zr) x.zr = Math.max(1, App.M && App.M.ok ? +App.M.S[App.sel].sd.toPrecision(3) : 10); }); break;
       case 'dec': if ((v = num()) != null) commit(s => s.surfaces[App.sel][t.dataset.k] = v); break;
+      case 'ep': if ((v = num()) != null) { if (t.dataset.k === 'fid' && v === 0) { toast('Focale non nulle requise'); renderSide(); break; } commit(s => s.surfaces[App.sel][t.dataset.k] = v); } break;
       case 'coef': { const k = t.dataset.k; v = t.value.trim() === '' ? 0 : parseNum(t.value, false); if (!isFinite(v)) { toast('Valeur invalide'); renderSide(); break; }
         commit(s => { const x = s.surfaces[App.sel]; if (k === 'zr') x.zr = v; else if (k.startsWith('z')) { x.zc = x.zc || []; x.zc[+k.slice(1)] = v; } else { x.xy = x.xy || {}; if (v) x.xy[k] = v; else delete x.xy[k]; } }); break; }
       case 'fw': if ((v = num(x => x >= 0)) != null) commit(s => s.fields[i].w = v); break;
@@ -551,13 +597,27 @@ function drawLayout() {
   // surfaces
   for (const s of G.surfs) {
     const sel = s.j === App.sel, mir = OE.isMirror(S[s.j]);
+    const symOnly = S[s.j].elem && S[s.j].elem !== 'grating' && s.j < N;
     c.strokeStyle = sel ? '#f59e0b' : (mir ? TH.fg : TH.lensE); c.lineWidth = sel ? 2.6 : (mir ? 2.2 : (s.j === N ? 1.6 : 1.2));
     if (s.j === N && !sel) c.strokeStyle = TH.mut;
     if (OE.isAir(S[s.j].glass) && (s.j === 1 || OE.isAir(S[s.j - 1].glass)) && !mir && s.j !== N && !sel && !S[s.j].stop) { c.strokeStyle = TH.mut; c.setLineDash([3, 3]); c.lineWidth = 0.8; }
-    c.beginPath(); s.pts.forEach((p, k) => { const q = T(p[0], p[1]); k ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]); }); c.stroke(); c.setLineDash([]);
+    if (!symOnly) { c.beginPath(); s.pts.forEach((p, k) => { const q = T(p[0], p[1]); k ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]); }); c.stroke(); }
+    c.setLineDash([]);
     if (mir) { // hachures côté dos du miroir
       const dir = Math.sign(M.nW[M.pw][s.j - 1]) || 1; c.strokeStyle = TH.mut; c.lineWidth = 0.8; c.beginPath();
       for (let k = 0; k <= 40; k += 3) { const y = -s.sd + 2 * s.sd * k / 40, z = s.sz(0, y), g1 = G.G3(s.j, [0, y, z]), g2 = G.G3(s.j, [0, y - 5 / V.s, z + dir * 6 / V.s]); const q1 = T(g1[2], g1[1]), q2 = T(g2[2], g2[1]); c.moveTo(q1[0], q1[1]); c.lineTo(q2[0], q2[1]); } c.stroke();
+    }
+    const el = S[s.j].elem;
+    if (el && s.j < N) {
+      const top = G.G3(s.j, [0, s.sd, 0]), bot = G.G3(s.j, [0, -s.sd, 0]), a = T(top[2], top[1]), b = T(bot[2], bot[1]);
+      const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L;
+      c.save(); c.lineWidth = 1.6; c.strokeStyle = sel ? '#f59e0b' : ({ ideal: '#0891b2', grating: '#9333ea', polarizer: '#16a34a', waveplate: '#ea580c' })[el] || TH.fg;
+      c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke();
+      if (el === 'ideal') { const f = +S[s.j].fid || 1, d = f > 0 ? 1 : -1; for (const [P, sgn] of [[a, 1], [b, -1]]) { c.beginPath(); c.moveTo(P[0] - 6 * nx + d * sgn * 6 * dx / L, P[1] - 6 * ny + d * sgn * 6 * dy / L); c.lineTo(P[0], P[1]); c.lineTo(P[0] + 6 * nx + d * sgn * 6 * dx / L, P[1] + 6 * ny + d * sgn * 6 * dy / L); c.stroke(); } }
+      else if (el === 'grating') { for (let k = 0; k <= 12; k++) { const q = [a[0] + dx * k / 12, a[1] + dy * k / 12]; c.beginPath(); c.moveTo(q[0], q[1]); c.lineTo(q[0] + 4 * nx, q[1] + 4 * ny); c.stroke(); } }
+      else if (el === 'polarizer') { c.lineWidth = 1; for (let k = 1; k < 8; k++) { const q = [a[0] + dx * k / 8, a[1] + dy * k / 8]; c.beginPath(); c.moveTo(q[0] - 4 * nx, q[1] - 4 * ny); c.lineTo(q[0] + 4 * nx, q[1] + 4 * ny); c.stroke(); } }
+      else if (el === 'waveplate') { c.lineWidth = 1; c.strokeRect(Math.min(a[0], b[0]) - 3, Math.min(a[1], b[1]), Math.abs(dx) + 6, Math.abs(dy)); }
+      c.restore();
     }
     if (S[s.j].stop) { c.strokeStyle = TH.fg; c.lineWidth = 2.5; for (const sg of [1, -1]) { const e = sg > 0 ? s.e : s.em, g1 = G.G3(s.j, [0, sg * s.sd, e]), g2 = G.G3(s.j, [0, sg * (s.sd * 1.18 + 3 / V.s), e]); const q1 = T(g1[2], g1[1]), q2 = T(g2[2], g2[1]); c.beginPath(); c.moveTo(q1[0], q1[1]); c.lineTo(q2[0], q2[1]); c.stroke(); } }
   }
@@ -655,6 +715,8 @@ const PT = {
   seidel: { l: 'Aberrations de Seidel (3ᵉ ordre)' },
   chrom: { l: 'Décalage focal chromatique' },
   glass: { l: 'Carte des verres (nd / νd)' },
+  polar: { l: 'Polarisation (pupille de sortie)', f: 1, w: 1 },
+  imgsim: { l: 'Simulation d\'image' },
   presc: { l: 'Prescription & synthèse', html: 1 },
 };
 function buildPanes() {
@@ -673,6 +735,11 @@ function paneHeader(pi) {
   if (t.f) { p.fi = Math.min(p.fi || 0, s.fields.length - 1); h += `<select data-p="fi">${s.fields.map((f, i) => `<option value="${i}" ${i === p.fi ? 'selected' : ''}>Champ ${i + 1} (${M && M.ok ? fLabel(M, i) : fmt(f.y, 4)})</option>`).join('')}</select>`; }
   if (t.w) { if (p.wi != null && p.wi >= s.wavelengths.length) p.wi = null; const we = p.wi ?? s.primary; h += `<select data-p="wi">${s.wavelengths.map((w, i) => `<option value="${i}" ${i === we ? 'selected' : ''}>${fmt(w.um * 1000, 5)} nm</option>`).join('')}</select>`; }
   if (t.s) h += `<select data-p="si"><option value="">Surface sélectionnée</option>${s.surfaces.map((x, i) => i ? `<option value="${i}" ${p.si === i ? 'selected' : ''}>Surface ${i}${x.comment ? ' · ' + esc(x.comment) : ''}</option>` : '').join('')}</select>`;
+  if (p.type === 'polar') h += `<select data-p="st">${[['X', 'Linéaire X'], ['Y', 'Linéaire Y'], ['P45', 'Linéaire +45°'], ['M45', 'Linéaire −45°'], ['RCP', 'Circulaire droite'], ['LCP', 'Circulaire gauche'], ['NONE', 'Non polarisée']].map(([k, l]) => `<option value="${k}" ${(p.st || 'X') === k ? 'selected' : ''}>${l}</option>`).join('')}</select><label title="Pertes et déphasages de Fresnel aux dioptres non traités"><input type="checkbox" data-p="fresnel" ${p.fresnel !== false ? 'checked' : ''}>Fresnel</label>`;
+  if (p.type === 'imgsim') h += `<select data-p="src">${SIMSRC.map(([k, l]) => `<option value="${k}" ${(p.src || 'mire') === k ? 'selected' : ''}>${l}</option>`).join('')}${App.userImg ? `<option value="user" ${p.src === 'user' ? 'selected' : ''}>${esc(App.userImg.name)}</option>` : ''}</select><button class="bt" data-p="load" style="height:24px">Image…</button>
+    <select data-p="res">${[128, 192, 256, 384].map(r => `<option value="${r}" ${(p.res || 192) == r ? 'selected' : ''}>${r} px</option>`).join('')}</select>
+    <label title="Demi-champ objet couvert par l'image (vide : champ max du système)">½ champ <input class="in" data-p="fov" style="width:52px;height:22px" value="${p.fov || ''}" placeholder="auto"></label>
+    <label><input type="checkbox" data-p="upright" ${p.upright ? 'checked' : ''}>redresser</label><button class="bt" data-p="run" style="height:24px">▶ Simuler</button>`;
   if (p.type === 'glass') h += `<select data-p="cat"><option value="">Tous les catalogues</option>${OE.cats().map(k => `<option ${p.cat === k ? 'selected' : ''}>${k}</option>`).join('')}</select>`;
   if (p.type === 'psf') h += `<label><input type="checkbox" data-p="log" ${p.log ? 'checked' : ''}>log</label><select data-p="zoom">${[1, 2, 4].map(z => `<option value="${z}" ${(p.zoom || 2) == z ? 'selected' : ''}>×${z}</option>`).join('')}</select>`;
   if (p.type === 'wfe') h += `<label><input type="checkbox" data-p="tilt" ${p.tilt !== false ? 'checked' : ''}>sans tilt</label>`;
@@ -686,7 +753,9 @@ function setupPanes() {
   el.addEventListener('change', e => {
     const t = e.target, k = t.dataset.p; if (!k) return; const pi = +t.closest('.pane').dataset.i, p = App.panes[pi];
     if (k === 'type') { App.panes[pi] = { type: t.value }; }
-    else if (k === 'log' || k === 'tilt' || k === 'chief') p[k] = t.checked;
+    else if (k === 'log' || k === 'tilt' || k === 'chief' || k === 'fresnel' || k === 'upright') p[k] = t.checked;
+    else if (k === 'st' || k === 'src') p[k] = t.value;
+    else if (k === 'fov') { const v = parseFloat(String(t.value).replace(',', '.')); p.fov = isFinite(v) && v > 0 ? v : null; }
     else if (k === 'si') p.si = t.value === '' ? null : +t.value;
     else if (k === 'cat') p.cat = t.value;
     else if (k === 'fmax') { const v = parseFloat(t.value); p.fmax = isFinite(v) && v > 0 ? v : null; }
@@ -694,6 +763,8 @@ function setupPanes() {
     save(); renderPane(pi);
   });
   el.addEventListener('click', e => {
+    const ld = e.target.closest('[data-p="load"]'); if (ld) { App.simPane = +ld.closest('.pane').dataset.i; $('#imgIn').click(); return; }
+    const run = e.target.closest('[data-p="run"]'); if (run) { const pi = +run.closest('.pane').dataset.i; SIM.cache.clear(); SIM.force = true; renderPane(pi); return; }
     const g = e.target.closest('[data-p="png"]');
     if (g) { const pane = g.closest('.pane'), cv = pane.querySelector('canvas'), p = App.panes[+pane.dataset.i]; const o = document.createElement('canvas'); o.width = cv.width; o.height = cv.height; const oc = o.getContext('2d'); oc.fillStyle = TH.panel || '#fff'; oc.fillRect(0, 0, o.width, o.height); oc.drawImage(cv, 0, 0); o.toBlob(b => download(`${fileBase()}_${p.type}.png`, b)); return; }
     const b = e.target.closest('[data-p="max"]'); if (b) { const pane = b.closest('.pane'); pane.classList.toggle('max'); renderPane(+pane.dataset.i); } });
@@ -847,6 +918,25 @@ const R = {
     c.restore();
     legend(c, 8, h - 7, [...new Set(cat.map(g => g.cat))].map(k => ({ col: catCol(k), l: k })));
   },
+  polar(p, M, c, w, h) {
+    const st = p.st || 'X', fr = p.fresnel !== false, res = OE.polPupil(M, p.fi || 0, p.wi ?? M.pw, st, 15, fr);
+    const A = axes(c, { x: 0, y: 0, w: w - 66, h: h - 18 }, [-1.12, 1.12], [-1.12, 1.12], { equal: true, zero: false, ml: 40, mb: 22, title: `Transmission moyenne ${fx(res.T * 100, 2)} % · entrée ${({ X: 'linéaire X', Y: 'linéaire Y', P45: '+45°', M45: '−45°', RCP: 'circulaire droite', LCP: 'circulaire gauche', NONE: 'non polarisée' })[st]}` });
+    c.strokeStyle = TH.line; c.beginPath(); c.arc(A.X(0), A.Y(0), A.X(1) - A.X(0), 0, 7); c.stroke();
+    const cell = (A.X(2 / 14) - A.X(0)) * 0.48, L = lut('inferno');
+    const col = I => { const k = Math.max(0, Math.min(255, Math.round(I * 230 + 25))); return `rgb(${L[k * 3]},${L[k * 3 + 1]},${L[k * 3 + 2]})`; };
+    let sc = 0, ss = 0, n = 0;
+    for (const q of res.pts) {
+      const x = A.X(q.px), y = A.Y(q.py);
+      if (!q.o) { c.fillStyle = col(q.I); c.fillRect(x - cell, y - cell, 2 * cell, 2 * cell); continue; }
+      const a = cell * Math.sqrt(Math.min(1, q.I)) * Math.cos(q.o.chi), b = cell * Math.sqrt(Math.min(1, q.I)) * Math.abs(Math.sin(q.o.chi));
+      c.strokeStyle = Math.abs(q.o.chi) < 0.02 ? TH.fg : q.o.chi > 0 ? '#dc2626' : '#2563eb'; c.lineWidth = 1.4; c.fillStyle = col(q.I); c.globalAlpha = 0.35;
+      c.beginPath(); c.ellipse(x, y, Math.max(0.6, a), Math.max(0.6, b), -q.o.psi, 0, 2 * Math.PI); c.fill(); c.globalAlpha = 1; c.stroke();
+      sc += q.o.psi; ss += Math.tan(q.o.chi); n++;
+    }
+    cbar(c, w - 54, 30, 12, Math.max(40, h - 76), 0, 1, 'inferno', 'T');
+    legend(c, 8, h - 7, st === 'NONE' ? [{ col: TH.mut, l: 'transmission par point de pupille (lumière non polarisée)' }] : [{ col: TH.fg, l: 'linéaire' }, { col: '#dc2626', l: 'elliptique droite' }, { col: '#2563eb', l: 'elliptique gauche' }, { col: TH.mut, l: n ? `ψ moy. ${fx(sc / n * 180 / Math.PI, 1)}° · ellipticité moy. ${fx(ss / n, 3)}` : '' }]);
+  },
+  imgsim(p, M, c, w, h) { simPane(p, M, c, w, h); },
   presc(p, M) {
     const S = M.S, par = M.par;
     const sp = M.sys.fields.map((_, i) => OE.spot(M, i, 21)), wf = M.sys.fields.map((_, i) => OE.wavefront(M, i, M.pw, 48));
@@ -859,6 +949,77 @@ const R = {
     return h;
   },
 };
+/* ---------------- Simulation d'image ---------------- */
+const SIMSRC = [['mire', 'Mire de résolution'], ['lettres', 'Texte'], ['grille', 'Grille (distorsion)'], ['etoiles', 'Champ d\'étoiles'], ['siemens', 'Étoile de Siemens'], ['damier', 'Damier'], ['couleurs', 'Mire couleur']];
+const SIM = { cache: new Map(), queue: new Map(), timer: null, force: false, forceKey: null };
+function makeSource(kind) {
+  if (kind === 'user' && App.userImg) return App.userImg;
+  const N = 256, cv = document.createElement('canvas'); cv.width = cv.height = N; const g = cv.getContext('2d');
+  const W = '#fff', B = '#000';
+  if (kind === 'mire') {
+    g.fillStyle = W; g.fillRect(0, 0, N, N); g.fillStyle = B;
+    let x = 10; for (const bw of [10, 7, 5, 3.5, 2.5, 1.8, 1.3, 1]) { for (let k = 0; k < 3; k++) g.fillRect(x + k * 2 * bw, 12, bw, 5 * bw + 8); x += 6 * bw + 6; }
+    let y = 120; for (const bw of [10, 7, 5, 3.5, 2.5, 1.8, 1.3]) { for (let k = 0; k < 3; k++) g.fillRect(14, y + k * 2 * bw, 5 * bw + 8, bw); y += 0; break; }
+    let yy = 100; for (const bw of [8, 5.5, 4, 2.8, 2, 1.4]) { for (let k = 0; k < 3; k++) g.fillRect(16, yy + k * 2 * bw, 46, bw); yy += 6 * bw + 5; }
+    g.font = 'bold 22px sans-serif'; g.fillText('FOCALE', 96, 132); g.font = '13px sans-serif'; g.fillText('résolution · contraste', 92, 156);
+    g.lineWidth = 2; g.strokeRect(80, 176, 160, 66); g.beginPath(); for (let k = 0; k < 9; k++) { g.moveTo(90 + k * 17, 184); g.lineTo(90 + k * 17, 234); } g.stroke();
+  } else if (kind === 'lettres') {
+    g.fillStyle = W; g.fillRect(0, 0, N, N); g.fillStyle = B; let y = 30;
+    for (const sz of [30, 22, 16, 12, 9, 7, 5.5]) { g.font = `${sz}px serif`; g.fillText('Focale optique', 10, y); y += sz * 1.35 + 4; }
+  } else if (kind === 'grille') {
+    g.fillStyle = B; g.fillRect(0, 0, N, N); g.strokeStyle = W; g.lineWidth = 2; g.beginPath(); for (let k = 0; k <= 16; k++) { const q = k * 16; g.moveTo(q, 0); g.lineTo(q, N); g.moveTo(0, q); g.lineTo(N, q); } g.stroke();
+  } else if (kind === 'etoiles') {
+    g.fillStyle = B; g.fillRect(0, 0, N, N); g.fillStyle = W; for (let i = 0; i < 9; i++) for (let j = 0; j < 9; j++) g.fillRect(8 + j * 30, 8 + i * 30, 2, 2);
+  } else if (kind === 'siemens') {
+    g.fillStyle = W; g.fillRect(0, 0, N, N); g.fillStyle = B; const n = 36; for (let k = 0; k < n; k += 2) { g.beginPath(); g.moveTo(128, 128); g.arc(128, 128, 125, 2 * Math.PI * k / n, 2 * Math.PI * (k + 1) / n); g.fill(); }
+  } else if (kind === 'damier') {
+    for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) { g.fillStyle = (i + j) & 1 ? B : W; g.fillRect(j * 32, i * 32, 32, 32); }
+  } else if (kind === 'couleurs') {
+    g.fillStyle = B; g.fillRect(0, 0, N, N); const cs = ['#ff0000', '#00ff00', '#0000ff', '#ffffff']; for (let k = 0; k < 4; k++) { g.fillStyle = cs[k]; for (let l = 0; l < 6; l++) g.fillRect(14 + l * 40, 14 + k * 60, 4, 50); g.fillRect(14 + 4 * 60, 14 + k * 60, 1, 1); }
+    g.fillStyle = '#fff'; g.font = 'bold 18px sans-serif'; g.fillText('R V B', 20, 250);
+  }
+  return imgToSrc(cv, kind);
+}
+function imgToSrc(cv, name) {
+  const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data, n = cv.width * cv.height, ch = [0, 1, 2].map(() => new Float32Array(n));
+  for (let q = 0; q < n; q++) for (let k = 0; k < 3; k++) ch[k][q] = d[q * 4 + k] / 255;
+  return { w: cv.width, h: cv.height, ch, name, cv };
+}
+function loadUserImage(file) {
+  const rd = new FileReader();
+  rd.onload = () => { const im = new Image(); im.onload = () => { const sc = 256 / Math.max(im.width, im.height), cv = document.createElement('canvas'); cv.width = Math.max(1, Math.round(im.width * sc)); cv.height = Math.max(1, Math.round(im.height * sc)); cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height); App.userImg = imgToSrc(cv, file.name); if (App.simPane != null) { App.panes[App.simPane].src = 'user'; renderPane(App.simPane); } }; im.src = rd.result; };
+  rd.readAsDataURL(file);
+}
+function simPane(p, M, c, w, h) {
+  const src = makeSource(p.src || 'mire'), size = p.res || 192, fm = p.fov || (M.par.fmax > 1e-6 ? M.par.fmax : 1);
+  const key = toJSON(App.sys) + '|' + [p.src, size, fm].join('|') + (p.src === 'user' && App.userImg ? App.userImg.name : '');
+  const half = w / 2, pad = 26, box = Math.min(half - 20, h - pad - 24);
+  const drawSrc = () => { c.imageSmoothingEnabled = true; c.drawImage(src.cv, 10 + (half - 20 - box) / 2, pad, box * src.w / Math.max(src.w, src.h), box * src.h / Math.max(src.w, src.h)); text(c, `Objet — ½ champ ${fmt(fm, 4)}${M.objInf ? '°' : ' mm'}`, 10, 6, { b: true }); };
+  drawSrc();
+  const res = SIM.cache.get(key); p._key = key;
+  const drawRes = (r, stale) => {
+    if (!r) { text(c, 'Image impossible (champ entièrement vignetté ?)', half + 10, pad, { col: '#dc2626' }); return; }
+    const S = r.S, off = document.createElement('canvas'); off.width = off.height = S; const oc = off.getContext('2d'), im = oc.createImageData(S, S);
+    for (let q = 0; q < S * S; q++) { const qq = p.upright ? S * S - 1 - q : q; for (let k = 0; k < 3; k++) im.data[qq * 4 + k] = Math.max(0, Math.min(255, Math.round(r.ch[k][q] * 255))); im.data[qq * 4 + 3] = 255; }
+    oc.putImageData(im, 0, 0); c.imageSmoothingEnabled = S < box; c.globalAlpha = stale ? 0.45 : 1; c.drawImage(off, half + 10, pad, box, box); c.globalAlpha = 1;
+    text(c, `Image simulée${p.upright ? ' (redressée)' : ''} — ${fx(2 * r.H, 3)} mm de côté`, half + 10, 6, { b: true });
+    const sl = niceStep(2 * r.H, 4), L = sl / (2 * r.H) * box; c.strokeStyle = TH.fg; c.lineWidth = 2; c.beginPath(); c.moveTo(half + 10, pad + box + 10); c.lineTo(half + 10 + L, pad + box + 10); c.stroke();
+    text(c, `${tl(sl, sl)} mm · PSF ${r.K}×${r.K} px · ${r.chW.length ? 'RVB = ' + [...new Set(r.chW)].length + ' λ' : ''}`, half + 16 + L, pad + box + 4, { col: TH.mut, size: 10.5 });
+  };
+  if (SIM.cache.has(key) && !(SIM.force && SIM.forceKey === key)) { drawRes(res, false); return; }
+  if (p._last) drawRes(p._last, true);
+  text(c, 'Calcul…', half + 14, pad + box / 2, { col: TH.mut });
+  SIM.queue.set(key, { p, src, size, fm });
+  clearTimeout(SIM.timer); SIM.timer = setTimeout(simRun, SIM.force ? 10 : 450);
+}
+function simRun() {
+  const it = SIM.queue.entries().next(); if (it.done) return;
+  const [key, job] = it.value; SIM.queue.delete(key); SIM.force = false; SIM.forceKey = null;
+  let r = null; try { r = OE.imageSim(App.M, job.src, { size: job.size, fm: job.fm }); } catch (e) { console.error(e); }
+  SIM.cache.set(key, r); job.p._last = r; while (SIM.cache.size > 8) SIM.cache.delete(SIM.cache.keys().next().value);
+  $$('#panes .pane').forEach(d => { if (App.panes[+d.dataset.i] === job.p) renderPane(+d.dataset.i); });
+  if (SIM.queue.size) SIM.timer = setTimeout(simRun, 20);
+}
 function fans(c, w, h, M, data, k, unit) {
   const nf = data.length, rowH = (h - 18) / nf;
   let m = 0; data.forEach(d => d.forEach(q => { for (const v of [...q.T, ...q.S]) if (isFinite(v)) m = Math.max(m, Math.abs(v * k)); })); m = (m || 1e-6) * 1.08;
@@ -1079,6 +1240,7 @@ function toSeq(s) {
     if (x.vr) L.push('  CCY 0'); if (x.vt && x.tsolve !== 'M') L.push('  THC 0');
   }
   if (S.some(x => x.type && x.type !== 'STD')) L.push('! Attention : surfaces XY / Zernike non exportées (base conique seule)');
+  if (S.some(x => x.elem)) L.push('! Attention : réseaux, lentilles idéales, polariseurs et lames d\'onde non exportés (surfaces ordinaires)');
   L.push(`SI ${r(S[N].r)} 0`, 'GO');
   return L.join('\n');
 }
@@ -1169,16 +1331,23 @@ function openImport() {
   <textarea id="imTxt" spellcheck="false" placeholder="RDM;LEN&#10;EPD 10&#10;WL 486.13 587.56 656.27&#10;REF 2&#10;YAN 0 14 20&#10;SO 0 1e18&#10;S 22.01359 3.25896 NSK16_SCHOTT&#10;…&#10;SI 0 0&#10;GO"></textarea></div>
   <div class="df"><button class="bt" data-d="pick">Choisir un fichier…</button><button class="tb pri" data-d="load">Importer</button></div>`);
 }
-function openHelp() {
-  dlg(`<h2>Focale — aide rapide <button class="x" data-d="close">✕</button></h2><div class="db" style="font-size:13px;line-height:1.55">
-  <p><b>Éditeur de lentilles</b> : chaque ligne est une surface (OBJ → IMA). Saisissez rayon, épaisseur, verre (catalogue Schott, modèle <code>nd/νd</code> comme <code>1.5168/64.2</code>, indice fixe, ou <code>MIRROR</code>). <kbd>Entrée</kbd> valide et descend, <kbd>Tab</kbd> passe à la colonne suivante, <kbd>Échap</kbd> annule. « Infini » ou vide = plan. Après un miroir, les épaisseurs sont négatives.</p>
-  <p><b>V</b> rend un paramètre variable pour l'optimisation ; <b>M</b> calcule l'épaisseur pour la mise au point paraxiale ; <b>🔒</b> fixe le demi-diamètre (les rayons au-delà sont vignettés). Double-cliquez sur la colonne Type pour placer le diaphragme.</p>
-  <p><b>Verres</b> : plus de 1000 verres Schott, Ohara, CDGM et Hoya (bouton « Verres… » ou saisie avec auto-complétion). Ajoutez un suffixe pour choisir le fabricant en cas d'homonymie (<code>F2_CDGM</code>). Importez n'importe quel catalogue Zemax <code>.agf</code> par glisser-déposer. <b>Surfaces</b> : dans l'inspecteur, forme Standard, polynôme XY (ordre 6) ou Zernike Fringe (16 termes), et décentrements/bascules.</p>
-  <p><b>Analyses</b> : choisissez 1, 2, 4 ou 6 fenêtres en haut à droite, le type d'analyse dans chaque fenêtre, double-cliquez sur l'en-tête pour agrandir. Tout se recalcule en direct à chaque modification.</p>
-  <p><b>Méthodes</b> : tracé de rayons réels (Snell vectoriel, coniques et asphères paires par Newton), pupilles paraxiales avec visée réelle optionnelle, OPD par rapport à une sphère de référence centrée sur le rayon principal et passant par la pupille de sortie, PSF par FFT de la pupille 64×64 dans une grille 256×256, FTM par FFT de la PSF, Seidel avec contributions des coniques/asphères, optimisation Levenberg-Marquardt à Jacobien numérique.</p>
-  <p><b>Raccourcis</b> : <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd> annuler/rétablir, <kbd>Inser</kbd> insérer après, <kbd>Ctrl</kbd>+<kbd>Suppr</kbd> supprimer la surface, <kbd>Ctrl</kbd>+<kbd>O</kbd> ouvrir, <kbd>Ctrl</kbd>+<kbd>S</kbd> enregistrer, <kbd>Ctrl</kbd>+<kbd>Maj</kbd>+<kbd>O</kbd> optimiser. Glissez-déposez un fichier .json, .seq ou .agf sur la fenêtre pour l'ouvrir. Le système est sauvegardé automatiquement dans ce navigateur.</p></div>`);
+function openHelp(id) {
+  const nav = HELP.map(x => `<button class="hn" data-h="${x.id}">${x.t}</button>`).join('');
+  dlg(`<h2>Aide de Focale <span class="hint" style="font-weight:400;margin-left:10px">version ${FOCALE_VERSION}</span><button class="x" data-d="close">✕</button></h2>
+  <div class="db" style="display:grid;grid-template-columns:220px 1fr;gap:16px;height:min(72vh,760px);padding-bottom:0">
+    <div style="display:flex;flex-direction:column;min-height:0"><input class="in" id="hq" placeholder="Rechercher dans l'aide…" style="margin-bottom:6px"><div id="hnav" style="overflow:auto">${nav}</div></div>
+    <div id="hbody" class="help" style="overflow:auto;padding-right:8px"></div></div>`, true);
+  const show = hid => {
+    const q = $('#hq').value.trim().toLowerCase(), items = q ? HELP.filter(x => (x.t + ' ' + x.h.replace(/<[^>]+>/g, ' ')).toLowerCase().includes(q)) : HELP.filter(x => x.id === (hid || 'demarrage'));
+    $$('#hnav .hn').forEach(b => { b.classList.toggle('on', !q && b.dataset.h === (hid || 'demarrage')); b.style.display = !q || items.some(x => x.id === b.dataset.h) ? '' : 'none'; });
+    let html = items.map(x => `<h3>${x.t}</h3>${x.h}`).join('<hr>') || '<p class="hint">Aucun résultat.</p>';
+    if (q) { const re = new RegExp('(' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi'); html = html.replace(/>([^<]+)</g, (m, t) => '>' + t.replace(re, '<mark>$1</mark>') + '<'); }
+    $('#hbody').innerHTML = html; $('#hbody').scrollTop = 0;
+  };
+  $('#hnav').addEventListener('click', e => { const b = e.target.closest('[data-h]'); if (b) { $('#hq').value = ''; show(b.dataset.h); } });
+  $('#hq').addEventListener('input', () => show());
+  show(id); $('#hq').focus();
 }
-
 /* ---------------- Fichiers (ouvrir / enregistrer / glisser-déposer) ---------------- */
 const FS = { handle: null };
 const TOP = (() => { try { return window.top === window; } catch (e) { return false; } })();
@@ -1278,12 +1447,15 @@ function init() {
   $('#showAsph').addEventListener('change', e => { App.showAsph = e.target.checked; renderLDE(); });
   $('#fileIn').addEventListener('change', e => { const f = e.target.files[0]; if (!f) return; f.text().then(t => importFile(f.name, t)); e.target.value = ''; });
   setupPlatform();
+  const ii = document.createElement('input'); ii.type = 'file'; ii.accept = 'image/*'; ii.id = 'imgIn'; ii.style.display = 'none'; document.body.appendChild(ii);
+  ii.addEventListener('change', e => { const f = e.target.files[0]; if (f) loadUserImage(f); e.target.value = ''; });
   document.addEventListener('keydown', e => {
     const inInput = e.target.closest && e.target.closest('input,textarea,select');
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !inInput) { e.preventDefault(); e.shiftKey ? redo() : undo(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y' && !inInput) { e.preventDefault(); redo(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') { e.preventDefault(); e.shiftKey ? openOptim() : openFile(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveFile(e.shiftKey); }
+    else if (e.key === 'F1') { e.preventDefault(); openHelp(); }
     else if (e.key === 'Insert') { e.preventDefault(); lde('insA'); }
     else if ((e.ctrlKey || e.metaKey) && e.key === 'Delete') { e.preventDefault(); lde('del'); }
     else if (e.key === 'Escape') { closeDlg(); $$('.pane.max').forEach(p => { p.classList.remove('max'); renderPane(+p.dataset.i); }); }

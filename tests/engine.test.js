@@ -28,4 +28,17 @@ const P = []; OE.ray(M, 1, 20, 0, 1, { pts: P }); near('Visée réelle sur diaph
   const k4 = 6 * c9 / zr ** 4, k2 = -6 * c9 / zr ** 2; Object.assign(b.surfaces[2], { type: 'XY', xy: { '4,0': k4, '0,4': k4, '2,2': 2 * k4, '2,0': k2, '0,2': k2 }, dz: c9, dmode: 'DAR' });
   const ra = OE.ray(OE.prepare(a), 1, { x: 0, y: 2 }, 0.3, 0.7), rb = OE.ray(OE.prepare(b), 1, { x: 0, y: 2 }, 0.3, 0.7);
   near('Surface Zernike ≡ polynôme XY équivalent (mm)', Math.hypot(ra.x - rb.x, ra.y - rb.y), 0, 1e-9); }
+{ const Sf = (r, t, o = {}) => ({ r, t, glass: '', sd: 0, k: 0, ...o });
+  const sys = s => ({ title: '', aperture: { type: 'EPD', value: 10, obscuration: 0 }, fields: [{ x: 0, y: 0, w: 1 }, { x: 0, y: 5, w: 1 }], wavelengths: [{ um: 0.55, w: 1 }], primary: 0, surfaces: s });
+  let M = OE.prepare(sys([Sf(Infinity, Infinity), Sf(Infinity, 10, { stop: true }), Sf(Infinity, 50, { elem: 'grating', lpmm: 600, gm: 1 }), Sf(Infinity, 0)]));
+  near('Réseau : sin θ = m λ / d', OE.ray(M, 0, { x: 0, y: 0 }, 0, 0).M, 0.33, 1e-9);
+  M = OE.prepare(sys([Sf(Infinity, Infinity), Sf(Infinity, 100, { stop: true, elem: 'ideal', fid: 100 }), Sf(Infinity, 0)]));
+  near('Lentille idéale : spot hors axe (µm)', OE.spot(M, 1, 21).rms * 1e3, 0, 1e-6); near('Lentille idéale : WFE hors axe (λ)', OE.wavefront(M, 1, 0, 32).rms, 0, 1e-6);
+  M = OE.prepare(sys([Sf(Infinity, Infinity), Sf(Infinity, 10, { stop: true, elem: 'polarizer', pang: 30 }), Sf(Infinity, 10), Sf(Infinity, 0)]));
+  near('Polariseur : loi de Malus', OE.polPupil(M, 0, 0, 'X', 5, false).T, 0.75, 1e-6);
+  M = OE.prepare(sys([Sf(Infinity, Infinity), Sf(Infinity, 10, { stop: true, elem: 'waveplate', ret: 0.25, wang: 45 }), Sf(Infinity, 10), Sf(Infinity, 0)]));
+  const o = OE.polPupil(M, 0, 0, 'X', 3, false).pts.find(q => !q.px && !q.py).o; near('Lame λ/4 à 45° : circulaire |S3/S0|', Math.abs(o.S[3] / o.S[0]), 1, 1e-9);
+  M = OE.prepare(sys([Sf(Infinity, Infinity), Sf(Infinity, 5, { stop: true, glass: 'N-BK7' }), Sf(Infinity, 10), Sf(Infinity, 0)])); const n = OE.glassN('N-BK7', 0.55);
+  near('Fresnel : lame N-BK7 à incidence normale', OE.polPupil(M, 0, 0, 'X', 3, true).pts.find(q => !q.px && !q.py).I, (1 - ((n - 1) / (n + 1)) ** 2) ** 2, 1e-9);
+  M = OE.prepare(S['Spectrographe à réseau 600 traits/mm']()); near('Spectrographe : 550 nm centré', OE.ray(M, 1, { x: 0, y: 0 }, 0, 0).y, 0, 0.01); }
 console.log(fail ? `${fail} échec(s)` : 'Tous les tests passent'); process.exit(fail ? 1 : 0);

@@ -5,7 +5,11 @@ analyses (spot, ray fan, OPD, WFE/Zernike, PSF, FTM, énergie encerclée, footpr
 courbure de champ, distorsion, Seidel, chromatisme), optimisation par moindres carrés amortis
 et tolérancement (sensibilités, RSS, Monte-Carlo avec compensateur).
 
-- Surfaces : sphère, conique, asphère paire, polynôme XY (ordre 6), Zernike Fringe (16 termes), miroirs
+- Éléments : dioptres, miroirs, réseaux de diffraction (transmission / réflexion), lentilles idéales, polariseurs, lames d'onde
+- Formes : sphère, conique, asphère paire, polynôme XY (ordre 6), Zernike Fringe (16 termes)
+- Polarisation : tracé du champ électrique 3D (Fresnel, miroirs, polariseurs, retardateurs)
+- Simulation d'image : distorsion, PSF variable dans le champ, chromatisme RVB, vignetage
+- Aide intégrée (F1) avec recherche
 - Décentrements et bascules par surface (DEC, DAR, pliage BEN), champs en X et Y
 - Plus de 1000 verres Schott, Ohara, CDGM, Hoya + import de catalogues Zemax `.agf`
 - Import/export JSON et CODE V (.seq)
@@ -22,6 +26,7 @@ et tolérancement (sensibilités, RSS, Monte-Carlo avec compensateur).
 - `src/engine.js` — moteur optique (paraxial, tracé réel, diffraction, optimisation), sans dépendance
 - `src/app.js` — interface
 - `src/samples.js` — systèmes d'exemple
+- `src/help.js` — contenu du centre d'aide
 - `src/glasses.js` — catalogues de verres (généré depuis refractiveindex.info, CC0)
 - `src/shell.html` — HTML/CSS
 - `src/pwa/` — manifeste, service worker et icône de l'application installable
