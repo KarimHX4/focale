@@ -85,7 +85,7 @@ function refresh(opts = {}) {
   const t0 = performance.now();
   try { App.M = OE.prepare(App.sys); } catch (e) { console.error(e); App.M = { ok: false, errors: ['Erreur de calcul : ' + e.message] }; }
   App.sel = Math.min(Math.max(1, App.sel), App.sys.surfaces.length - 1);
-  renderLDE(); renderSide(); drawLayout();
+  renderLDE(); renderSide(); drawLayout(); if (window.GLW) GLW.refresh?.();
   App.lastPrep = performance.now() - t0;
   clearTimeout(paneTimer);
   paneTimer = setTimeout(renderPanes, opts.fast ? 0 : 40);
@@ -202,15 +202,33 @@ function setupLDE() {
     }
     const tr = e.target.closest('tr[data-i]'); if (tr && !e.target.closest('input')) selectRow(+tr.dataset.i, true);
   });
+  tb.addEventListener('contextmenu', e => { const tr = e.target.closest('tr[data-i]'); if (!tr) return; e.preventDefault(); selectRow(+tr.dataset.i, true); ctxMenu(e.clientX, e.clientY, +tr.dataset.i); });
   tb.addEventListener('dblclick', e => { const td = e.target.closest('td.ty'); if (td) { const i = +td.parentElement.dataset.i; if (i > 0 && i < App.sys.surfaces.length - 1) setStop(i); } });
 }
 function selectRow(i, redraw = true) {
   i = Math.max(0, Math.min(App.sys.surfaces.length - 1, i));
   if (App.sel === i) return; App.sel = i;
   $$('#lde tr[data-i]').forEach(tr => tr.classList.toggle('sel', +tr.dataset.i === i));
-  renderSide(); drawLayout();
+  renderSide(); drawLayout(); GLW.refresh?.();
   if (App.panes.slice(0, App.grid).some(p => p.type === 'footprint' && p.si == null)) renderPanes();
 }
+/** menu contextuel (clic droit) d'une ligne de l'éditeur de lentilles */
+function ctxMenu(x, y, i) {
+  let m = $('#ctx'); if (!m) { m = document.createElement('div'); m.id = 'ctx'; m.className = 'menu ctx'; document.body.appendChild(m);
+    m.addEventListener('click', e => { const b = e.target.closest('[data-c]'); if (!b || b.disabled) return; hideCtx(); const c = b.dataset.c; if (c === 'glasses') openGlasses(); else lde(c); });
+    const off = e => { if (!e.target.closest || !e.target.closest('#ctx')) hideCtx(); };
+    window.addEventListener('mousedown', off, true); window.addEventListener('blur', hideCtx); window.addEventListener('resize', hideCtx); document.addEventListener('scroll', hideCtx, true);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') hideCtx(); }); }
+  const S = App.sys.surfaces, N = S.length - 1, s = S[i], opt = i > 0 && i < N, lens = opt && i + 1 < N && !OE.isAir(s.glass) && !OE.isMirror(s);
+  const it = (c, l, on = true, kb = '', cls = '') => `<button data-c="${c}" class="${cls}" ${on ? '' : 'disabled'}>${l}${kb ? `<span class="kb">${kb}</span>` : ''}</button>`;
+  m.innerHTML = `<div class="hint" style="padding:4px 10px 6px">Surface ${i}${i === 0 ? ' (objet)' : i === N ? ' (image)' : s.comment ? ' — ' + esc(s.comment) : ''}</div>`
+    + it('insB', 'Insérer une surface avant', i > 0) + it('insA', 'Insérer une surface après', i < N, 'Inser') + it('addLens', 'Ajouter une lentille après', i < N)
+    + '<hr>' + it('glasses', 'Choisir le verre dans le catalogue…', i < N) + it('stop', 'Définir comme diaphragme', opt && !s.stop) + it('mirror', OE.isMirror(s) ? 'Redevenir un dioptre' : 'Transformer en miroir', opt) + it('flip', 'Retourner l\'élément', i > 0 && i < N - 1)
+    + '<hr>' + it('del', 'Supprimer la surface', opt && N > 2, 'Suppr', 'danger') + it('delEl', `Supprimer l'élément (surfaces ${i} et ${i + 1})`, lens && N > 3, '', 'danger');
+  m.classList.add('open'); m.style.left = '0px'; m.style.top = '0px';
+  const r = m.getBoundingClientRect(); m.style.left = Math.min(x, innerWidth - r.width - 6) + 'px'; m.style.top = Math.min(y, innerHeight - r.height - 6) + 'px';
+}
+function hideCtx() { const m = $('#ctx'); if (m) m.classList.remove('open'); }
 function setStop(i) { commit(S => S.surfaces.forEach((s, j) => s.stop = j === i)); }
 function lde(act) {
   const S = App.sys.surfaces, N = S.length - 1; let i = App.sel;
@@ -219,7 +237,11 @@ function lde(act) {
     case 'insA': { const j = Math.min(i + 1, N); commit(s => s.surfaces.splice(j, 0, newSurf())); App.sel = j; refresh(); break; }
     case 'addLens': { const j = Math.min(i + 1, N); commit(s => s.surfaces.splice(j, 0, newSurf({ r: 50, t: 4, glass: 'N-BK7', comment: 'Lentille' }), newSurf({ r: -50, t: 10 }))); App.sel = j; refresh(); break; }
     case 'del': if (i < 1 || i >= N) return toast('Impossible de supprimer l\'objet ou l\'image'); if (N <= 2) return toast('Il faut au moins une surface');
-      commit(s => { const wasStop = s.surfaces[i].stop; s.surfaces.splice(i, 1); if (wasStop) s.surfaces[Math.min(i, s.surfaces.length - 2)].stop = true; }); break;
+      commit(s => { const wasStop = s.surfaces[i].stop; s.surfaces.splice(i, 1); if (wasStop) s.surfaces[Math.min(i, s.surfaces.length - 2)].stop = true; });
+      App.sel = Math.min(i, App.sys.surfaces.length - 1); refresh(); toast(`Surface ${i} supprimée — Ctrl+Z pour annuler`, 3000); break;
+    case 'delEl': { if (i < 1 || i + 1 >= N) return toast('Sélectionnez la première surface d\'une lentille'); if (N <= 3) return toast('Il faut au moins une surface');
+      commit(s => { const wasStop = s.surfaces[i].stop || s.surfaces[i + 1].stop; s.surfaces.splice(i, 2); if (wasStop) s.surfaces[Math.min(i, s.surfaces.length - 2)].stop = true; });
+      App.sel = Math.min(i, App.sys.surfaces.length - 1); refresh(); toast(`Élément (surfaces ${i} et ${i + 1}) supprimé — Ctrl+Z pour annuler`, 3000); break; }
     case 'stop': if (i < 1 || i >= N) return toast('Sélectionnez une surface optique'); setStop(i); break;
     case 'mirror': if (i < 1 || i >= N) return; commit(s => { const x = s.surfaces[i]; x.glass = OE.isMirror(x) ? '' : 'MIRROR'; }); break;
     case 'flip': {
@@ -320,23 +342,41 @@ function importAGF(name, text) {
   rebuildGlassList(); closeDlg(); refresh(); toast(`${n} verres importés dans le catalogue ${cat}`, 3500);
 }
 function loadStoredAGF() { try { const st = JSON.parse(localStorage.getItem('focale.agf') || '{}'); for (const [cat, t] of Object.entries(st)) OE.addGlasses(OE.parseAGF(t, cat), true); } catch (e) { } }
+var GLW = { pick: null, refresh: null };
 function openGlasses() {
-  const cats = OE.cats();
-  dlg(`<h2>Catalogue de verres <button class="x" data-d="close">✕</button></h2><div class="db">
+  const cats = OE.cats(); GLW.pick = null;
+  dlg(`<h2>Catalogue de verres <button class="x" data-d="close">✕</button></h2><div class="db" style="display:flex;flex-direction:column">
     <div class="row"><input class="in" id="gq" style="flex:1" placeholder="Rechercher (nom, ex. BK7, LAH, FK…)"><select class="in" id="gc"><option value="">Tous les catalogues</option>${cats.map(c => `<option>${c}</option>`).join('')}</select>
       <label class="hint"><input type="checkbox" id="go"> obsolètes</label><button class="bt" data-d="agf">Importer un AGF…</button></div>
     <div class="hint" id="gn"></div>
-    <div style="max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:6px"><table class="mt" id="gt" style="font-size:12px"></table></div>
-    <div class="hint" style="margin-top:6px">Cliquez sur un verre pour l'affecter à la surface ${App.sel} (milieu après la surface). Données : refractiveindex.info (CC0) d'après les catalogues fabricants ; les fichiers AGF importés (Zemax, formules 1–13) sont conservés dans ce navigateur.</div></div>`, true);
-  const draw = () => {
-    const q = $('#gq').value.trim().toUpperCase().replace(/[\s\-_]/g, ''), c = $('#gc').value, ob = $('#go').checked;
-    const L = OE.catalog().filter(g => (!c || g.cat === c) && (ob || g.st !== 'o') && (!q || g.name.toUpperCase().replace(/[\s\-_]/g, '').includes(q)));
-    $('#gn').textContent = `${L.length} verres`;
-    $('#gt').innerHTML = `<tr><th>Nom</th><th>Catalogue</th><th>nd</th><th>νd</th><th>Domaine (µm)</th><th>Statut</th></tr>` + L.slice(0, 400).map(g => `<tr data-g="${esc(g.name)}" style="cursor:pointer"><td><b>${esc(g.name)}</b></td><td><span class="sw" style="background:${catCol(g.cat)}"></span> ${g.cat}</td><td style="font-family:var(--mono)">${g.nd.toFixed(5)}</td><td style="font-family:var(--mono)">${g.vd.toFixed(2)}</td><td style="font-family:var(--mono)">${g.lmin ?? '—'} – ${g.lmax ?? '—'}</td><td>${{ s: 'standard', p: 'préférentiel', o: 'obsolète', i: 'inquiry' }[g.st] || g.st}</td></tr>`).join('');
+    <div id="gwrap" style="flex:1 1 auto;min-height:120px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:6px"><table class="mt gtab" id="gt" style="font-size:12px"></table></div>
+    <div class="hint" style="margin-top:6px">Cliquez sur un verre pour le sélectionner, puis validez pour l'affecter à la surface sélectionnée dans l'éditeur (milieu après la surface) ; la fenêtre reste ouverte, vous pouvez changer de surface. Données : refractiveindex.info (CC0) d'après les catalogues fabricants ; les fichiers AGF importés (Zemax, formules 1–13) sont conservés dans ce navigateur.</div></div>
+    <div class="df" id="gconf"></div>`, true, { h: 640 });
+  const surf = () => { const j = App.sel, N = App.sys.surfaces.length - 1; return j >= 0 && j < N ? j : -1; };
+  const key = n => String(n || '').toUpperCase().replace(/[\s\-_]/g, '');
+  const conf = () => {
+    const el = $('#gconf'); if (!el) return; const j = surf(), g = GLW.pick && OE.catalog().find(x => x.name === GLW.pick);
+    const cur = j >= 0 ? (App.sys.surfaces[j].glass || 'air') : '';
+    if (!g) { el.innerHTML = `<span class="hint" style="margin-right:auto">${j >= 0 ? `Surface ${j} — verre actuel : <b>${esc(cur)}</b>. Sélectionnez un verre dans la liste.` : 'Sélectionnez une surface (pas l\'image) dans l\'éditeur de lentilles.'}</span>`; return; }
+    el.innerHTML = `<span style="margin-right:auto">${j >= 0 ? `Affecter <b>${esc(g.name)}</b> <span class="hint">(${g.cat} · nd ${g.nd.toFixed(5)} · νd ${g.vd.toFixed(2)})</span> à la surface <b>${j}</b> <span class="hint">— actuellement ${esc(cur)}</span> ?` : '<span class="hint">Sélectionnez une surface (pas l\'image) dans l\'éditeur de lentilles.</span>'}</span>
+      <button class="bt" id="gno">Annuler</button><button class="tb pri" id="gyes" ${j >= 0 ? '' : 'disabled'}>Valider</button>`;
+    $('#gno').onclick = () => { GLW.pick = null; mark(); conf(); };
+    $('#gyes').onclick = () => { const jj = surf(); if (jj < 0) return toast('Sélectionnez une surface (pas l\'image)'); const n = GLW.pick; commit(S => S.surfaces[jj].glass = n); toast(`${n} → surface ${jj}`); GLW.pick = null; mark(); conf(); };
   };
-  ['input', 'change'].forEach(ev => { $('#gq').addEventListener(ev, draw); $('#gc').addEventListener(ev, draw); $('#go').addEventListener(ev, draw); });
-  $('#gt').addEventListener('click', e => { const tr = e.target.closest('[data-g]'); if (!tr) return; const j = App.sel, N = App.sys.surfaces.length - 1; if (j < 0 || j >= N) return toast('Sélectionnez une surface (pas l\'image)'); commit(s => s.surfaces[j].glass = tr.dataset.g); toast(`${tr.dataset.g} → surface ${j}`); });
-  draw(); $('#gq').focus();
+  const mark = () => { const j = surf(), cur = j >= 0 ? key(App.sys.surfaces[j].glass) : ''; $$('#gt tr[data-g]').forEach(tr => { tr.classList.toggle('gsel', tr.dataset.g === GLW.pick); tr.classList.toggle('gcur', !!cur && key(tr.dataset.g) === cur); }); };
+  const draw = () => {
+    const q = key($('#gq').value.trim()), c = $('#gc').value, ob = $('#go').checked;
+    const L = OE.catalog().filter(g => (!c || g.cat === c) && (ob || g.st !== 'o') && (!q || key(g.name).includes(q)));
+    $('#gn').textContent = `${L.length} verres`;
+    $('#gt').innerHTML = `<tr><th>Nom</th><th>Catalogue</th><th>nd</th><th>νd</th><th>Domaine (µm)</th><th>Statut</th></tr>` + L.slice(0, 400).map(g => `<tr data-g="${esc(g.name)}" tabindex="-1"><td><b>${esc(g.name)}</b></td><td><span class="sw" style="background:${catCol(g.cat)}"></span> ${g.cat}</td><td style="font-family:var(--mono)">${g.nd.toFixed(5)}</td><td style="font-family:var(--mono)">${g.vd.toFixed(2)}</td><td style="font-family:var(--mono)">${g.lmin ?? '—'} – ${g.lmax ?? '—'}</td><td>${{ s: 'standard', p: 'préférentiel', o: 'obsolète', i: 'inquiry' }[g.st] || g.st}</td></tr>`).join('');
+    mark();
+  };
+  GLW.refresh = () => { if (!$('#gconf')) return (GLW.refresh = null); mark(); conf(); };
+  $('#gq').addEventListener('input', draw); $('#gc').addEventListener('change', draw); $('#go').addEventListener('change', draw);
+  $('#gt').addEventListener('mousedown', e => { const tr = e.target.closest('[data-g]'); if (!tr || e.button !== 0) return; GLW.pick = tr.dataset.g; mark(); conf(); });
+  $('#gt').addEventListener('dblclick', e => { if (e.target.closest('[data-g]')) $('#gyes')?.focus(); });
+  $('#gq').addEventListener('keydown', e => { if (e.key === 'Enter' && GLW.pick && $('#gyes') && !$('#gyes').disabled) $('#gyes').click(); });
+  draw(); conf(); $('#gq').focus();
 }
 function elemEditor(x, j, N) {
   const e = x.elem, inp = (k, l, u, v) => `<div class="row"><label>${l}${u ? ' <span style="opacity:.7">(' + u + ')</span>' : ''}</label><input class="in mini" data-f="ep" data-k="${k}" value="${fmt(v, 7)}"></div>`;
@@ -1293,10 +1333,52 @@ function openOptim() {
   const r = OE.residuals(s); $('#mval').textContent = r ? OE.meritOf(r.f).toExponential(4) : '—';
   OPT.hist = r ? [OE.meritOf(r.f)] : []; drawMerit();
 }
-function dlg(html, wide) { $('#dlg').innerHTML = html; $('#dlg').classList.toggle('wide', !!wide); $('#modal').classList.add('open'); }
-function closeDlg() { $('#modal').classList.remove('open'); OPT.running = false; if (typeof TOL !== 'undefined') TOL.running = false; }
+/* Fenêtres : flottantes et non modales (on peut continuer à travailler derrière), déplaçables par la barre de titre,
+   réductibles, agrandissables et redimensionnables (poignée en bas à droite). La géométrie est mémorisée par fenêtre. */
+const WIN = { key: null, geo: new Map(), state: new Map() };
+function dlg(html, wide, o = {}) {
+  const d = $('#dlg'), m = $('#modal'), h2t = (html.match(/<h2>([^<]*)/) || [])[1] || '', key = h2t.trim();
+  const same = m.classList.contains('open') && WIN.key === key;
+  if (!same && m.classList.contains('open')) winSave();
+  d.innerHTML = html; d.classList.toggle('wide', !!wide);
+  const h2 = d.querySelector(':scope > h2');
+  if (h2) {
+    const x = h2.querySelector('.x'), c = document.createElement('span'); c.className = 'wctl';
+    c.innerHTML = '<button class="wb" data-w="min" title="Réduire / restaurer (double-clic sur la barre de titre)" aria-label="Réduire">–</button><button class="wb" data-w="max" title="Agrandir / restaurer" aria-label="Agrandir">□</button>';
+    if (x) { x.title = 'Fermer (Échap)'; x.setAttribute('aria-label', 'Fermer'); c.appendChild(x); } h2.appendChild(c);
+  }
+  const g = document.createElement('div'); g.className = 'grip'; g.title = 'Redimensionner'; d.appendChild(g);
+  m.classList.add('open');
+  if (same) return;
+  WIN.key = key; d.classList.remove('min', 'maxi'); d.style.cssText = '';
+  const st = WIN.geo.get(key);
+  if (st) { Object.assign(d.style, st); if (st.height) d.style.maxHeight = 'none'; }
+  else { if (o.w) d.style.width = `min(${o.w}px, 96vw)`; if (o.h) { d.style.height = `min(${o.h}px, 90vh)`; } const r = d.getBoundingClientRect(); d.style.left = Math.max(8, (innerWidth - r.width) / 2) + 'px'; d.style.top = Math.max(12, (innerHeight - r.height) / 2.4) + 'px'; }
+  winClamp();
+}
+function winSave() { const d = $('#dlg'); if (!WIN.key) return; const { left, top, width, height } = d.style; WIN.geo.set(WIN.key, { left, top, width, height }); }
+function winClamp() { const d = $('#dlg'), r = d.getBoundingClientRect(); let l = parseFloat(d.style.left) || r.left, t = parseFloat(d.style.top) || r.top; l = Math.max(0, Math.min(l, innerWidth - r.width)); t = Math.min(Math.max(t, 0), innerHeight - 40); d.style.left = l + 'px'; d.style.top = t + 'px'; }
+function closeDlg() { if ($('#modal').classList.contains('open')) winSave(); $('#modal').classList.remove('open'); WIN.key = null; OPT.running = false; if (typeof TOL !== 'undefined') TOL.running = false; }
+function setupWin() {
+  const d = $('#dlg');
+  const track = (e, fn) => { e.preventDefault(); const mv = ev => fn(ev), up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); document.body.classList.remove('wdrag'); winSave(); }; document.body.classList.add('wdrag'); window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up); };
+  d.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    if (e.target.classList.contains('grip')) {
+      const r = d.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY; d.classList.remove('maxi', 'min');
+      return track(e, ev => { d.style.maxHeight = 'none'; d.style.width = Math.max(340, Math.min(innerWidth - r.left - 4, r.width + ev.clientX - x0)) + 'px'; d.style.height = Math.max(160, Math.min(innerHeight - r.top - 4, r.height + ev.clientY - y0)) + 'px'; });
+    }
+    const h2 = e.target.closest('#dlg > h2'); if (!h2 || e.target.closest('button,input,select,label,a')) return;
+    if (d.classList.contains('maxi')) return;
+    const r = d.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
+    track(e, ev => { d.style.left = ev.clientX - dx + 'px'; d.style.top = ev.clientY - dy + 'px'; winClamp(); });
+  });
+  d.addEventListener('dblclick', e => { if (e.target.closest('#dlg > h2') && !e.target.closest('button,input,select')) d.classList.toggle('min'); });
+  d.addEventListener('click', e => { const b = e.target.closest('[data-w]'); if (!b) return; if (b.dataset.w === 'min') { d.classList.remove('maxi'); d.classList.toggle('min'); } else { d.classList.remove('min'); d.classList.toggle('maxi'); } });
+  window.addEventListener('resize', () => { if ($('#modal').classList.contains('open')) winClamp(); });
+}
 function setupDlg() {
-  $('#modal').addEventListener('mousedown', e => { if (e.target.id === 'modal') closeDlg(); });
+  setupWin();
   $('#dlg').addEventListener('change', e => {
     const t = e.target;
     if (t.dataset.t) {
@@ -1621,6 +1703,7 @@ function init() {
     else if (e.key === 'F1') { e.preventDefault(); openHelp(); }
     else if (e.key === 'Insert') { e.preventDefault(); lde('insA'); }
     else if ((e.ctrlKey || e.metaKey) && e.key === 'Delete') { e.preventDefault(); lde('del'); }
+    else if (e.key === 'Delete' && !inInput && !e.target.closest?.('#dlg')) { e.preventDefault(); lde('del'); }
     else if (e.key === 'Escape') { closeDlg(); $$('.pane.max').forEach(p => { p.classList.remove('max'); renderPane(+p.dataset.i); }); }
   });
   // séparateurs

@@ -22,7 +22,8 @@ const HELP = [
 <li><b>Analyses</b> (droite) : chaque fenêtre a son propre choix d'analyse et ses réglages ; ⤓ enregistre l'image PNG, ⤢ agrandit.</li>
 <li><b>Barre d'état</b> : focale, F/#, longueur, nombre de variables, avertissements et temps de calcul.</li>
 </ul>
-<p>Les séparateurs entre zones se déplacent à la souris. Le système et la disposition sont mémorisés automatiquement dans le navigateur.</p>` },
+<p>Les séparateurs entre zones se déplacent à la souris. Le système et la disposition sont mémorisés automatiquement dans le navigateur.</p>
+<p><b>Fenêtres</b> (verres, optimisation, tolérancement, rapport, aide…) : elles flottent au-dessus de l'interface sans la bloquer — on peut continuer à travailler dans l'éditeur pendant qu'elles sont ouvertes. Glisser la <b>barre de titre</b> pour déplacer ; <b>–</b> (ou double-clic sur le titre) pour réduire à la barre de titre ; <b>□</b> pour agrandir en plein écran ; la <b>poignée en bas à droite</b> pour changer la taille ; ✕ ou Échap pour fermer. Position et taille sont retenues pour chaque fenêtre pendant la session.</p>` },
 
   { id: 'lde', t: 'Éditeur de lentilles', h: `
 <table class="ht"><tr><th>Colonne</th><th>Signification</th></tr>
@@ -36,7 +37,8 @@ const HELP = [
 <tr><td>Conique</td><td>Constante de conicité k (0 sphère, −1 parabole, &lt;−1 hyperbole, ]−1,0[ ellipse).</td></tr>
 <tr><td>A4…A10</td><td>Coefficients d'asphérique pair (case « Asphères »).</td></tr></table>
 <p><b>Boutons</b> : <b>V</b> = variable d'optimisation ; <b>M</b> = solve de mise au point (épaisseur telle que le rayon marginal paraxial coupe l'axe à la surface suivante) ; 🔒 = demi-diamètre fixe.</p>
-<p><b>Clavier</b> : Entrée valide et descend, Tab passe à la colonne suivante, flèches haut/bas, Échap annule, Inser insère une surface après la sélection, Ctrl+Suppr supprime.</p>
+<p><b>Clavier</b> : Entrée valide et descend, Tab passe à la colonne suivante, flèches haut/bas, Échap annule, Inser insère une surface après la sélection, Suppr (hors d'un champ de saisie) ou Ctrl+Suppr supprime la surface sélectionnée.</p>
+<p><b>Clic droit</b> sur une ligne : menu contextuel — insérer avant/après, ajouter une lentille, choisir le verre, diaphragme, miroir, retourner, <b>supprimer la surface</b> ou <b>supprimer l'élément</b> (les deux surfaces d'une lentille). Toute suppression s'annule avec Ctrl+Z.</p>
 <p><b>Outils</b> : + Avant / + Après / + Lentille (deux surfaces N-BK7), Supprimer, Diaphragme, Miroir, Retourner (inverse un élément), Verres… (catalogue).</p>` },
 
   { id: 'elements', t: 'Types d\'éléments', h: `
@@ -74,7 +76,7 @@ const HELP = [
 <h4>Données paraxiales</h4><p>Focale effective, tirage, F/#, ouvertures numériques, positions et diamètres des pupilles, grandissement, invariant de Lagrange.</p>` },
 
   { id: 'verres', t: 'Verres et catalogues', h: `
-<p>Plus de 1000 verres <b>Schott, Ohara, CDGM et Hoya</b> (base refractiveindex.info, domaine public), plus silice fondue et CaF₂. Bouton <b>Verres…</b> : recherche, filtre par fabricant, clic pour affecter le verre à la surface sélectionnée.</p>
+<p>Plus de 1000 verres <b>Schott, Ohara, CDGM et Hoya</b> (base refractiveindex.info, domaine public), plus silice fondue et CaF₂. Bouton <b>Verres…</b> (ou clic droit sur une surface › Choisir le verre) : recherche et filtre par fabricant. Un clic <b>surligne</b> le verre choisi et affiche en bas de la fenêtre la demande de confirmation (verre, nd, νd, surface visée et verre actuel) : <b>Valider</b> l'affecte, <b>Annuler</b> abandonne (Entrée dans la recherche valide aussi). Le verre actuel de la surface est repéré par « · actuel ». La fenêtre reste ouverte : sélectionnez une autre surface dans l'éditeur pour continuer.</p>
 <ul>
 <li>Saisie libre avec auto-complétion ; tirets et casse ignorés (<code>nbk7</code> = N-BK7).</li>
 <li>Homonymes : suffixe fabricant, ex. <code>F2_CDGM</code>. Les noms CODE V (<code>NBK7_SCHOTT</code>) sont reconnus.</li>
@@ -194,7 +196,7 @@ const HELP = [
 <table class="ht"><tr><th>Touches</th><th>Action</th></tr>
 <tr><td>F1</td><td>Aide</td></tr><tr><td>Ctrl+Z / Ctrl+Y</td><td>Annuler / rétablir</td></tr>
 <tr><td>Ctrl+O / Ctrl+S / Ctrl+Maj+S</td><td>Ouvrir / enregistrer / enregistrer sous</td></tr>
-<tr><td>Ctrl+Maj+O</td><td>Optimisation</td></tr><tr><td>Inser / Ctrl+Suppr</td><td>Insérer / supprimer une surface</td></tr>
+<tr><td>Ctrl+Maj+O</td><td>Optimisation</td></tr><tr><td>Inser / Suppr (ou Ctrl+Suppr)</td><td>Insérer / supprimer une surface</td></tr><tr><td>Clic droit (éditeur)</td><td>Menu de la surface (supprimer, insérer, verre…)</td></tr>
 <tr><td>Entrée, Tab, ↑ ↓, Échap</td><td>Navigation dans l'éditeur</td></tr><tr><td>Échap</td><td>Fermer une fenêtre, réduire une analyse agrandie</td></tr></table>` },
 
   { id: 'conventions', t: 'Conventions et unités', h: `
