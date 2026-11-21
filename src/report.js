@@ -58,7 +58,7 @@ async function genReport() {
   App.forceLight = true; readTheme();
   const page = () => {
     doc.addPage();
-    lensMark(doc, L, 26, 0.55); doc.text(L + 20, 33, 'Focale', { size: 10, font: 'bold', color: ACC });
+    lensMark(doc, L, 24, 0.7); doc.text(L + 20, 34, 'Focale', { size: 10, font: 'bold', color: ACC });
     doc.text(Rr, 33, `${cf.title || 'Rapport'} — ${sys.title || ''}`.slice(0, 95), { size: 8.5, color: MUT, align: 'right' });
     doc.line(L, 42, Rr, 42, { color: LINE }); y = 64;
   };
@@ -231,9 +231,16 @@ async function genReport() {
   finally { App.forceLight = false; App.view = savedView; App.mode = savedMode; readTheme(); drawLayout(); }
 }
 /** pictogramme vectoriel (lentille + rayons) pour l'en-tête du rapport */
+/** logo Focale « tache d'Airy » sur tuile sombre ; (x, y) coin haut-gauche, taille 20·k pt */
 function lensMark(doc, x, y, k = 1) {
-  const cx = x + 8 * k, cy = y + 6 * k, pts = []; for (let a = 0; a <= 40; a++) { const t = 2 * Math.PI * a / 40; pts.push([cx + 3.6 * k * Math.cos(t), cy + 8.4 * k * Math.sin(t)]); }
-  doc.poly(pts, { fill: '#dbe7fd', stroke: '#2563eb', w: 0.9 * k, close: true });
-  doc.poly([[x - 1 * k, cy - 5 * k], [cx, cy - 3.2 * k], [x + 18 * k, cy]], { stroke: '#f59e0b', w: 0.8 * k });
-  doc.poly([[x - 1 * k, cy + 5 * k], [cx, cy + 3.2 * k], [x + 18 * k, cy]], { stroke: '#f59e0b', w: 0.8 * k });
+  const S = 20 * k, u = S / 100;
+  const arc = (cx, cy, r, a0, a1, n = 8) => { const o = []; for (let i = 0; i <= n; i++) { const t = a0 + (a1 - a0) * i / n; o.push([cx + r * Math.cos(t), cy + r * Math.sin(t)]); } return o; };
+  const R = 22 * u, tile = [...arc(x + S - R, y + R, R, -Math.PI / 2, 0), ...arc(x + S - R, y + S - R, R, 0, Math.PI / 2), ...arc(x + R, y + S - R, R, Math.PI / 2, Math.PI), ...arc(x + R, y + R, R, Math.PI, 1.5 * Math.PI)];
+  doc.poly(tile, { fill: '#0f172a', close: true });
+  // anneaux d'Airy (repère 100×100) réduits à 74 % et centrés dans la tuile
+  const cx = x + S / 2, cy = y + S / 2, q = 0.74 * u, ring = r => arc(cx, cy, r * q, 0, 2 * Math.PI, 48);
+  doc.poly(ring(44), { stroke: '#263f64', w: 5 * q, close: true });
+  doc.poly(ring(31), { stroke: '#3c659c', w: 6 * q, close: true });
+  doc.poly(ring(16), { fill: '#60a5fa', close: true });
+  doc.poly(ring(6), { fill: '#f59e0b', close: true });
 }

@@ -89,6 +89,7 @@ const PDF = (() => {
       if (o.close) s += ' h';
       if (o.fill) { const [r, g, b] = col(o.fill); s = `${n(r)} ${n(g)} ${n(b)} rg ` + s + (o.stroke ? '' : ' f'); }
       if (o.stroke) { const [r, g, b] = col(o.stroke); s = `${n(o.w || 0.8)} w ${n(r)} ${n(g)} ${n(b)} RG ` + s + (o.fill ? ' B' : ' S'); }
+      if (o.round) s = '1 J 1 j ' + s + ' 0 J 0 j';
       this.page.push(s);
     }
     /** document final (Uint8Array) */

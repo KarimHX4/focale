@@ -10,6 +10,7 @@ Interface et commentaires en français. Unités : mm, longueurs d'onde en µm.
 - `src/app.js` : interface (éditeur de lentilles, layout 2D/3D canvas, panneaux d'analyse, optimiseur, tolérancement…).
 - `src/io.js` : import/export Zemax `.zmx` et CODE V `.seq` (module Node testable) : `decode` (UTF-16), `detect`, `parseZMX`/`toZMX`, `parseSeq`/`toSeq` ; chaque fonction renvoie aussi `warnings`. Décentrements ↔ COORDBRK, verres fictifs ↔ ___BLANK / PRV.
 - `src/pdf.js` : écrivain PDF autonome (`PDF.Doc` : text/para/line/rect/poly/jpeg/build ; Helvetica, Courier, Symbol pour le grec ; WinAnsi). `src/report.js` : fenêtre « Rapport PDF » et `genReport()` (rendu hors écran en thème clair via `App.forceLight`, `drawLayout({c,w,h})`, `simSync`).
+- Logo « tache d'Airy » sur tuile sombre (#0f172a, anneaux #263f64/#3c659c, cœur #60a5fa, point #f59e0b) : `src/pwa/icon.svg` (→ `icon-192/512.png` via sharp), en-tête de `shell.html`, `lensMark()` dans `report.js`.
 - `src/samples.js` : systèmes d'exemple. `src/shell.html` : HTML/CSS avec marqueurs `/*__ENGINE__*/` etc.
 - `index.html`, `sw.js`, `manifest.webmanifest`, `icon.svg` sont GÉNÉRÉS par `python3 build.py` (version = hash du contenu, ce qui déclenche la mise à jour des applications installées) : ne jamais les éditer à la main, toujours régénérer et commiter.
 
