@@ -814,7 +814,114 @@ const OE = (() => {
     return { done: true, merit: m0, msg: 'Minimum local atteint' };
   }
 
-  return { DEG, frames, toGlobal, mv, sGrad, fieldDir, GL, catalog, glassN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
+  /* ---------------- Tolérancement ---------------- */
+  const TOLT = {
+    TRAD: { label: 'Rayon', unit: '%', def: 0.2, desc: 'Variation relative du rayon de courbure' },
+    TTHI: { label: 'Épaisseur', unit: 'mm', def: 0.05, desc: 'Épaisseur ou espace d\'air' },
+    TIND: { label: 'Indice', unit: 'Δn', def: 0.0005, desc: 'Indice de réfraction du verre' },
+    TSDX: { label: 'Décentrement surface X', unit: 'mm', def: 0.02 }, TSDY: { label: 'Décentrement surface Y', unit: 'mm', def: 0.02 },
+    TSTX: { label: 'Bascule surface α', unit: '°', def: 0.02 }, TSTY: { label: 'Bascule surface β', unit: '°', def: 0.02 },
+    TEDX: { label: 'Décentrement élément X', unit: 'mm', def: 0.02 }, TEDY: { label: 'Décentrement élément Y', unit: 'mm', def: 0.02 },
+    TETX: { label: 'Bascule élément α', unit: '°', def: 0.02 }, TETY: { label: 'Bascule élément β', unit: '°', def: 0.02 },
+  };
+  const tolDefaults = () => ({ crit: 'WFE', comp: true, trials: 100, dist: 'normal', types: Object.fromEntries(Object.entries(TOLT).map(([k, v]) => [k, { on: true, v: v.def }])) });
+  /** fige les solves (épaisseurs calculées) pour que le compensateur soit numérique */
+  function tolFreeze(sys) {
+    const M = prepare(sys), s = structuredClone(sys);
+    if (M.ok) s.surfaces.forEach((x, j) => { x.t = M.S[j].t; x.tsolve = ''; });
+    return s;
+  }
+  const isGlassSurf = s => !isAir(s.glass) && !isMirror(s.glass ? s : { glass: '' });
+  function tolItems(sys, cfg) {
+    const S = sys.surfaces, N = S.length - 1, T = cfg.types, out = [];
+    const add = (type, j, lbl) => { const t = T[type]; if (t && t.on && +t.v) out.push({ type, j, tol: +t.v, label: `${TOLT[type].label} ${lbl}` }); };
+    for (let j = 1; j < N; j++) {
+      const s = S[j];
+      if (isFinite(s.r) && s.r !== 0) add('TRAD', j, `S${j}`);
+      if (j < N - 1 || !cfg.comp) add('TTHI', j, `S${j}`);
+      if (!isAir(s.glass) && !isMirror(s)) add('TIND', j, `S${j}-${j + 1}`);
+      const optical = isFinite(s.r) && s.r !== 0 || isMirror(s) || (s.type && s.type !== 'STD');
+      if (optical) { add('TSDX', j, `S${j}`); add('TSDY', j, `S${j}`); add('TSTX', j, `S${j}`); add('TSTY', j, `S${j}`); }
+      if (!isAir(s.glass) && !isMirror(s) && j + 1 < N) { for (const k of ['TEDX', 'TEDY', 'TETX', 'TETY']) add(k, j, `S${j}-${j + 1}`); }
+    }
+    return out;
+  }
+  function addDec(s, k, v) { if (!(s.dx || s.dy || s.dz || s.tx || s.ty || s.tz)) s.dmode = 'DAR'; s[k] = (+s[k] || 0) + v; }
+  function tolApply(sys, it, v) {
+    const S = sys.surfaces, s = S[it.j], n = S[it.j + 1];
+    switch (it.type) {
+      case 'TRAD': s.r = s.r * (1 + v / 100); break;
+      case 'TTHI': s.t += v; break;
+      case 'TIND': s.dn = (+s.dn || 0) + v; break;
+      case 'TSDX': addDec(s, 'dx', v); break; case 'TSDY': addDec(s, 'dy', v); break;
+      case 'TSTX': addDec(s, 'tx', v); break; case 'TSTY': addDec(s, 'ty', v); break;
+      case 'TEDX': addDec(s, 'dx', v); addDec(n, 'dx', v); break;
+      case 'TEDY': addDec(s, 'dy', v); addDec(n, 'dy', v); break;
+      case 'TETX': { const a = v * DEG; addDec(s, 'tx', v); addDec(n, 'tx', v); addDec(n, 'dy', -s.t * Math.sin(a)); addDec(n, 'dz', s.t * (Math.cos(a) - 1)); break; }
+      case 'TETY': { const b = v * DEG; addDec(s, 'ty', v); addDec(n, 'ty', v); addDec(n, 'dx', s.t * Math.sin(b)); addDec(n, 'dz', s.t * (Math.cos(b) - 1)); break; }
+    }
+    return sys;
+  }
+  /** critère : WFE RMS (λ, piston et tilt retirés) ou spot RMS (µm), moyenne quadratique pondérée sur les champs */
+  function criterion(M, kind) {
+    if (!M.ok) return Infinity;
+    const F = M.sys.fields, Wl = M.sys.wavelengths, nArm = 8, pts = [];
+    for (const [r, w] of GQ) for (let a = 0; a < nArm; a++) { const th = 2 * Math.PI * (a + 0.5) / nArm; pts.push([r * Math.cos(th), r * Math.sin(th), w / nArm]); }
+    let acc = 0, wsum = 0;
+    F.forEach(f => {
+      const wf = f.w ?? 1; let cf = 0, cw = 0;
+      if (kind === 'SPOT') {
+        const rs = []; let sx = 0, sy = 0, sw = 0;
+        Wl.forEach((wl, wi) => pts.forEach(([px, py, w]) => { const r = ray(M, wi, f, px, py); const ww = (wl.w ?? 1) * w; if (r.vig) return; rs.push([r.x, r.y, ww]); sx += ww * r.x; sy += ww * r.y; sw += ww; }));
+        if (!sw) { cf = 1e3; cw = 1; } else { const cx = sx / sw, cy = sy / sw; for (const [x, y, w] of rs) { cf += w * ((x - cx) ** 2 + (y - cy) ** 2); cw += w; } cf = Math.sqrt(cf / cw) * 1e3; cw = 1; }
+        acc += wf * cf * cf; wsum += wf; return;
+      }
+      Wl.forEach((wl, wi) => {
+        const ref = opdRef(M, wi, f); const vals = [];
+        if (ref) pts.forEach(([px, py, w]) => { const v = ref.W(ray(M, wi, f, px, py)); if (isFinite(v)) vals.push([px, py, v, w]); });
+        if (vals.length < 6) { acc += wf * (wl.w ?? 1) * 100; wsum += wf * (wl.w ?? 1); return; }
+        // retrait piston + tilt (moindres carrés pondérés)
+        const A = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], b = [0, 0, 0];
+        for (const [x, y, v, w] of vals) { const z = [1, x, y]; for (let i = 0; i < 3; i++) { b[i] += w * z[i] * v; for (let k = 0; k < 3; k++) A[i][k] += w * z[i] * z[k]; } }
+        const c = solveLin(A, b) || [0, 0, 0];
+        let s2 = 0, sw = 0; for (const [x, y, v, w] of vals) { const d = v - c[0] - c[1] * x - c[2] * y; s2 += w * d * d; sw += w; }
+        acc += wf * (wl.w ?? 1) * (s2 / sw); wsum += wf * (wl.w ?? 1);
+      });
+    });
+    return Math.sqrt(acc / (wsum || 1));
+  }
+  /** compensateur : recherche du meilleur foyer sur l'épaisseur avant l'image */
+  function bestFocus(sys, kind, h0) {
+    const N = sys.surfaces.length - 1, t0 = sys.surfaces[N - 1].t, memo = new Map();
+    const ev = dt => { if (memo.has(dt)) return memo.get(dt); const s2 = structuredClone(sys); s2.surfaces[N - 1].t = t0 + dt; const v = criterion(prepare(s2), kind); memo.set(dt, v); return v; };
+    let a = -h0, b = 0, c = h0, fa = ev(a), fb = ev(b), fc = ev(c), k = 0;
+    // encadrement du minimum
+    while (k++ < 25 && !(fb <= fa && fb <= fc)) {
+      if (fa < fc) { c = b; fc = fb; b = a; fb = fa; a = b - (c - b) * 1.8; fa = ev(a); }
+      else { a = b; fa = fb; b = c; fb = fc; c = b + (b - a) * 1.8; fc = ev(c); }
+    }
+    // section dorée
+    for (let i = 0; i < 12; i++) {
+      const x = (c - b > b - a) ? b + 0.381966 * (c - b) : b - 0.381966 * (b - a), fx = ev(x);
+      if (fx < fb) { if (x > b) a = b; else c = b; b = x; fb = fx; } else { if (x > b) c = x; else a = x; }
+    }
+    return { dt: b, c: fb };
+  }
+  /** système de base pour le tolérancement : solves figés et, si compensateur, nominal au meilleur foyer */
+  function tolBase(sys, kind, comp) {
+    const base = tolFreeze(sys), h0 = focusStep(base);
+    if (comp) { const N = base.surfaces.length - 1, bf = bestFocus(base, kind, h0); base.surfaces[N - 1].t += bf.dt; return { base, h0, nominal: bf.c, focus: bf.dt }; }
+    return { base, h0, nominal: criterion(prepare(base), kind), focus: 0 };
+  }
+  function tolEval(base, kind, comp, h0) {
+    if (!comp) return { c: criterion(prepare(base), kind), dt: 0 };
+    return bestFocus(base, kind, h0);
+  }
+  function focusStep(sys) { const M = prepare(sys); return M.ok ? Math.max(1e-4, 2 * M.ctxs[M.pw].lmm * M.par.wfno * M.par.wfno) : 0.01; }
+  function gaussTrunc(rnd) { let v; do { const u = 1 - rnd(), w = rnd(); v = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * w) / 2; } while (Math.abs(v) > 1); return v; }
+  function tolDraw(dist, rnd) { return dist === 'uniform' ? 2 * rnd() - 1 : dist === 'end' ? (rnd() < 0.5 ? -1 : 1) : gaussTrunc(rnd); }
+
+  return { DEG, TOLT, tolBase, tolDefaults, tolFreeze, tolItems, tolApply, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, GL, catalog, glassN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
     wavefront, psf, mtf, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
     OPS, getVars, residuals, meritOf, optStep, pupilGrid, indices, paraxial };
 })();

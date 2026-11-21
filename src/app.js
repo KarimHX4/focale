@@ -839,12 +839,17 @@ function openOptim() {
   const r = OE.residuals(s); $('#mval').textContent = r ? OE.meritOf(r.f).toExponential(4) : '—';
   OPT.hist = r ? [OE.meritOf(r.f)] : []; drawMerit();
 }
-function dlg(html) { $('#dlg').innerHTML = html; $('#modal').classList.add('open'); }
-function closeDlg() { $('#modal').classList.remove('open'); OPT.running = false; }
+function dlg(html, wide) { $('#dlg').innerHTML = html; $('#dlg').classList.toggle('wide', !!wide); $('#modal').classList.add('open'); }
+function closeDlg() { $('#modal').classList.remove('open'); OPT.running = false; if (typeof TOL !== 'undefined') TOL.running = false; }
 function setupDlg() {
   $('#modal').addEventListener('mousedown', e => { if (e.target.id === 'modal') closeDlg(); });
   $('#dlg').addEventListener('change', e => {
     const t = e.target;
+    if (t.dataset.t) {
+      const k = t.dataset.t, ty = t.dataset.k;
+      commit(s => { tolCfg(); const c = s.tol; if (k === 'on') c.types[ty].on = t.checked; else if (k === 'v') { const v = parseNum(t.value, false); if (isFinite(v) && v >= 0) c.types[ty].v = v; } else if (k === 'comp') c.comp = t.checked; else if (k === 'trials') c.trials = Math.max(5, parseInt(t.value) || 100); else c[k] = t.value; });
+      TOL.stale = !!(TOL.sens || TOL.mc); renderTolRes(); return;
+    }
     if (t.id === 'mfImg') { commit(s => s.merit.image = t.value, { fast: false }); openOptim(); }
     if (t.dataset.o) { const i = +t.dataset.i, k = t.dataset.o; commit(s => s.merit.ops[i][k] = k === 'type' ? t.value : (parseFloat(String(t.value).replace(',', '.')) || 0)); openOptim(); }
   });
@@ -852,6 +857,10 @@ function setupDlg() {
     const b = e.target.closest('[data-d]'); if (!b) return;
     const a = b.dataset.d;
     if (a === 'close') closeDlg();
+    if (a === 'tsens') runSens();
+    if (a === 'tmc') runMC();
+    if (a === 'tstop') TOL.running = false;
+    if (a === 'tcopy') { const r = tolReport(); navigator.clipboard?.writeText(r).then(() => toast('Rapport copié (CSV)'), () => download(fileBase() + '_tolerances.txt', r, 'text/plain')); }
     if (a === 'oadd') { commit(s => s.merit.ops.push({ type: 'EFL', target: Math.round(App.M?.par?.efl || 100), weight: 1 })); openOptim(); }
     if (a === 'odel') { commit(s => s.merit.ops.splice(+b.dataset.i, 1)); openOptim(); }
     if (a === 'run') runOpt();
@@ -890,6 +899,100 @@ function drawMerit() {
   const ly = H.map(v => Math.log10(Math.max(v, 1e-12)));
   const A = axes(c, { x: 0, y: 0, w, h }, [0, Math.max(1, H.length - 1)], range([ly], 0.1), { ml: 36, mb: 18, title: 'log₁₀(mérite)' });
   pline(c, A, ly.map((_, i) => i), ly, TH.acc, 2);
+}
+
+/* ---------------- Tolérancement ---------------- */
+const TOL = { running: false, sens: null, mc: null, stale: false };
+const tick = () => new Promise(r => setTimeout(r, 0));
+function tolCfg() { const d = OE.tolDefaults(), s = App.sys; s.tol = { ...d, ...(s.tol || {}) }; s.tol.types = { ...d.types, ...(s.tol.types || {}) }; return s.tol; }
+const tolUnit = k => k === 'SPOT' ? 'µm' : 'λ';
+function openTol() {
+  const c = tolCfg();
+  const rows = Object.entries(OE.TOLT).map(([k, v]) => `<tr><td><input type="checkbox" data-t="on" data-k="${k}" ${c.types[k].on ? 'checked' : ''}></td><td title="${v.desc || ''}">${v.label}</td><td><input class="in" style="width:70px" data-t="v" data-k="${k}" value="${c.types[k].v}"></td><td class="hint">± ${v.unit}</td></tr>`).join('');
+  dlg(`<h2>Tolérancement <button class="x" data-d="close">✕</button></h2>
+  <div class="db"><div style="display:grid;grid-template-columns:300px 1fr;gap:18px">
+    <div>
+      <div class="row"><label>Critère</label><select class="in" data-t="crit"><option value="WFE" ${c.crit === 'WFE' ? 'selected' : ''}>Front d'onde RMS (λ)</option><option value="SPOT" ${c.crit === 'SPOT' ? 'selected' : ''}>Spot RMS (µm)</option></select></div>
+      <div class="row"><label title="L'épaisseur avant l'image est réoptimisée pour chaque tirage">Compensateur : mise au point</label><input type="checkbox" data-t="comp" ${c.comp ? 'checked' : ''}></div>
+      <table class="mt" style="margin-top:6px"><tr><th></th><th>Tolérance</th><th>Valeur</th><th></th></tr>${rows}</table>
+      <div class="hint" style="margin:10px 0 4px;font-weight:600;color:var(--fg)">Monte-Carlo</div>
+      <div class="row"><label>Tirages</label><input class="in mini" data-t="trials" value="${c.trials}"></div>
+      <div class="row"><label>Distribution</label><select class="in" data-t="dist"><option value="normal" ${c.dist === 'normal' ? 'selected' : ''}>Gaussienne (σ = tol/2, tronquée)</option><option value="uniform" ${c.dist === 'uniform' ? 'selected' : ''}>Uniforme</option><option value="end" ${c.dist === 'end' ? 'selected' : ''}>Extrêmes (± tol)</option></select></div>
+      <div class="hint" style="margin-top:8px">Rayon en % de R, épaisseurs et décentrements en mm, bascules en degrés. Les bascules d'élément pivotent autour du sommet de sa première surface.</div>
+    </div>
+    <div id="tolres" style="min-width:0"></div>
+  </div></div>
+  <div class="df"><span class="hint grow" id="tmsg"></span><button class="bt" data-d="tcopy">Copier le rapport</button><button class="bt" data-d="tstop">Arrêter</button><button class="bt" data-d="tsens">Analyse de sensibilité</button><button class="tb pri" data-d="tmc">▶ Monte-Carlo</button></div>`, true);
+  renderTolRes();
+}
+function tolMsg(t) { const e = $('#tmsg'); if (e) e.textContent = t; }
+async function runSens() {
+  if (TOL.running) return; const c = structuredClone(tolCfg()); TOL.running = true; TOL.stale = false; tolMsg('Préparation (mise au point nominale)…'); await tick();
+  const B = OE.tolBase(App.sys, c.crit, c.comp), items = OE.tolItems(B.base, c), rows = [];
+  let tl = performance.now();
+  for (let i = 0; i < items.length && TOL.running; i++) {
+    const it = items[i], r = [1, -1].map(sg => OE.tolEval(OE.tolApply(structuredClone(B.base), it, sg * it.tol), c.crit, c.comp, B.h0));
+    rows.push({ it, cp: r[0].c, cm: r[1].c, fp: r[0].dt, fm: r[1].dt });
+    if (performance.now() - tl > 70) { TOL.sens = { B, rows, c, n: items.length }; renderTolRes(); tolMsg(`Sensibilité : ${i + 1} / ${items.length}`); await tick(); tl = performance.now(); }
+  }
+  TOL.sens = { B, rows, c, n: items.length }; TOL.running = false; renderTolRes(); tolMsg(`Sensibilité terminée — ${rows.length} tolérances`);
+}
+async function runMC() {
+  if (TOL.running) return; const c = structuredClone(tolCfg()); TOL.running = true; TOL.stale = false; tolMsg('Préparation…'); await tick();
+  const B = OE.tolBase(App.sys, c.crit, c.comp), items = OE.tolItems(B.base, c), n = Math.max(5, Math.min(5000, +c.trials || 100));
+  const vals = [], foc = []; TOL.mc = { B, vals, foc, c, n };
+  let tl = performance.now();
+  for (let k = 0; k < n && TOL.running; k++) {
+    const s = structuredClone(B.base); for (const it of items) OE.tolApply(s, it, it.tol * OE.tolDraw(c.dist, Math.random));
+    const r = OE.tolEval(s, c.crit, c.comp, B.h0); if (isFinite(r.c)) { vals.push(r.c); foc.push(r.dt); }
+    if (performance.now() - tl > 90) { renderTolRes(); tolMsg(`Monte-Carlo : ${k + 1} / ${n}`); await tick(); tl = performance.now(); }
+  }
+  TOL.running = false; renderTolRes(); tolMsg(`Monte-Carlo terminé — ${vals.length} tirages`);
+}
+const pct = (arr, q) => { if (!arr.length) return NaN; const a = arr.slice().sort((x, y) => x - y), i = Math.min(a.length - 1, Math.max(0, q * (a.length - 1))), lo = Math.floor(i), f = i - lo; return a[lo] * (1 - f) + (a[lo + 1] ?? a[lo]) * f; };
+function renderTolRes() {
+  const el = $('#tolres'); if (!el) return;
+  let h = '';
+  const S = TOL.sens, MC = TOL.mc;
+  if (TOL.stale) h += '<div class="hint" style="color:var(--warn)">Le système ou les réglages ont changé depuis le dernier calcul.</div>';
+  if (!S && !MC) h += `<div class="hint" style="padding:30px 0">Lancez une <b>analyse de sensibilité</b> (chaque tolérance seule, à ±) puis un <b>Monte-Carlo</b> (toutes les tolérances tirées au hasard simultanément) pour estimer le rendement de fabrication.</div>`;
+  if (S) {
+    const u = tolUnit(S.c.crit), rows = S.rows.map(r => ({ ...r, dp: r.cp - S.B.nominal, dm: r.cm - S.B.nominal })).map(r => ({ ...r, w: Math.max(r.dp, r.dm) }));
+    const rss = S.B.nominal + Math.sqrt(rows.reduce((a, r) => a + Math.max(0, r.w) ** 2, 0));
+    const top = rows.slice().sort((a, b) => b.w - a.w), mx = Math.max(1e-12, ...top.map(r => Math.abs(r.w)));
+    h += `<div style="display:flex;gap:24px;margin-bottom:8px"><div><div class="hint">Nominal${S.c.comp ? ' (compensé)' : ''}</div><div class="big">${fx(S.B.nominal, 4)} ${u}</div></div><div><div class="hint">Estimation RSS</div><div class="big">${fx(rss, 4)} ${u}</div></div>${S.c.comp ? `<div><div class="hint">Mise au point nominale</div><div class="big">${fx(S.B.focus * 1e3, 1)} µm</div></div>` : ''}</div>
+    <div class="hint">Sensibilités triées (${rows.length}/${S.n}) — Δ = critère perturbé − nominal</div>
+    <div style="max-height:250px;overflow:auto;border:1px solid var(--line);border-radius:8px"><table class="mt" style="font-size:12px"><tr><th>Tolérance</th><th>Valeur</th><th>Δ (+)</th><th>Δ (−)</th><th style="width:110px"></th>${S.c.comp ? '<th>Foyer (µm)</th>' : ''}</tr>
+    ${top.map(r => `<tr><td>${esc(r.it.label)}</td><td style="font-family:var(--mono)">±${r.it.tol}</td><td style="font-family:var(--mono)">${fx(r.dp, 4)}</td><td style="font-family:var(--mono)">${fx(r.dm, 4)}</td><td><div style="height:7px;border-radius:3px;background:${r.w > 0 ? '#ea580c' : '#16a34a'};width:${Math.max(2, Math.abs(r.w) / mx * 100)}px"></div></td>${S.c.comp ? `<td style="font-family:var(--mono)">${fx(r.fp * 1e3, 0)} / ${fx(r.fm * 1e3, 0)}</td>` : ''}</tr>`).join('')}</table></div>`;
+  }
+  if (MC) {
+    const u = tolUnit(MC.c.crit), v = MC.vals, mean = v.reduce((a, b) => a + b, 0) / (v.length || 1), sd = Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, v.length - 1));
+    h += `<div class="hint" style="margin-top:12px;font-weight:600;color:var(--fg)">Monte-Carlo — ${v.length} / ${MC.n} tirages · nominal ${fx(MC.B.nominal, 4)} ${u}</div>
+    <div style="display:flex;gap:14px;align-items:stretch;margin-top:4px"><div style="flex:1;min-width:0;height:180px;position:relative"><canvas id="mcchart"></canvas></div>
+    <table class="mt" style="width:auto;font-family:var(--mono);font-size:12px"><tr><th>Statistique</th><th>${u}</th></tr>
+    <tr><td>Moyenne</td><td>${fx(mean, 4)}</td></tr><tr><td>Écart-type</td><td>${fx(sd, 4)}</td></tr>
+    ${[0.5, 0.8, 0.9, 0.98].map(q => `<tr><td>${q * 100} % &lt;</td><td>${fx(pct(v, q), 4)}</td></tr>`).join('')}
+    <tr><td>Max</td><td>${fx(Math.max(...v), 4)}</td></tr>${MC.c.comp ? `<tr><td>Compensateur</td><td>${fx(Math.min(...MC.foc) * 1e3, 0)}…${fx(Math.max(...MC.foc) * 1e3, 0)} µm</td></tr>` : ''}</table></div>`;
+  }
+  el.innerHTML = h;
+  if (MC && MC.vals.length) drawMC();
+}
+function drawMC() {
+  const cv = $('#mcchart'); if (!cv) return; readTheme(); const { c, w, h } = prepCanvas(cv), MC = TOL.mc, v = MC.vals.slice().sort((a, b) => a - b);
+  const lo = Math.min(MC.B.nominal, v[0]), hi = v[v.length - 1], nb = Math.max(8, Math.min(30, Math.round(Math.sqrt(v.length) * 1.5))), bw = (hi - lo) / nb || 1;
+  const bins = new Array(nb).fill(0); for (const x of v) bins[Math.min(nb - 1, Math.floor((x - lo) / bw))]++;
+  const A = axes(c, { x: 0, y: 0, w, h }, [lo, hi + 1e-12], [0, Math.max(...bins) * 1.1], { xl: tolUnit(MC.c.crit) + ' RMS', ml: 36, mb: 30 });
+  c.fillStyle = TH.acc; c.globalAlpha = 0.55; bins.forEach((b, i) => { const x0 = A.X(lo + i * bw), x1 = A.X(lo + (i + 1) * bw); c.fillRect(x0 + 0.5, A.Y(b), x1 - x0 - 1, A.Y(0) - A.Y(b)); }); c.globalAlpha = 1;
+  const yc = A.Y, mxb = Math.max(...bins) * 1.1; c.strokeStyle = '#ea580c'; c.lineWidth = 1.8; c.beginPath(); v.forEach((x, i) => { const px = A.X(x), py = yc((i + 1) / v.length * mxb); i ? c.lineTo(px, py) : c.moveTo(px, py); }); c.stroke();
+  c.strokeStyle = TH.fg; c.setLineDash([3, 3]); c.beginPath(); c.moveTo(A.X(MC.B.nominal), A.P.y); c.lineTo(A.X(MC.B.nominal), A.P.y + A.P.h); c.stroke(); c.setLineDash([]);
+  text(c, 'histogramme · cumul (orange) · nominal (pointillé)', A.P.x + 4, A.P.y + 2, { col: TH.mut, size: 10 });
+}
+function tolReport() {
+  const L = [`Focale — rapport de tolérancement — ${App.sys.title || ''}`];
+  if (TOL.sens) { const S = TOL.sens, u = tolUnit(S.c.crit); L.push('', `Critère : ${S.c.crit} (${u}), compensateur : ${S.c.comp ? 'mise au point' : 'aucun'}`, `Nominal : ${S.B.nominal.toFixed(5)}`, '', 'Tolérance;Valeur;Δ+;Δ-');
+    S.rows.forEach(r => L.push(`${r.it.label};±${r.it.tol};${(r.cp - S.B.nominal).toFixed(5)};${(r.cm - S.B.nominal).toFixed(5)}`)); }
+  if (TOL.mc) { const M = TOL.mc; L.push('', `Monte-Carlo : ${M.vals.length} tirages, distribution ${M.c.dist}`); [0.5, 0.8, 0.9, 0.98].forEach(q => L.push(`${q * 100}% < ${pct(M.vals, q).toFixed(5)}`)); }
+  return L.join('\n');
 }
 
 /* ---------------- Import / export (JSON, CODE V .seq) ---------------- */
@@ -1099,6 +1202,7 @@ function init() {
       case 'install': if (deferredInstall) { deferredInstall.prompt(); deferredInstall.userChoice.finally(() => { deferredInstall = null; $('#btnInstall').style.display = 'none'; }); } break;
       case 'undo': undo(); break; case 'redo': redo(); break;
       case 'optim': openOptim(); break;
+      case 'tol': openTol(); break;
       case 'theme': { const d = document.documentElement; d.dataset.theme = d.dataset.theme === 'dark' ? '' : 'dark'; save(); readTheme(); drawLayout(); renderPanes(); break; }
       case 'help': openHelp(); break;
       case 'fit': fitView(); break;

@@ -17,3 +17,5 @@ Interface et commentaires en français. Unités : mm, longueurs d'onde en µm.
 - Décentrements par surface (dx, dy, dz, tx, ty, tz en °, dmode DEC | DAR | BEN, rotations X→Y→Z main droite) : `frames()` calcule le repère de chaque surface, le tracé réel se fait en coordonnées globales et `trace()` renvoie le rayon dans le repère local de l'image. Le paraxial ignore décentrements et bascules.
 - `sag(sf, x, y)` / `sGrad(sf, x, y)` : flèche et pente locales (partie de révolution + forme libre éventuelle).
 - Avant chaque commit : `node tests/engine.test.js` doit passer, puis `python3 build.py`.
+- Tolérancement (`TOLT`, `tolBase`, `tolItems`, `tolApply`, `criterion`, `bestFocus`) : système de base = solves figés + nominal au meilleur foyer ;
+  chaque tolérance est appliquée par décentrements DAR / champ `dn` (indice) ; compensateur = épaisseur avant l'image (encadrement + section dorée).

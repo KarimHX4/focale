@@ -153,6 +153,7 @@ footer .k{font-family:var(--mono);color:var(--fg)}
 .dlg>h2 .x{margin-left:auto;font-size:18px}
 .dlg .db{padding:6px 18px 14px;overflow:auto}
 .dlg .df{padding:10px 18px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;align-items:center}
+.dlg.wide{width:min(1120px,96vw)}
 .dlg textarea{width:100%;height:300px;font-family:var(--mono);font-size:11.5px;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--panel2);color:var(--fg)}
 .hint{color:var(--mut);font-size:12px}
 .vars{display:flex;flex-wrap:wrap;gap:5px;margin:4px 0 10px}
@@ -191,6 +192,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
   <button class="tb" data-act="redo" title="Rétablir (Ctrl+Y)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 000 10h3"/></svg></button>
   <div class="sep"></div>
   <button class="tb pri" data-act="optim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20l6-8 4 4 8-11"/><circle cx="21" cy="5" r="1.5" fill="currentColor"/></svg>Optimiser</button>
+  <button class="tb" data-act="tol" title="Sensibilités et Monte-Carlo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20h18"/><path d="M6 20V10M10 20V4M14 20V8M18 20v-6"/></svg>Tolérancer</button>
   <div class="grow"></div>
   <span class="hint" style="margin-right:4px">Analyses</span>
   <div class="seg" id="gridSeg"><button data-g="1">1</button><button data-g="2">2</button><button data-g="4">4</button><button data-g="6">6</button></div>
@@ -240,7 +242,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 <div class="toast" id="toast"></div>
 <input type="file" id="fileIn" accept=".json,.seq,.txt,.agf" style="display:none">
 <div class="drop" id="drop">Déposez un fichier .json, .seq ou .agf</div>
-<script>const FOCALE_VERSION = '895ae705';</script>
+<script>const FOCALE_VERSION = 'bee3758f';</script>
 <script>
 'use strict';
 /* =====================================================================
@@ -1058,7 +1060,114 @@ const OE = (() => {
     return { done: true, merit: m0, msg: 'Minimum local atteint' };
   }
 
-  return { DEG, frames, toGlobal, mv, sGrad, fieldDir, GL, catalog, glassN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
+  /* ---------------- Tolérancement ---------------- */
+  const TOLT = {
+    TRAD: { label: 'Rayon', unit: '%', def: 0.2, desc: 'Variation relative du rayon de courbure' },
+    TTHI: { label: 'Épaisseur', unit: 'mm', def: 0.05, desc: 'Épaisseur ou espace d\'air' },
+    TIND: { label: 'Indice', unit: 'Δn', def: 0.0005, desc: 'Indice de réfraction du verre' },
+    TSDX: { label: 'Décentrement surface X', unit: 'mm', def: 0.02 }, TSDY: { label: 'Décentrement surface Y', unit: 'mm', def: 0.02 },
+    TSTX: { label: 'Bascule surface α', unit: '°', def: 0.02 }, TSTY: { label: 'Bascule surface β', unit: '°', def: 0.02 },
+    TEDX: { label: 'Décentrement élément X', unit: 'mm', def: 0.02 }, TEDY: { label: 'Décentrement élément Y', unit: 'mm', def: 0.02 },
+    TETX: { label: 'Bascule élément α', unit: '°', def: 0.02 }, TETY: { label: 'Bascule élément β', unit: '°', def: 0.02 },
+  };
+  const tolDefaults = () => ({ crit: 'WFE', comp: true, trials: 100, dist: 'normal', types: Object.fromEntries(Object.entries(TOLT).map(([k, v]) => [k, { on: true, v: v.def }])) });
+  /** fige les solves (épaisseurs calculées) pour que le compensateur soit numérique */
+  function tolFreeze(sys) {
+    const M = prepare(sys), s = structuredClone(sys);
+    if (M.ok) s.surfaces.forEach((x, j) => { x.t = M.S[j].t; x.tsolve = ''; });
+    return s;
+  }
+  const isGlassSurf = s => !isAir(s.glass) && !isMirror(s.glass ? s : { glass: '' });
+  function tolItems(sys, cfg) {
+    const S = sys.surfaces, N = S.length - 1, T = cfg.types, out = [];
+    const add = (type, j, lbl) => { const t = T[type]; if (t && t.on && +t.v) out.push({ type, j, tol: +t.v, label: `${TOLT[type].label} ${lbl}` }); };
+    for (let j = 1; j < N; j++) {
+      const s = S[j];
+      if (isFinite(s.r) && s.r !== 0) add('TRAD', j, `S${j}`);
+      if (j < N - 1 || !cfg.comp) add('TTHI', j, `S${j}`);
+      if (!isAir(s.glass) && !isMirror(s)) add('TIND', j, `S${j}-${j + 1}`);
+      const optical = isFinite(s.r) && s.r !== 0 || isMirror(s) || (s.type && s.type !== 'STD');
+      if (optical) { add('TSDX', j, `S${j}`); add('TSDY', j, `S${j}`); add('TSTX', j, `S${j}`); add('TSTY', j, `S${j}`); }
+      if (!isAir(s.glass) && !isMirror(s) && j + 1 < N) { for (const k of ['TEDX', 'TEDY', 'TETX', 'TETY']) add(k, j, `S${j}-${j + 1}`); }
+    }
+    return out;
+  }
+  function addDec(s, k, v) { if (!(s.dx || s.dy || s.dz || s.tx || s.ty || s.tz)) s.dmode = 'DAR'; s[k] = (+s[k] || 0) + v; }
+  function tolApply(sys, it, v) {
+    const S = sys.surfaces, s = S[it.j], n = S[it.j + 1];
+    switch (it.type) {
+      case 'TRAD': s.r = s.r * (1 + v / 100); break;
+      case 'TTHI': s.t += v; break;
+      case 'TIND': s.dn = (+s.dn || 0) + v; break;
+      case 'TSDX': addDec(s, 'dx', v); break; case 'TSDY': addDec(s, 'dy', v); break;
+      case 'TSTX': addDec(s, 'tx', v); break; case 'TSTY': addDec(s, 'ty', v); break;
+      case 'TEDX': addDec(s, 'dx', v); addDec(n, 'dx', v); break;
+      case 'TEDY': addDec(s, 'dy', v); addDec(n, 'dy', v); break;
+      case 'TETX': { const a = v * DEG; addDec(s, 'tx', v); addDec(n, 'tx', v); addDec(n, 'dy', -s.t * Math.sin(a)); addDec(n, 'dz', s.t * (Math.cos(a) - 1)); break; }
+      case 'TETY': { const b = v * DEG; addDec(s, 'ty', v); addDec(n, 'ty', v); addDec(n, 'dx', s.t * Math.sin(b)); addDec(n, 'dz', s.t * (Math.cos(b) - 1)); break; }
+    }
+    return sys;
+  }
+  /** critère : WFE RMS (λ, piston et tilt retirés) ou spot RMS (µm), moyenne quadratique pondérée sur les champs */
+  function criterion(M, kind) {
+    if (!M.ok) return Infinity;
+    const F = M.sys.fields, Wl = M.sys.wavelengths, nArm = 8, pts = [];
+    for (const [r, w] of GQ) for (let a = 0; a < nArm; a++) { const th = 2 * Math.PI * (a + 0.5) / nArm; pts.push([r * Math.cos(th), r * Math.sin(th), w / nArm]); }
+    let acc = 0, wsum = 0;
+    F.forEach(f => {
+      const wf = f.w ?? 1; let cf = 0, cw = 0;
+      if (kind === 'SPOT') {
+        const rs = []; let sx = 0, sy = 0, sw = 0;
+        Wl.forEach((wl, wi) => pts.forEach(([px, py, w]) => { const r = ray(M, wi, f, px, py); const ww = (wl.w ?? 1) * w; if (r.vig) return; rs.push([r.x, r.y, ww]); sx += ww * r.x; sy += ww * r.y; sw += ww; }));
+        if (!sw) { cf = 1e3; cw = 1; } else { const cx = sx / sw, cy = sy / sw; for (const [x, y, w] of rs) { cf += w * ((x - cx) ** 2 + (y - cy) ** 2); cw += w; } cf = Math.sqrt(cf / cw) * 1e3; cw = 1; }
+        acc += wf * cf * cf; wsum += wf; return;
+      }
+      Wl.forEach((wl, wi) => {
+        const ref = opdRef(M, wi, f); const vals = [];
+        if (ref) pts.forEach(([px, py, w]) => { const v = ref.W(ray(M, wi, f, px, py)); if (isFinite(v)) vals.push([px, py, v, w]); });
+        if (vals.length < 6) { acc += wf * (wl.w ?? 1) * 100; wsum += wf * (wl.w ?? 1); return; }
+        // retrait piston + tilt (moindres carrés pondérés)
+        const A = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], b = [0, 0, 0];
+        for (const [x, y, v, w] of vals) { const z = [1, x, y]; for (let i = 0; i < 3; i++) { b[i] += w * z[i] * v; for (let k = 0; k < 3; k++) A[i][k] += w * z[i] * z[k]; } }
+        const c = solveLin(A, b) || [0, 0, 0];
+        let s2 = 0, sw = 0; for (const [x, y, v, w] of vals) { const d = v - c[0] - c[1] * x - c[2] * y; s2 += w * d * d; sw += w; }
+        acc += wf * (wl.w ?? 1) * (s2 / sw); wsum += wf * (wl.w ?? 1);
+      });
+    });
+    return Math.sqrt(acc / (wsum || 1));
+  }
+  /** compensateur : recherche du meilleur foyer sur l'épaisseur avant l'image */
+  function bestFocus(sys, kind, h0) {
+    const N = sys.surfaces.length - 1, t0 = sys.surfaces[N - 1].t, memo = new Map();
+    const ev = dt => { if (memo.has(dt)) return memo.get(dt); const s2 = structuredClone(sys); s2.surfaces[N - 1].t = t0 + dt; const v = criterion(prepare(s2), kind); memo.set(dt, v); return v; };
+    let a = -h0, b = 0, c = h0, fa = ev(a), fb = ev(b), fc = ev(c), k = 0;
+    // encadrement du minimum
+    while (k++ < 25 && !(fb <= fa && fb <= fc)) {
+      if (fa < fc) { c = b; fc = fb; b = a; fb = fa; a = b - (c - b) * 1.8; fa = ev(a); }
+      else { a = b; fa = fb; b = c; fb = fc; c = b + (b - a) * 1.8; fc = ev(c); }
+    }
+    // section dorée
+    for (let i = 0; i < 12; i++) {
+      const x = (c - b > b - a) ? b + 0.381966 * (c - b) : b - 0.381966 * (b - a), fx = ev(x);
+      if (fx < fb) { if (x > b) a = b; else c = b; b = x; fb = fx; } else { if (x > b) c = x; else a = x; }
+    }
+    return { dt: b, c: fb };
+  }
+  /** système de base pour le tolérancement : solves figés et, si compensateur, nominal au meilleur foyer */
+  function tolBase(sys, kind, comp) {
+    const base = tolFreeze(sys), h0 = focusStep(base);
+    if (comp) { const N = base.surfaces.length - 1, bf = bestFocus(base, kind, h0); base.surfaces[N - 1].t += bf.dt; return { base, h0, nominal: bf.c, focus: bf.dt }; }
+    return { base, h0, nominal: criterion(prepare(base), kind), focus: 0 };
+  }
+  function tolEval(base, kind, comp, h0) {
+    if (!comp) return { c: criterion(prepare(base), kind), dt: 0 };
+    return bestFocus(base, kind, h0);
+  }
+  function focusStep(sys) { const M = prepare(sys); return M.ok ? Math.max(1e-4, 2 * M.ctxs[M.pw].lmm * M.par.wfno * M.par.wfno) : 0.01; }
+  function gaussTrunc(rnd) { let v; do { const u = 1 - rnd(), w = rnd(); v = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * w) / 2; } while (Math.abs(v) > 1); return v; }
+  function tolDraw(dist, rnd) { return dist === 'uniform' ? 2 * rnd() - 1 : dist === 'end' ? (rnd() < 0.5 ? -1 : 1) : gaussTrunc(rnd); }
+
+  return { DEG, TOLT, tolBase, tolDefaults, tolFreeze, tolItems, tolApply, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, GL, catalog, glassN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
     wavefront, psf, mtf, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
     OPS, getVars, residuals, meritOf, optStep, pupilGrid, indices, paraxial };
 })();
@@ -1968,12 +2077,17 @@ function openOptim() {
   const r = OE.residuals(s); $('#mval').textContent = r ? OE.meritOf(r.f).toExponential(4) : '—';
   OPT.hist = r ? [OE.meritOf(r.f)] : []; drawMerit();
 }
-function dlg(html) { $('#dlg').innerHTML = html; $('#modal').classList.add('open'); }
-function closeDlg() { $('#modal').classList.remove('open'); OPT.running = false; }
+function dlg(html, wide) { $('#dlg').innerHTML = html; $('#dlg').classList.toggle('wide', !!wide); $('#modal').classList.add('open'); }
+function closeDlg() { $('#modal').classList.remove('open'); OPT.running = false; if (typeof TOL !== 'undefined') TOL.running = false; }
 function setupDlg() {
   $('#modal').addEventListener('mousedown', e => { if (e.target.id === 'modal') closeDlg(); });
   $('#dlg').addEventListener('change', e => {
     const t = e.target;
+    if (t.dataset.t) {
+      const k = t.dataset.t, ty = t.dataset.k;
+      commit(s => { tolCfg(); const c = s.tol; if (k === 'on') c.types[ty].on = t.checked; else if (k === 'v') { const v = parseNum(t.value, false); if (isFinite(v) && v >= 0) c.types[ty].v = v; } else if (k === 'comp') c.comp = t.checked; else if (k === 'trials') c.trials = Math.max(5, parseInt(t.value) || 100); else c[k] = t.value; });
+      TOL.stale = !!(TOL.sens || TOL.mc); renderTolRes(); return;
+    }
     if (t.id === 'mfImg') { commit(s => s.merit.image = t.value, { fast: false }); openOptim(); }
     if (t.dataset.o) { const i = +t.dataset.i, k = t.dataset.o; commit(s => s.merit.ops[i][k] = k === 'type' ? t.value : (parseFloat(String(t.value).replace(',', '.')) || 0)); openOptim(); }
   });
@@ -1981,6 +2095,10 @@ function setupDlg() {
     const b = e.target.closest('[data-d]'); if (!b) return;
     const a = b.dataset.d;
     if (a === 'close') closeDlg();
+    if (a === 'tsens') runSens();
+    if (a === 'tmc') runMC();
+    if (a === 'tstop') TOL.running = false;
+    if (a === 'tcopy') { const r = tolReport(); navigator.clipboard?.writeText(r).then(() => toast('Rapport copié (CSV)'), () => download(fileBase() + '_tolerances.txt', r, 'text/plain')); }
     if (a === 'oadd') { commit(s => s.merit.ops.push({ type: 'EFL', target: Math.round(App.M?.par?.efl || 100), weight: 1 })); openOptim(); }
     if (a === 'odel') { commit(s => s.merit.ops.splice(+b.dataset.i, 1)); openOptim(); }
     if (a === 'run') runOpt();
@@ -2019,6 +2137,100 @@ function drawMerit() {
   const ly = H.map(v => Math.log10(Math.max(v, 1e-12)));
   const A = axes(c, { x: 0, y: 0, w, h }, [0, Math.max(1, H.length - 1)], range([ly], 0.1), { ml: 36, mb: 18, title: 'log₁₀(mérite)' });
   pline(c, A, ly.map((_, i) => i), ly, TH.acc, 2);
+}
+
+/* ---------------- Tolérancement ---------------- */
+const TOL = { running: false, sens: null, mc: null, stale: false };
+const tick = () => new Promise(r => setTimeout(r, 0));
+function tolCfg() { const d = OE.tolDefaults(), s = App.sys; s.tol = { ...d, ...(s.tol || {}) }; s.tol.types = { ...d.types, ...(s.tol.types || {}) }; return s.tol; }
+const tolUnit = k => k === 'SPOT' ? 'µm' : 'λ';
+function openTol() {
+  const c = tolCfg();
+  const rows = Object.entries(OE.TOLT).map(([k, v]) => `<tr><td><input type="checkbox" data-t="on" data-k="${k}" ${c.types[k].on ? 'checked' : ''}></td><td title="${v.desc || ''}">${v.label}</td><td><input class="in" style="width:70px" data-t="v" data-k="${k}" value="${c.types[k].v}"></td><td class="hint">± ${v.unit}</td></tr>`).join('');
+  dlg(`<h2>Tolérancement <button class="x" data-d="close">✕</button></h2>
+  <div class="db"><div style="display:grid;grid-template-columns:300px 1fr;gap:18px">
+    <div>
+      <div class="row"><label>Critère</label><select class="in" data-t="crit"><option value="WFE" ${c.crit === 'WFE' ? 'selected' : ''}>Front d'onde RMS (λ)</option><option value="SPOT" ${c.crit === 'SPOT' ? 'selected' : ''}>Spot RMS (µm)</option></select></div>
+      <div class="row"><label title="L'épaisseur avant l'image est réoptimisée pour chaque tirage">Compensateur : mise au point</label><input type="checkbox" data-t="comp" ${c.comp ? 'checked' : ''}></div>
+      <table class="mt" style="margin-top:6px"><tr><th></th><th>Tolérance</th><th>Valeur</th><th></th></tr>${rows}</table>
+      <div class="hint" style="margin:10px 0 4px;font-weight:600;color:var(--fg)">Monte-Carlo</div>
+      <div class="row"><label>Tirages</label><input class="in mini" data-t="trials" value="${c.trials}"></div>
+      <div class="row"><label>Distribution</label><select class="in" data-t="dist"><option value="normal" ${c.dist === 'normal' ? 'selected' : ''}>Gaussienne (σ = tol/2, tronquée)</option><option value="uniform" ${c.dist === 'uniform' ? 'selected' : ''}>Uniforme</option><option value="end" ${c.dist === 'end' ? 'selected' : ''}>Extrêmes (± tol)</option></select></div>
+      <div class="hint" style="margin-top:8px">Rayon en % de R, épaisseurs et décentrements en mm, bascules en degrés. Les bascules d'élément pivotent autour du sommet de sa première surface.</div>
+    </div>
+    <div id="tolres" style="min-width:0"></div>
+  </div></div>
+  <div class="df"><span class="hint grow" id="tmsg"></span><button class="bt" data-d="tcopy">Copier le rapport</button><button class="bt" data-d="tstop">Arrêter</button><button class="bt" data-d="tsens">Analyse de sensibilité</button><button class="tb pri" data-d="tmc">▶ Monte-Carlo</button></div>`, true);
+  renderTolRes();
+}
+function tolMsg(t) { const e = $('#tmsg'); if (e) e.textContent = t; }
+async function runSens() {
+  if (TOL.running) return; const c = structuredClone(tolCfg()); TOL.running = true; TOL.stale = false; tolMsg('Préparation (mise au point nominale)…'); await tick();
+  const B = OE.tolBase(App.sys, c.crit, c.comp), items = OE.tolItems(B.base, c), rows = [];
+  let tl = performance.now();
+  for (let i = 0; i < items.length && TOL.running; i++) {
+    const it = items[i], r = [1, -1].map(sg => OE.tolEval(OE.tolApply(structuredClone(B.base), it, sg * it.tol), c.crit, c.comp, B.h0));
+    rows.push({ it, cp: r[0].c, cm: r[1].c, fp: r[0].dt, fm: r[1].dt });
+    if (performance.now() - tl > 70) { TOL.sens = { B, rows, c, n: items.length }; renderTolRes(); tolMsg(`Sensibilité : ${i + 1} / ${items.length}`); await tick(); tl = performance.now(); }
+  }
+  TOL.sens = { B, rows, c, n: items.length }; TOL.running = false; renderTolRes(); tolMsg(`Sensibilité terminée — ${rows.length} tolérances`);
+}
+async function runMC() {
+  if (TOL.running) return; const c = structuredClone(tolCfg()); TOL.running = true; TOL.stale = false; tolMsg('Préparation…'); await tick();
+  const B = OE.tolBase(App.sys, c.crit, c.comp), items = OE.tolItems(B.base, c), n = Math.max(5, Math.min(5000, +c.trials || 100));
+  const vals = [], foc = []; TOL.mc = { B, vals, foc, c, n };
+  let tl = performance.now();
+  for (let k = 0; k < n && TOL.running; k++) {
+    const s = structuredClone(B.base); for (const it of items) OE.tolApply(s, it, it.tol * OE.tolDraw(c.dist, Math.random));
+    const r = OE.tolEval(s, c.crit, c.comp, B.h0); if (isFinite(r.c)) { vals.push(r.c); foc.push(r.dt); }
+    if (performance.now() - tl > 90) { renderTolRes(); tolMsg(`Monte-Carlo : ${k + 1} / ${n}`); await tick(); tl = performance.now(); }
+  }
+  TOL.running = false; renderTolRes(); tolMsg(`Monte-Carlo terminé — ${vals.length} tirages`);
+}
+const pct = (arr, q) => { if (!arr.length) return NaN; const a = arr.slice().sort((x, y) => x - y), i = Math.min(a.length - 1, Math.max(0, q * (a.length - 1))), lo = Math.floor(i), f = i - lo; return a[lo] * (1 - f) + (a[lo + 1] ?? a[lo]) * f; };
+function renderTolRes() {
+  const el = $('#tolres'); if (!el) return;
+  let h = '';
+  const S = TOL.sens, MC = TOL.mc;
+  if (TOL.stale) h += '<div class="hint" style="color:var(--warn)">Le système ou les réglages ont changé depuis le dernier calcul.</div>';
+  if (!S && !MC) h += `<div class="hint" style="padding:30px 0">Lancez une <b>analyse de sensibilité</b> (chaque tolérance seule, à ±) puis un <b>Monte-Carlo</b> (toutes les tolérances tirées au hasard simultanément) pour estimer le rendement de fabrication.</div>`;
+  if (S) {
+    const u = tolUnit(S.c.crit), rows = S.rows.map(r => ({ ...r, dp: r.cp - S.B.nominal, dm: r.cm - S.B.nominal })).map(r => ({ ...r, w: Math.max(r.dp, r.dm) }));
+    const rss = S.B.nominal + Math.sqrt(rows.reduce((a, r) => a + Math.max(0, r.w) ** 2, 0));
+    const top = rows.slice().sort((a, b) => b.w - a.w), mx = Math.max(1e-12, ...top.map(r => Math.abs(r.w)));
+    h += `<div style="display:flex;gap:24px;margin-bottom:8px"><div><div class="hint">Nominal${S.c.comp ? ' (compensé)' : ''}</div><div class="big">${fx(S.B.nominal, 4)} ${u}</div></div><div><div class="hint">Estimation RSS</div><div class="big">${fx(rss, 4)} ${u}</div></div>${S.c.comp ? `<div><div class="hint">Mise au point nominale</div><div class="big">${fx(S.B.focus * 1e3, 1)} µm</div></div>` : ''}</div>
+    <div class="hint">Sensibilités triées (${rows.length}/${S.n}) — Δ = critère perturbé − nominal</div>
+    <div style="max-height:250px;overflow:auto;border:1px solid var(--line);border-radius:8px"><table class="mt" style="font-size:12px"><tr><th>Tolérance</th><th>Valeur</th><th>Δ (+)</th><th>Δ (−)</th><th style="width:110px"></th>${S.c.comp ? '<th>Foyer (µm)</th>' : ''}</tr>
+    ${top.map(r => `<tr><td>${esc(r.it.label)}</td><td style="font-family:var(--mono)">±${r.it.tol}</td><td style="font-family:var(--mono)">${fx(r.dp, 4)}</td><td style="font-family:var(--mono)">${fx(r.dm, 4)}</td><td><div style="height:7px;border-radius:3px;background:${r.w > 0 ? '#ea580c' : '#16a34a'};width:${Math.max(2, Math.abs(r.w) / mx * 100)}px"></div></td>${S.c.comp ? `<td style="font-family:var(--mono)">${fx(r.fp * 1e3, 0)} / ${fx(r.fm * 1e3, 0)}</td>` : ''}</tr>`).join('')}</table></div>`;
+  }
+  if (MC) {
+    const u = tolUnit(MC.c.crit), v = MC.vals, mean = v.reduce((a, b) => a + b, 0) / (v.length || 1), sd = Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, v.length - 1));
+    h += `<div class="hint" style="margin-top:12px;font-weight:600;color:var(--fg)">Monte-Carlo — ${v.length} / ${MC.n} tirages · nominal ${fx(MC.B.nominal, 4)} ${u}</div>
+    <div style="display:flex;gap:14px;align-items:stretch;margin-top:4px"><div style="flex:1;min-width:0;height:180px;position:relative"><canvas id="mcchart"></canvas></div>
+    <table class="mt" style="width:auto;font-family:var(--mono);font-size:12px"><tr><th>Statistique</th><th>${u}</th></tr>
+    <tr><td>Moyenne</td><td>${fx(mean, 4)}</td></tr><tr><td>Écart-type</td><td>${fx(sd, 4)}</td></tr>
+    ${[0.5, 0.8, 0.9, 0.98].map(q => `<tr><td>${q * 100} % &lt;</td><td>${fx(pct(v, q), 4)}</td></tr>`).join('')}
+    <tr><td>Max</td><td>${fx(Math.max(...v), 4)}</td></tr>${MC.c.comp ? `<tr><td>Compensateur</td><td>${fx(Math.min(...MC.foc) * 1e3, 0)}…${fx(Math.max(...MC.foc) * 1e3, 0)} µm</td></tr>` : ''}</table></div>`;
+  }
+  el.innerHTML = h;
+  if (MC && MC.vals.length) drawMC();
+}
+function drawMC() {
+  const cv = $('#mcchart'); if (!cv) return; readTheme(); const { c, w, h } = prepCanvas(cv), MC = TOL.mc, v = MC.vals.slice().sort((a, b) => a - b);
+  const lo = Math.min(MC.B.nominal, v[0]), hi = v[v.length - 1], nb = Math.max(8, Math.min(30, Math.round(Math.sqrt(v.length) * 1.5))), bw = (hi - lo) / nb || 1;
+  const bins = new Array(nb).fill(0); for (const x of v) bins[Math.min(nb - 1, Math.floor((x - lo) / bw))]++;
+  const A = axes(c, { x: 0, y: 0, w, h }, [lo, hi + 1e-12], [0, Math.max(...bins) * 1.1], { xl: tolUnit(MC.c.crit) + ' RMS', ml: 36, mb: 30 });
+  c.fillStyle = TH.acc; c.globalAlpha = 0.55; bins.forEach((b, i) => { const x0 = A.X(lo + i * bw), x1 = A.X(lo + (i + 1) * bw); c.fillRect(x0 + 0.5, A.Y(b), x1 - x0 - 1, A.Y(0) - A.Y(b)); }); c.globalAlpha = 1;
+  const yc = A.Y, mxb = Math.max(...bins) * 1.1; c.strokeStyle = '#ea580c'; c.lineWidth = 1.8; c.beginPath(); v.forEach((x, i) => { const px = A.X(x), py = yc((i + 1) / v.length * mxb); i ? c.lineTo(px, py) : c.moveTo(px, py); }); c.stroke();
+  c.strokeStyle = TH.fg; c.setLineDash([3, 3]); c.beginPath(); c.moveTo(A.X(MC.B.nominal), A.P.y); c.lineTo(A.X(MC.B.nominal), A.P.y + A.P.h); c.stroke(); c.setLineDash([]);
+  text(c, 'histogramme · cumul (orange) · nominal (pointillé)', A.P.x + 4, A.P.y + 2, { col: TH.mut, size: 10 });
+}
+function tolReport() {
+  const L = [`Focale — rapport de tolérancement — ${App.sys.title || ''}`];
+  if (TOL.sens) { const S = TOL.sens, u = tolUnit(S.c.crit); L.push('', `Critère : ${S.c.crit} (${u}), compensateur : ${S.c.comp ? 'mise au point' : 'aucun'}`, `Nominal : ${S.B.nominal.toFixed(5)}`, '', 'Tolérance;Valeur;Δ+;Δ-');
+    S.rows.forEach(r => L.push(`${r.it.label};±${r.it.tol};${(r.cp - S.B.nominal).toFixed(5)};${(r.cm - S.B.nominal).toFixed(5)}`)); }
+  if (TOL.mc) { const M = TOL.mc; L.push('', `Monte-Carlo : ${M.vals.length} tirages, distribution ${M.c.dist}`); [0.5, 0.8, 0.9, 0.98].forEach(q => L.push(`${q * 100}% < ${pct(M.vals, q).toFixed(5)}`)); }
+  return L.join('\n');
 }
 
 /* ---------------- Import / export (JSON, CODE V .seq) ---------------- */
@@ -2228,6 +2440,7 @@ function init() {
       case 'install': if (deferredInstall) { deferredInstall.prompt(); deferredInstall.userChoice.finally(() => { deferredInstall = null; $('#btnInstall').style.display = 'none'; }); } break;
       case 'undo': undo(); break; case 'redo': redo(); break;
       case 'optim': openOptim(); break;
+      case 'tol': openTol(); break;
       case 'theme': { const d = document.documentElement; d.dataset.theme = d.dataset.theme === 'dark' ? '' : 'dark'; save(); readTheme(); drawLayout(); renderPanes(); break; }
       case 'help': openHelp(); break;
       case 'fit': fitView(); break;
