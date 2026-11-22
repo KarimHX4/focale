@@ -5,9 +5,10 @@
   'use strict';
   if (window.ASST) return;
   const LS = 'focale.asst';
-  const DEF = { backend: 'auto', ollamaUrl: 'http://localhost:11434', ollamaModel: '', webllmModel: 'Qwen2.5-3B-Instruct-q4f16_1-MLC', confirm: true, history: 2, rulesFirst: true, nativeTools: true };
+  const DEF = { backend: 'auto', ollamaUrl: 'http://localhost:11434', ollamaModel: '', webllmModel: 'Qwen2.5-3B-Instruct-q4f16_1-MLC', confirm: true, history: 2, rulesFirst: true, nativeTools: true, win: { docked: true, w: 420, left: null, top: null, h: null } };
   const A = window.ASST = { cfg: { ...DEF }, log: [], busy: false, engine: null, engineId: null, abort: null, active: null, ollamaModels: [] };
   try { Object.assign(A.cfg, JSON.parse(localStorage.getItem(LS) || '{}')); } catch (e) { }
+  A.cfg.win = { ...DEF.win, ...(A.cfg.win || {}) };
   const saveCfg = () => { try { localStorage.setItem(LS, JSON.stringify(A.cfg)); } catch (e) { } };
   const WEBLLM_URL = 'https://esm.run/@mlc-ai/web-llm@0.2';
   const WEBLLM_MODELS = [
@@ -453,7 +454,13 @@ Appelle les outils nécessaires, dans l'ordre, avec des valeurs numériques. Tu 
   const css = `
 #asst{position:fixed;top:52px;right:10px;bottom:34px;width:min(420px,calc(100vw - 20px));z-index:90;display:none;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.3);overflow:hidden;font-size:13px}
 #asst.open{display:flex}
-#asst header{display:flex;align-items:center;gap:8px;padding:10px 10px 8px 14px;border-bottom:1px solid var(--line)}
+#asst header{display:flex;align-items:center;gap:8px;padding:10px 10px 8px 14px;border-bottom:1px solid var(--line);cursor:move;user-select:none;flex:none}
+#asst.float{bottom:auto;right:auto}
+#asst .agrip{position:absolute;width:16px;height:16px;bottom:2px;right:2px;cursor:nwse-resize;opacity:.55;background:linear-gradient(135deg,transparent 0 45%,var(--mut) 45% 52%,transparent 52% 65%,var(--mut) 65% 72%,transparent 72%)}
+#asst .aedge{position:absolute;left:0;top:0;bottom:0;width:6px;cursor:ew-resize}
+#asst.float #aForm{padding-bottom:16px}
+#asst.float .aedge{display:none}#asst:not(.float) .agrip{display:none}
+body.adrag,body.adrag *{user-select:none!important}
 #asst header b{font-size:14px}
 #asst .chip{font-size:11px;padding:2px 8px;border-radius:99px;background:var(--acc2);color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:190px}
 #asst .wb{border:0;background:none;color:var(--mut);cursor:pointer;width:28px;height:26px;border-radius:6px;font-size:15px}
@@ -487,17 +494,47 @@ Appelle les outils nécessaires, dans l'ordre, avec des valeurs numériques. Tu 
     if ($('#asst')) return;
     const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
     const el = document.createElement('aside'); el.id = 'asst'; el.setAttribute('aria-label', 'Assistant');
-    el.innerHTML = `<header><b>Assistant</b><span class="chip" id="aBk">…</span><span style="flex:1"></span><button class="wb" id="aCfg" title="Réglages du moteur" aria-label="Réglages">⚙</button><button class="wb" id="aClr" title="Effacer la conversation" aria-label="Effacer">⌫</button><button class="wb" id="aX" title="Fermer" aria-label="Fermer">✕</button></header>
+    el.innerHTML = `<header><b>Assistant</b><span class="chip" id="aBk">…</span><span style="flex:1"></span><button class="wb" id="aDock" title="Détacher / ancrer à droite (ou glisser la barre de titre ; double-clic pour basculer)" aria-label="Détacher ou ancrer">⧉</button><button class="wb" id="aCfg" title="Réglages du moteur" aria-label="Réglages">⚙</button><button class="wb" id="aClr" title="Effacer la conversation" aria-label="Effacer">⌫</button><button class="wb" id="aX" title="Fermer" aria-label="Fermer">✕</button></header>
       <div id="aSet"></div><div id="aLog"></div><div id="aSt"></div>
+      <div class="aedge" title="Glisser pour changer la largeur"></div><div class="agrip" title="Redimensionner"></div>
       <form id="aForm"><textarea id="aIn" rows="2" placeholder="Ex. : fais-moi un doublet achromatique f = 100 mm à F/4, champ 3° — Entrée pour envoyer"></textarea><button class="tb pri" id="aGo" type="submit">Envoyer</button></form>`;
     document.body.appendChild(el);
-    $('#aX').onclick = () => A.close(); $('#aCfg').onclick = () => { $('#aSet').classList.toggle('open'); if ($('#aSet').classList.contains('open')) renderSet(); };
+    $('#aX').onclick = () => A.close();
+    $('#aDock').onclick = () => { const w = A.cfg.win; if (w.docked) { const r = el.getBoundingClientRect(); Object.assign(w, { docked: false, left: Math.max(8, r.left - 40), top: r.top + 20, w: r.width, h: Math.min(r.height - 40, innerHeight - r.top - 40) }); } else w.docked = true; saveCfg(); place(); };
+    winDrag(el); $('#aCfg').onclick = () => { $('#aSet').classList.toggle('open'); if ($('#aSet').classList.contains('open')) renderSet(); };
     $('#aClr').onclick = () => { A.log = []; renderLog(); };
     $('#aForm').onsubmit = e => { e.preventDefault(); if (A.busy) { A.stop = true; if (A.abort) A.abort.abort(); return; } const v = $('#aIn').value.trim(); if (v) { $('#aIn').value = ''; $('#aSet').classList.remove('open'); send(v); } };
     $('#aIn').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#aForm').requestSubmit(); } e.stopPropagation(); });
     el.addEventListener('click', e => { const b = e.target.closest('[data-ap]'); if (!b) return; const m = A.log[+b.dataset.ap]; if (!m || m.state !== 'pending') return; if (b.dataset.k === 'go') runPlan(m); else { m.state = 'skipped'; renderLog(); } });
     if (!A.log.length) A.log.push({ role: 'assistant', text: 'Bonjour ! Décrivez ce que vous voulez faire : concevoir un système, changer un verre, optimiser, régler l\'ouverture ou les champs… Je vous montre les actions avant de les appliquer, et Ctrl+Z annule toute la demande.', by: '' });
     renderLog(); detect();
+  }
+  /** applique la position : ancré à droite (largeur réglable) ou flottant (position et taille libres) */
+  function place() {
+    const el = $('#asst'); if (!el) return; const w = A.cfg.win;
+    el.classList.toggle('float', !w.docked);
+    if (w.docked) { el.style.left = ''; el.style.top = ''; el.style.height = ''; el.style.width = `min(${Math.max(300, w.w || 420)}px, calc(100vw - 20px))`; $('#aDock').textContent = '⧉'; $('#aDock').title = 'Détacher la fenêtre (ou glisser la barre de titre)'; }
+    else {
+      const W = Math.min(Math.max(300, w.w || 420), innerWidth - 16), H = Math.min(Math.max(260, w.h || 560), innerHeight - 16);
+      w.left = Math.min(Math.max(0, w.left ?? innerWidth - W - 30), innerWidth - W); w.top = Math.min(Math.max(0, w.top ?? 80), innerHeight - 60);
+      Object.assign(el.style, { left: w.left + 'px', top: w.top + 'px', width: W + 'px', height: Math.min(H, innerHeight - w.top - 8) + 'px' });
+      $('#aDock').textContent = '⇥'; $('#aDock').title = 'Ancrer à droite (ou double-clic sur la barre de titre)';
+    }
+  }
+  /** déplacement par la barre de titre (détache), largeur par le bord gauche (ancré), taille par la poignée (flottant) */
+  function winDrag(el) {
+    const w = A.cfg.win, track = (e, fn) => { e.preventDefault(); const mv = ev => fn(ev), up = () => { removeEventListener('mousemove', mv); removeEventListener('mouseup', up); document.body.classList.remove('adrag'); saveCfg(); }; document.body.classList.add('adrag'); addEventListener('mousemove', mv); addEventListener('mouseup', up); };
+    el.querySelector('header').addEventListener('mousedown', e => {
+      if (e.button !== 0 || e.target.closest('button,select,input')) return;
+      const r = el.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top, x0 = e.clientX, y0 = e.clientY; let moved = false;
+      track(e, ev => { if (!moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5) return;
+        if (w.docked) { Object.assign(w, { docked: false, w: r.width, h: Math.min(r.height, 620) }); }
+        moved = true; w.left = ev.clientX - dx; w.top = ev.clientY - dy; place(); });
+    });
+    el.querySelector('header').addEventListener('dblclick', e => { if (e.target.closest('button')) return; w.docked = !w.docked; if (!w.docked && w.left == null) w.left = null; saveCfg(); place(); });
+    el.querySelector('.agrip').addEventListener('mousedown', e => { const r = el.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY; track(e, ev => { w.w = Math.max(300, r.width + ev.clientX - x0); w.h = Math.max(260, r.height + ev.clientY - y0); place(); }); });
+    el.querySelector('.aedge').addEventListener('mousedown', e => { const r = el.getBoundingClientRect(), x0 = e.clientX; track(e, ev => { w.w = Math.max(300, Math.min(innerWidth - 40, r.width - (ev.clientX - x0))); place(); }); });
+    addEventListener('resize', place);
   }
   function status(t, busy) { const e = $('#aSt'); if (e) { e.textContent = t || ''; e.classList.toggle('adots', !!busy); } }
   function setChip() { const c = $('#aBk'); if (!c) return; const b = A.active; c.textContent = b === 'ollama' ? `Ollama · ${A.cfg.ollamaModel || pickOllama(A.ollamaModels) || '?'}` : b === 'webllm' ? `navigateur · ${A.cfg.webllmModel.replace(/-q4f.*$/, '')}` : 'sans IA (règles)'; c.title = c.textContent; }
@@ -579,7 +616,7 @@ Appelle les outils nécessaires, dans l'ordre, avec des valeurs numériques. Tu 
     } catch (e) { A.log.push({ role: 'error', text: e.message || String(e) }); }
     finally { A.busy = false; const g = $('#aGo'); if (g) g.textContent = 'Envoyer'; status(''); renderLog(); }
   }
-  A.open = () => { ui(); $('#asst').classList.add('open'); $('#aIn').focus(); };
+  A.open = () => { ui(); $('#asst').classList.add('open'); place(); $('#aIn').focus(); };
   A.close = () => { const e = $('#asst'); if (e) e.classList.remove('open'); };
   A.toggle = () => { const e = $('#asst'); if (e && e.classList.contains('open')) A.close(); else A.open(); };
   // accès pour les tests
