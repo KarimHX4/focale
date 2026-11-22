@@ -1,5 +1,5 @@
 /* Service worker Focale : réseau d'abord (mises à jour immédiates en ligne), cache en secours (hors ligne). */
-const VERSION = 'a90c4f04';
+const VERSION = '2a33e11a';
 const CACHE = 'focale-' + VERSION;
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon.svg'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS))); self.skipWaiting(); });

@@ -64,7 +64,12 @@
     const k = t.toUpperCase().replace(/[\s_-]/g, ''), all = OE.catalog();
     const hit = all.find(x => x.name.toUpperCase().replace(/[\s_-]/g, '') === 'N' + k) || all.find(x => x.base && x.base.toUpperCase().replace(/[\s_-]/g, '') === k);
     if (hit) return hit.name;
-    const near = all.filter(x => x.name.toUpperCase().replace(/[\s_-]/g, '').includes(k)).slice(0, 5).map(x => x.name);
+    // faute de frappe sur le nom : distance d'édition ≤ 1 (≤ 2 dès 7 caractères) sur le nom normalisé, si un seul verre est le plus proche
+    const nk = x => x.toUpperCase().replace(/[\s_-]/g, ''), tol = k.length >= 7 ? 2 : 1; let best = [], bd = tol + 1;
+    for (const x of all) for (const cand of [nk(x.name), x.base ? nk(x.base) : null]) { if (!cand) continue; const d = dl(k, cand, tol); if (d < bd) { bd = d; best = [x.name]; } else if (d === bd && !best.includes(x.name)) best.push(x.name); }
+    if (best.length === 1) return best[0];
+    if (best.length > 1) { const pref = best.find(n => /^N-/.test(n) && nk(n).endsWith(k.slice(-3))); if (pref && best.filter(n => /^N-/.test(n)).length === 1) return pref; }
+    const near = (best.length ? best : all.filter(x => nk(x.name).includes(k)).map(x => x.name)).slice(0, 5);
     throw new Error(`verre inconnu « ${t} »${near.length ? ` (proches : ${near.join(', ')})` : ''}`);
   }
   const lensOf = n => { const L = lenses(), l = L[Math.round(num(n, 'lentille')) - 1]; if (!l) throw new Error(`lentille ${n} inexistante (${L.length} lentille(s))`); return l; };
@@ -328,15 +333,47 @@ Appelle les outils nécessaires, dans l'ordre, avec des valeurs numériques. Tu 
   /* ================= Mode sans IA : règles ================= */
   const norm = t => t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[’']/g, ' ').replace(/\s+/g, ' ').trim();
   const ORD = { premiere: 1, premier: 1, '1re': 1, '1ere': 1, '1er': 1, deuxieme: 2, seconde: 2, second: 2, '2e': 2, '2eme': 2, troisieme: 3, '3e': 3, '3eme': 3, quatrieme: 4, '4e': 4, cinquieme: 5, '5e': 5 };
+  /* ---- tolérance aux fautes : vocabulaire des commandes, abréviations, distance d'édition ---- */
+  const VOCAB = `verre verres materiau lentille lentilles surface surfaces rayon rayons courbure epaisseur epaisseurs espace espaces air minimum minimale minimales maximum maximale maximales bord bords centre
+    focale ouverture champ champs longueur longueurs onde ondes lambda visible visibles infrarouge primaire centrale toutes polychromatique optimise optimiser optimisation optimisez quick focus mise point foyer meilleur
+    refocalise doublet achromatique achromat colle simple singlet plan convexe biconvexe concave supprime supprimer supprimez retire ajoute ajouter ajoutez insere affiche afficher montre montrer trace voir
+    diaphragme pupille diametre annule annuler defais premiere premier deuxieme seconde troisieme quatrieme cinquieme derniere front spot psf seidel empreinte footprint distorsion chromatisme corrige corriger
+    substitue substituer substitution variable variables totale encombrement inferieure superieure change changer mets mettre remplace remplacer passe utilise fais faire cree creer dessine propose objet infini
+    image mm degres nanometres catalogue reels verres conique asphere`.split(/\s+/).filter(Boolean);
+  const VSET = new Set(VOCAB);
+  const ABBR = { ep: 'epaisseur', epai: 'epaisseur', epais: 'epaisseur', epaiss: 'epaisseur', eps: 'epaisseur', foc: 'focale', opti: 'optimise', optim: 'optimise', opt: 'optimise', optimi: 'optimise',
+    lent: 'lentille', lentil: 'lentille', len: 'lentille', surf: 'surface', diaph: 'diaphragme', diam: 'diametre', pup: 'pupille', ouv: 'ouverture', ouvert: 'ouverture', qf: 'quick focus', mep: 'mise au point',
+    supp: 'supprime', suppr: 'supprime', sup: 'supprime', aj: 'ajoute', ajt: 'ajoute', aff: 'affiche', max: 'maximum', maxi: 'maximum', min: 'minimum', mini: 'minimum', long: 'longueur', lg: 'longueur', ldo: 'longueur d onde',
+    chrom: 'chromatisme', chromat: 'chromatisme', achro: 'achromatique', achromat: 'achromatique', dist: 'distorsion', tot: 'totale', var: 'variable', vars: 'variables', subst: 'substitue', nm: 'nm', deg: 'degres', cent: 'centrale', prim: 'primaire',
+    '1ere': 'premiere', '1re': 'premiere', '2nd': 'deuxieme', '2nde': 'deuxieme', '2eme': 'deuxieme', '2e': 'deuxieme', '3eme': 'troisieme', '3e': 'troisieme', '4eme': 'quatrieme', '4e': 'quatrieme', dern: 'derniere', ttl: 'longueur totale', met: 'mets', mai: 'mets' };
+  /** distance de Damerau-Levenshtein (bornée) */
+  function dl(a, b, max = 2) {
+    if (Math.abs(a.length - b.length) > max) return max + 1;
+    const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...new Array(b.length).fill(0)]); for (let j = 0; j <= b.length; j++) d[0][j] = j;
+    for (let i = 1; i <= a.length; i++) { let rowMin = Infinity; for (let j = 1; j <= b.length; j++) { const c = a[i - 1] === b[j - 1] ? 0 : 1; d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + c); if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1); rowMin = Math.min(rowMin, d[i][j]); } if (rowMin > max) return max + 1; }
+    return d[a.length][b.length];
+  }
+  /** corrige un mot : exact, abréviation, faute de frappe (1 lettre dès 4 lettres, 2 dès 8), préfixe unique (≥ 5 lettres) */
+  function fixWord(w) {
+    if (VSET.has(w)) return w; if (ABBR[w]) return ABBR[w];
+    if (w.length < 4) return w;
+    const tol = w.length >= 8 ? 2 : 1; let best = null, bd = tol + 1, tie = false;
+    for (const v of VOCAB) { const d = dl(w, v, tol); if (d > tol) continue; if (d < bd) { bd = d; best = v; tie = false; } else if (d === bd && v !== best && v.slice(0, 5) !== best.slice(0, 5)) tie = true; }
+    if (best && !tie) return best;
+    if (w.length >= 5) { const pre = VOCAB.filter(v => v.startsWith(w)); if (pre.length && pre.every(v => v.slice(0, w.length + 2) === pre[0].slice(0, w.length + 2))) return pre[0]; }
+    return w;
+  }
+  /** texte normalisé et corrigé (les jetons contenant des chiffres ou des noms de verre sont laissés tels quels) */
+  const fuzz = t => t.replace(/\.(?=\s|$)/g, ' ').replace(/[a-z0-9]+/g, w => /\d/.test(w) && !ABBR[w] ? w : fixWord(w)).replace(/\s+/g, ' ').trim();
   const NUM = '(-?\\d+(?:[.,]\\d+)?)';
   const toN = s => parseFloat(String(s).replace(',', '.'));
   function rules(text) {
-    const t = norm(text), acts = [], say = [];
+    const t = fuzz(norm(text)), acts = [], say = [];
     const lensRef = () => { const m = t.match(new RegExp(`(${Object.keys(ORD).join('|')}|derniere|\\d+)\\s*(?:e\\s+)?lentille|lentille\\s*(?:l|n°|no|numero)?\\s*(\\d+)`)); if (!m) return null; if (m[2]) return +m[2]; if (m[1] === 'derniere') return lenses().length; return ORD[m[1]] || +m[1]; };
-    const glassTok = () => { const m = text.match(/(?:\ben\b|\bpar\b|\bavec\b|=|:|\bdu\b|\ble\b)\s*([A-Za-z]{1,6}[-_ ]?[A-Za-z]*\d+[A-Za-z0-9]*|SILICA|CAF2|BK7|F_SILICA)\s*\.?\s*$/i) || text.match(/\b((?:N|S|H|D|E|P|L)-?[A-Z]{1,5}\d{1,3}[A-Z]*|BK7|F2|SF\d+|SILICA|CAF2)\b/i); return m ? m[1].replace(' ', '-') : null; };
+    const glassTok = () => { const m = text.match(/(?:\ben\b|\bpar\b|\bavec\b|=|:|\bdu\b|\ble\b)\s*([A-Za-z]{1,6}[-_ ]?[A-Za-z]*\s?\d+[A-Za-z0-9]*|SILICA|CAF2|BK7|F_SILICA)\s*\.?\s*$/i) || text.match(/\b((?:N|S|H|D|E|P|L)[- ]?[A-Z]{1,5}\s?\d{1,3}[A-Z]*|BK\s?7|F2|SF\s?\d+|SILICA|CAF2)\b/i); return m ? m[1].replace(/\s+/g, '').replace('_', '-') : null; };
     // design
     if (/doublet/.test(t) || /(lentille simple|singlet|plan-?convexe|biconvexe)/.test(t) && /(fai|cree|concoi|dessine|propose)/.test(t)) {
-      const f = t.match(new RegExp(`(?:f|focale|efl)\\s*(?:=|de|:)?\\s*${NUM}\\s*mm?`)) || t.match(new RegExp(`${NUM}\\s*mm`));
+      const f = t.match(new RegExp(`(?:\\bf|focale|efl)\\s*(?:=|de|:)?\\s*${NUM}(?!\\s*°)`)) || t.match(new RegExp(`${NUM}\\s*mm`));
       const fno = t.match(new RegExp(`f\\s*\\/\\s*${NUM}`)) || t.match(new RegExp(`(?:ouvert|ouverture|nombre d ouverture)[^0-9]*${NUM}`));
       const fld = t.match(new RegExp(`(?:champ|field)[^0-9]*${NUM}\\s*(?:°|deg)`)) || t.match(new RegExp(`±\\s*${NUM}\\s*°`)) || t.match(new RegExp(`${NUM}\\s*°`));
       if (!f) return { message: '', actions: [], question: 'Quelle focale (en mm) souhaitez-vous ?' };
@@ -347,7 +384,7 @@ Appelle les outils nécessaires, dans l'ordre, avec des valeurs numériques. Tu 
     }
     if (/(annule|defai|undo|retour arriere)/.test(t)) return { message: 'J\'annule la dernière modification.', actions: [{ tool: 'undo', args: {} }], question: '' };
     // verre
-    if (/(verre|materiau|glass)/.test(t) && /(change|mets|met |remplace|passe|utilise|en |par )/.test(t) && !/(variable|substitu)/.test(t)) {
+    if ((/(verre|materiau|glass)/.test(t) || (lensRef() && glassTok())) && /(change|mets|met |remplace|passe|utilise|en |par )/.test(t) && !/(variable|substitu)/.test(t)) {
       const g = glassTok(), sm = t.match(/(?:surface|\bs)\s*(\d+)/), ln = lensRef();
       if (!g) return { message: '', actions: [], question: 'Quel verre voulez-vous utiliser (par exemple N-BK7, N-SF5, N-LAK9) ?' };
       if (sm) return { message: `Verre de S${sm[1]} → ${g}.`, actions: [{ tool: 'set_surface', args: { s: +sm[1], glass: g } }], question: '' };
@@ -391,7 +428,7 @@ Appelle les outils nécessaires, dans l'ordre, avec des valeurs numériques. Tu 
 
   /** demande simple reconnue sans ambiguïté par les règles : exécutée sans modèle (instantané) */
   function simpleRule(text) {
-    const t = norm(text);
+    const t = fuzz(norm(text));
     if (t.length > 90 || /\b(puis|ensuite|apres|avant de|pour que|afin|tout en|sans|mais|pourquoi|comment|quel|quelle|est-ce|peux-tu|explique)\b/.test(t) || /[?]/.test(text)) return null;
     const r = rules(text); if (!r.actions.length || r.question) return null;
     if (r.actions.some(a => a.tool === 'report_metrics')) return null;
@@ -546,5 +583,5 @@ Appelle les outils nécessaires, dans l'ordre, avec des valeurs numériques. Tu 
   A.close = () => { const e = $('#asst'); if (e) e.classList.remove('open'); };
   A.toggle = () => { const e = $('#asst'); if (e && e.classList.contains('open')) A.close(); else A.open(); };
   // accès pour les tests
-  Object.assign(A, { summary, rules, simpleRule, fixArgs, OLLAMA_TOOLS, buildMessages, parseReply, execute, TOOLS, SCHEMA, SYSTEM, lenses, send, detect, makeDoublet, resolveGlass });
+  Object.assign(A, { summary, rules, simpleRule, fuzz: t => fuzz(norm(t)), fixArgs, OLLAMA_TOOLS, buildMessages, parseReply, execute, TOOLS, SCHEMA, SYSTEM, lenses, send, detect, makeDoublet, resolveGlass });
 })();
