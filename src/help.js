@@ -36,10 +36,10 @@ const HELP = [
 <tr><td>Demi-diamètre</td><td>Calculé automatiquement (italique) à partir des rayons ; 🔒 le fixe et vignette les rayons au-delà.</td></tr>
 <tr><td>Conique</td><td>Constante de conicité k (0 sphère, −1 parabole, &lt;−1 hyperbole, ]−1,0[ ellipse).</td></tr>
 <tr><td>A4…A10</td><td>Coefficients d'asphérique pair (case « Asphères »).</td></tr></table>
-<p><b>Boutons</b> : <b>V</b> = variable d'optimisation ; <b>M</b> = solve de mise au point (épaisseur telle que le rayon marginal paraxial coupe l'axe à la surface suivante) ; 🔒 = demi-diamètre fixe.</p>
+<p><b>Boutons</b> : <b>V</b> = variable d'optimisation (rayon, épaisseur, conique et, avec « Asphères », A4…A10) ; <b>M</b> = solve de mise au point (épaisseur telle que le rayon marginal paraxial coupe l'axe à la surface suivante) ; 🔒 = demi-diamètre fixe.</p>
 <p><b>Clavier</b> : Entrée valide et descend, Tab passe à la colonne suivante, flèches haut/bas, Échap annule, Inser insère une surface après la sélection, Suppr (hors d'un champ de saisie) ou Ctrl+Suppr supprime la surface sélectionnée.</p>
-<p><b>Clic droit</b> sur une ligne : menu contextuel — insérer avant/après, ajouter une lentille, choisir le verre, diaphragme, miroir, retourner, <b>supprimer la surface</b> ou <b>supprimer l'élément</b> (les deux surfaces d'une lentille). Toute suppression s'annule avec Ctrl+Z.</p>
-<p><b>Outils</b> : + Avant / + Après / + Lentille (deux surfaces N-BK7), Supprimer, Diaphragme, Miroir, Retourner (inverse un élément), Verres… (catalogue).</p>` },
+<p><b>Clic droit</b> sur une ligne : menu contextuel — insérer avant/après, ajouter une lentille, quick focus, choisir le verre, diaphragme, miroir, retourner, <b>supprimer la surface</b> ou <b>supprimer l'élément</b> (les deux surfaces d'une lentille). Toute suppression s'annule avec Ctrl+Z.</p>
+<p><b>Outils</b> : + Avant / + Après / + Lentille (deux surfaces N-BK7), Supprimer, Diaphragme, Miroir, Retourner (inverse un élément), Verres… (catalogue), <b>⌖ Quick focus</b> (meilleur foyer, options ▾ : critère et longueur d'onde — voir <i>Optimisation</i>).</p>` },
 
   { id: 'elements', t: 'Types d\'éléments', h: `
 <p>Choisissez le type dans la colonne <b>Élément</b> ; ses paramètres apparaissent dans le panneau <b>Surface</b> à gauche.</p>
@@ -158,11 +158,31 @@ const HELP = [
 <p class="hint">Vos choix sont mémorisés pour le prochain rapport. Dans la version hébergée sur claude.ai, le téléchargement peut être bloqué : utilisez le site GitHub Pages ou l'application installée.</p>` },
 
   { id: 'optimisation', t: 'Optimisation', h: `
-<p>Méthode des <b>moindres carrés amortis</b> (Levenberg-Marquardt) avec Jacobien numérique.</p>
-<ul><li><b>Variables</b> : bouton <b>V</b> sur les courbures, épaisseurs et coniques.</li>
-<li><b>Critère de qualité image</b> : spot RMS par rapport au barycentre ou front d'onde RMS, évalué par quadrature de Gauss (3 anneaux × 8 bras) pour tous les champs et longueurs d'onde pondérés.</li>
-<li><b>Opérandes</b> : focale (EFL), F/# de travail, longueur totale, tirage, distorsion, épaisseurs min/max de verre au centre et au bord, espace d'air minimal.</li></ul>
-<p>« Restaurer l'état initial » annule l'optimisation ; Ctrl+Z fonctionne aussi. Raccourci : Ctrl+Maj+O.</p>` },
+<p>Méthode des <b>moindres carrés amortis</b> (Levenberg-Marquardt) avec Jacobien numérique, comme l'optimisation locale de Zemax ou CODE V. Bouton <b>Optimiser</b> (Ctrl+Maj+O) ; la fenêtre se déplace et se redimensionne, et l'on peut continuer à travailler dans l'éditeur.</p>
+<h4>Variables</h4>
+<ul><li>Bouton <b>V</b> dans l'éditeur : rayon (la variable est la courbure), épaisseur, conique et, avec la case « Asphères », les coefficients <b>A4, A6, A8, A10</b>.</li>
+<li>La fenêtre liste les variables avec leur valeur et leur <b>écart</b> depuis le début de l'optimisation ; « Tout libérer » retire tous les V.</li>
+<li>Une épaisseur pilotée par le solve M ne peut pas être variable.</li></ul>
+<h4>Fonction de mérite</h4>
+<ul><li><b>Critère de qualité image</b> : spot RMS (par rapport au barycentre), front d'onde RMS ou aucun ; quadrature de Gauss 3 anneaux × 8 bras sur tous les champs pondérés.</li>
+<li><b>Longueurs d'onde du critère</b> : toutes (pondérées), la <b>λ centrale</b> (la plus proche du milieu de la bande), la λ primaire ou une λ donnée. Exemple : variable sur la dernière épaisseur + critère sur la λ centrale = mise au point à cette longueur d'onde. Les opérandes de chromatisme utilisent toujours toutes les λ.</li>
+<li><b>Opérandes</b>, chacun avec une contrainte <b>=</b>, <b>≥</b> ou <b>≤</b> (une contrainte d'inégalité ne pèse que si elle est violée) :
+<table class="ht"><tr><th>Code</th><th>Grandeur</th></tr>
+<tr><td>EFL · WFNO · TTL · BFL</td><td>Focale, F/# de travail paraxial, longueur totale (1ʳᵉ surface → image), distance image paraxiale.</td></tr>
+<tr><td>PMAG · IMGH · RIMH</td><td>Grandissement paraxial, hauteur image paraxiale et réelle (rayon principal) au champ maximal.</td></tr>
+<tr><td>DIST</td><td>Distorsion réelle au champ maximal (%).</td></tr>
+<tr><td>AXCL · LACL</td><td>Chromatisme axial (foyer paraxial λmax − λmin) et latéral (hauteur du rayon principal λmax − λmin au champ max), en mm.</td></tr>
+<tr><td>SPHA · COMA · ASTI · FCUR</td><td>Sommes de Seidel en ondes : W040, W131, W222, W220 (Petzval).</td></tr>
+<tr><td>MTFA</td><td>FTM moyenne T/S à une fréquence (paramètre, cycles/mm), moyenne pondérée sur les champs ; par défaut « ≥ cible ».</td></tr>
+<tr><td>MNCT · MXCT · MNET · MXET</td><td>Épaisseurs de verre au centre et au bord, min et max (toutes les lentilles).</td></tr>
+<tr><td>MNCA · MXCA · MNEA</td><td>Espaces d'air au centre (min, max) et au bord (min).</td></tr></table></li>
+<li>Le tableau affiche en direct la <b>valeur</b> de chaque opérande (en orange si une contrainte ≥/≤ n'est pas respectée) et sa <b>part</b> de la fonction de mérite ; la dernière ligne donne celle du critère image.</li></ul>
+<h4>Lancer</h4>
+<ul><li><b>Optimiser</b> : optimisation locale jusqu'à convergence ou au nombre d'itérations max.</li>
+<li><b>Recherche globale</b> : à partir du meilleur système, les variables sont perturbées au hasard (amplitude relative réglable), puis optimisées ; on garde le meilleur résultat sur le nombre de cycles demandé (méthode de type « Hammer »). Utile pour sortir d'un minimum local.</li>
+<li><b>Restaurer l'état initial</b> revient au système d'avant la dernière optimisation ; Ctrl+Z fonctionne aussi.</li></ul>
+<h4>Quick focus</h4>
+<p>Bouton <b>⌖ Quick focus</b> de l'éditeur (ou Ctrl+Maj+F, ou clic droit) : déplace le plan image au <b>meilleur foyer</b> en ajustant l'épaisseur avant l'image. Le menu <b>▾</b> choisit le critère (spot RMS ou front d'onde RMS) et la longueur d'onde : <b>centrale</b> par défaut (utile en polychromatique), primaire, toutes pondérées ou une λ précise. Un solve M sur cette épaisseur est retiré. Le message indique le déplacement et le critère avant/après. Le bouton est aussi dans la fenêtre d'optimisation.</p>` },
 
   { id: 'tolerancement', t: 'Tolérancement', h: `
 <p>Estime la dégradation due aux défauts de fabrication et d'alignement, à la manière du tolérancement de Zemax ou du module TOR de CODE V. Bouton <b>Tolérancer</b> ; la fenêtre a trois onglets de réglages à gauche et trois onglets de résultats à droite. La configuration est enregistrée avec le système.</p>
@@ -209,7 +229,7 @@ const HELP = [
 <table class="ht"><tr><th>Touches</th><th>Action</th></tr>
 <tr><td>F1</td><td>Aide</td></tr><tr><td>Ctrl+Z / Ctrl+Y</td><td>Annuler / rétablir</td></tr>
 <tr><td>Ctrl+O / Ctrl+S / Ctrl+Maj+S</td><td>Ouvrir / enregistrer / enregistrer sous</td></tr>
-<tr><td>Ctrl+Maj+O</td><td>Optimisation</td></tr><tr><td>Inser / Suppr (ou Ctrl+Suppr)</td><td>Insérer / supprimer une surface</td></tr><tr><td>Clic droit (éditeur)</td><td>Menu de la surface (supprimer, insérer, verre…)</td></tr>
+<tr><td>Ctrl+Maj+O</td><td>Optimisation</td></tr><tr><td>Ctrl+Maj+F</td><td>Quick focus (meilleur foyer)</td></tr><tr><td>Inser / Suppr (ou Ctrl+Suppr)</td><td>Insérer / supprimer une surface</td></tr><tr><td>Clic droit (éditeur)</td><td>Menu de la surface (supprimer, insérer, verre…)</td></tr>
 <tr><td>Entrée, Tab, ↑ ↓, Échap</td><td>Navigation dans l'éditeur</td></tr><tr><td>Échap</td><td>Fermer une fenêtre, réduire une analyse agrandie</td></tr></table>` },
 
   { id: 'conventions', t: 'Conventions et unités', h: `

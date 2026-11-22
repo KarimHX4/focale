@@ -1097,35 +1097,88 @@ const OE = (() => {
   }
 
   /* ---------------- Optimisation (moindres carrés amortis) ---------------- */
+  /**
+   * Opérandes de la fonction de mérite. kind = contrainte par défaut (eq : égal, ge : ≥ cible, le : ≤ cible),
+   * modifiable par opérande (op.cmp). list : contrainte appliquée à chaque élément (épaisseurs). p : paramètre.
+   */
   const OPS = {
-    EFL: { label: 'Focale (EFL)', kind: 'eq' }, WFNO: { label: 'F/# de travail', kind: 'eq' },
-    TTL: { label: 'Longueur totale', kind: 'eq' }, BFL: { label: 'Tirage (BFL)', kind: 'eq' },
-    DIST: { label: 'Distorsion max (%)', kind: 'eq' }, MNCT: { label: 'Épaisseur centre verre min', kind: 'ge' },
-    MXCT: { label: 'Épaisseur centre verre max', kind: 'le' }, MNET: { label: 'Épaisseur bord verre min', kind: 'ge' },
-    MNCA: { label: 'Espace d\'air centre min', kind: 'ge' },
+    EFL: { label: 'Focale (EFL)', kind: 'eq', u: 'mm' }, WFNO: { label: 'F/# de travail (paraxial)', kind: 'eq' },
+    TTL: { label: 'Longueur totale (1ʳᵉ surface → image)', kind: 'eq', u: 'mm' }, BFL: { label: 'Distance image paraxiale (dernière surface → foyer)', kind: 'eq', u: 'mm' },
+    PMAG: { label: 'Grandissement paraxial', kind: 'eq' }, IMGH: { label: 'Hauteur image paraxiale (champ max)', kind: 'eq', u: 'mm' },
+    RIMH: { label: 'Hauteur image réelle (rayon principal, champ max)', kind: 'eq', u: 'mm' },
+    DIST: { label: 'Distorsion réelle au champ max', kind: 'eq', u: '%' },
+    AXCL: { label: 'Chromatisme axial (foyer λmax − λmin)', kind: 'eq', u: 'mm' }, LACL: { label: 'Chromatisme latéral (λmax − λmin, champ max)', kind: 'eq', u: 'mm' },
+    SPHA: { label: 'Sphérique de Seidel W040', kind: 'eq', u: 'λ' }, COMA: { label: 'Coma de Seidel W131', kind: 'eq', u: 'λ' },
+    ASTI: { label: 'Astigmatisme de Seidel W222', kind: 'eq', u: 'λ' }, FCUR: { label: 'Courbure de champ (Petzval) W220', kind: 'eq', u: 'λ' },
+    MTFA: { label: 'FTM moyenne T/S à une fréquence', kind: 'ge', p: 'cycles/mm', pdef: 30 },
+    MNCT: { label: 'Épaisseur centre verre min', kind: 'ge', u: 'mm', list: 1 }, MXCT: { label: 'Épaisseur centre verre max', kind: 'le', u: 'mm', list: 1 },
+    MNET: { label: 'Épaisseur bord verre min', kind: 'ge', u: 'mm', list: 1 }, MXET: { label: 'Épaisseur bord verre max', kind: 'le', u: 'mm', list: 1 },
+    MNCA: { label: 'Espace d\'air centre min', kind: 'ge', u: 'mm', list: 1 }, MXCA: { label: 'Espace d\'air centre max', kind: 'le', u: 'mm', list: 1 },
+    MNEA: { label: 'Espace d\'air bord min', kind: 'ge', u: 'mm', list: 1 },
   };
+  const ASPH = ['a4', 'a6', 'a8', 'a10'];
   function getVars(sys) {
     const v = [];
     sys.surfaces.forEach((s, i) => {
       if (s.vr) v.push({ si: i, kind: 'c' });
       if (s.vt && s.tsolve !== 'M') v.push({ si: i, kind: 't' });
       if (s.vk) v.push({ si: i, kind: 'k' });
+      for (const a of ASPH) if (s['v' + a]) v.push({ si: i, kind: a });
     });
     return v;
   }
-  function getVal(sys, v) { const s = sys.surfaces[v.si]; return v.kind === 'c' ? curv(s) : v.kind === 't' ? s.t : (s.k || 0); }
+  function getVal(sys, v) { const s = sys.surfaces[v.si]; return v.kind === 'c' ? curv(s) : v.kind === 't' ? s.t : v.kind === 'k' ? (s.k || 0) : (+s[v.kind] || 0); }
   function setVal(sys, v, x) {
     const s = sys.surfaces[v.si];
-    if (v.kind === 'c') s.r = Math.abs(x) < 1e-12 ? Infinity : 1 / x; else if (v.kind === 't') s.t = x; else s.k = x;
+    if (v.kind === 'c') s.r = Math.abs(x) < 1e-12 ? Infinity : 1 / x; else if (v.kind === 't') s.t = x; else if (v.kind === 'k') s.k = x; else s[v.kind] = x;
+  }
+  /** indices des longueurs d'onde retenues : 'all' (toutes pondérées), 'central' (la plus proche du milieu de la bande), 'primary', ou un indice */
+  function wlSel(sys, sel) {
+    const W = sys.wavelengths, n = W.length;
+    if (sel === 'central') { const ls = W.map(w => w.um), mid = (Math.min(...ls) + Math.max(...ls)) / 2; let b = 0; ls.forEach((l, i) => { if (Math.abs(l - mid) < Math.abs(ls[b] - mid) - 1e-12) b = i; }); return [b]; }
+    if (sel === 'primary') return [Math.min(Math.max(0, sys.primary | 0), n - 1)];
+    if (sel !== '' && sel != null && sel !== 'all' && Number.isInteger(+sel) && +sel >= 0 && +sel < n) return [+sel];
+    return W.map((_, i) => i);
   }
   const GQ = [[0.3357107, 5 / 18], [0.7071068, 8 / 18], [0.9419651, 5 / 18]];
+  /** valeur d'un opérande : { val } ou { list } */
+  function opValue(M, op) {
+    const S = M.S, N = M.N, sys = M.sys, wl = M.wls;
+    const sagAt = (j, r) => { const s = M.ctxs[M.pw].s[j]; const v = sag(s, 0, r); return isFinite(v) ? v : 0; };
+    const chief = wi => { const fy = M.par.fmax; const c = ray(M, wi, { x: 0, y: fy }, 0, 0); return c.vig ? NaN : c.y; };
+    const lmin = wl.indexOf(Math.min(...wl)), lmax = wl.indexOf(Math.max(...wl));
+    const edge = (j, k) => { const r = Math.max(S[j].sd, S[k].sd); return S[j].t + sagAt(k, r) - sagAt(j, r); };
+    const list = [];
+    switch (op.type) {
+      case 'EFL': return { val: M.par.efl };
+      case 'WFNO': return { val: M.par.wfno };
+      case 'TTL': return { val: M.par.ttl };
+      case 'BFL': return { val: M.par.imgDist };
+      case 'PMAG': return { val: M.par.mag };
+      case 'IMGH': return { val: M.par.imgH };
+      case 'RIMH': return { val: chief(M.pw) };
+      case 'DIST': { const fy = M.par.fmax, c = ray(M, M.pw, { x: 0, y: fy }, 0, 0); const yp = M.objInf ? M.par.unitImgH * Math.tan(fy * DEG) : M.par.unitImgH * fy; return { val: c.vig ? 0 : 100 * (c.y - yp) / yp }; }
+      case 'AXCL': { if (lmin === lmax) return { val: 0 }; const d = l => paraxial(sys, indices(S, l), M.stopIdx, M.objInf).imgDist; return { val: d(wl[lmax]) - d(wl[lmin]) }; }
+      case 'LACL': return { val: lmin === lmax ? 0 : chief(lmax) - chief(lmin) };
+      case 'SPHA': case 'COMA': case 'ASTI': case 'FCUR': { const sd = seidel(M).sum, lm = M.ctxs[M.pw].lmm;
+        return { val: op.type === 'SPHA' ? sd.SI / 8 / lm : op.type === 'COMA' ? sd.SII / 2 / lm : op.type === 'ASTI' ? sd.SIII / 2 / lm : sd.SIV / 4 / lm }; }
+      case 'MTFA': return { val: criterion(M, 'MTF', { mtfF: +op.p > 0 ? +op.p : 30 }) };
+      case 'MNCT': case 'MXCT': for (let j = 1; j < N - 1; j++) if (!isAir(S[j].glass) && !isMirror(S[j])) list.push(Math.abs(S[j].t)); break;
+      case 'MNCA': case 'MXCA': for (let j = 1; j < N - 1; j++) if (isAir(S[j].glass) && !isMirror(S[j]) && S[j].tsolve !== 'M') list.push(Math.abs(S[j].t)); break;
+      case 'MNET': case 'MXET': for (let j = 1; j < N - 1; j++) if (!isAir(S[j].glass) && !isMirror(S[j])) list.push(edge(j, j + 1)); break;
+      case 'MNEA': for (let j = 1; j < N - 1; j++) if (isAir(S[j].glass) && !isMirror(S[j]) && S[j].tsolve !== 'M' && j + 1 < N) list.push(edge(j, j + 1)); break;
+    }
+    return { list };
+  }
+  /** résidus de la fonction de mérite (critère image + opérandes) ; parts = valeur et part de chaque opérande */
   function residuals(sys) {
     const M = prepare(sys);
     if (!M.ok) return null;
     const f = [];
     const mf = sys.merit || { image: 'SPOT', ops: [] };
-    const F = sys.fields, Wl = sys.wavelengths;
-    const fw = F.map(x => x.w ?? 1), ww = Wl.map(x => x.w ?? 1);
+    const F = sys.fields, Wl = sys.wavelengths, sel = wlSel(sys, mf.wl);
+    const fw = F.map(x => x.w ?? 1); let ww = Wl.map((x, i) => sel.includes(i) ? (x.w ?? 1) : 0);
+    if (!ww.some(v => v > 0)) ww = Wl.map((_, i) => sel.includes(i) ? 1 : 0);
     const nArm = 8;
     const ray0 = [];
     for (const [r, w] of GQ) for (let a = 0; a < nArm; a++) { const th = 2 * Math.PI * (a + 0.5) / nArm; ray0.push([r * Math.cos(th), r * Math.sin(th), w / nArm]); }
@@ -1135,11 +1188,11 @@ const OE = (() => {
         if (mf.image === 'SPOT') {
           const rs = [];
           let sx = 0, sy = 0, sw = 0;
-          Wl.forEach((_, wi) => ray0.forEach(([px, py, w]) => { const r = ray(M, wi, fd, px, py); rs.push([r, wi, w]); if (!r.vig) { sx += ww[wi] * w * r.x; sy += ww[wi] * w * r.y; sw += ww[wi] * w; } }));
+          sel.forEach(wi => ray0.forEach(([px, py, w]) => { const r = ray(M, wi, fd, px, py); rs.push([r, wi, w]); if (!r.vig) { sx += ww[wi] * w * r.x; sy += ww[wi] * w * r.y; sw += ww[wi] * w; } }));
           const cx = sx / sw, cy = sy / sw;
           for (const [r, wi, w] of rs) { const k = Math.sqrt(fw[fi] * ww[wi] * w / Wsum); if (r.vig) { f.push(k * 1, k * 1); } else { f.push(k * (r.x - cx), k * (r.y - cy)); } }
         } else {
-          Wl.forEach((_, wi) => {
+          sel.forEach(wi => {
             const ref = opdRef(M, wi, fd); const vals = [];
             ray0.forEach(([px, py, w]) => vals.push([ref ? ref.W(ray(M, wi, fd, px, py)) : NaN, w]));
             let m = 0, s = 0; vals.forEach(([v, w]) => { if (isFinite(v)) { m += v * w; s += w; } }); m /= s || 1;
@@ -1148,27 +1201,19 @@ const OE = (() => {
         }
       });
     }
-    const S = M.S, N = M.N;
-    const sagAt = (j, r) => { const s = M.ctxs[M.pw].s[j]; const v = sag(s, 0, r); return isFinite(v) ? v : 0; };
-    for (const op of (mf.ops || [])) {
-      const w = +op.weight || 0, tg = +op.target || 0; if (!w) continue;
-      let val = null; const list = [];
-      switch (op.type) {
-        case 'EFL': val = M.par.efl; break;
-        case 'WFNO': val = M.par.wfno; break;
-        case 'TTL': val = M.par.ttl; break;
-        case 'BFL': val = M.par.imgDist; break;
-        case 'DIST': { const fy = M.par.fmax, c = ray(M, M.pw, { x: 0, y: fy }, 0, 0); const yp = M.objInf ? M.par.unitImgH * Math.tan(fy * DEG) : M.par.unitImgH * fy; val = c.vig ? 0 : 100 * (c.y - yp) / yp; break; }
-        case 'MNCT': case 'MXCT': for (let j = 1; j < N - 1; j++) if (!isAir(S[j].glass) && !isMirror(S[j])) list.push(Math.abs(S[j].t)); break;
-        case 'MNCA': for (let j = 1; j < N - 1; j++) if (isAir(S[j].glass) && !isMirror(S[j]) && S[j].tsolve !== 'M') list.push(Math.abs(S[j].t)); break;
-        case 'MNET': for (let j = 1; j < N - 1; j++) if (!isAir(S[j].glass) && !isMirror(S[j])) { const r = Math.max(S[j].sd, S[j + 1].sd); list.push(S[j].t + sagAt(j + 1, r) - sagAt(j, r)); } break;
-      }
-      if (val != null) f.push(w * (val - tg));
-      for (const v of list) {
-        if (op.type === 'MXCT') f.push(w * Math.max(0, v - tg)); else f.push(w * Math.max(0, tg - v));
-      }
-    }
-    return { f, M };
+    let img2 = 0; for (const v of f) img2 += v * v;
+    const parts = [];
+    (mf.ops || []).forEach((op, oi) => {
+      const w = +op.weight || 0, tg = +op.target || 0, def = OPS[op.type]; if (!def) return;
+      const cmp = op.cmp || def.kind, o = opValue(M, op), n0 = f.length;
+      const res = v => cmp === 'ge' ? Math.max(0, tg - v) : cmp === 'le' ? Math.max(0, v - tg) : v - tg;
+      let shown = o.val;
+      if (o.val != null) { if (w) f.push(w * res(o.val)); }
+      else if (o.list && o.list.length) { shown = cmp === 'le' ? Math.max(...o.list) : Math.min(...o.list); if (w) for (const v of o.list) f.push(w * res(v)); }
+      let r2 = 0; for (let k = n0; k < f.length; k++) r2 += f[k] * f[k];
+      parts.push({ i: oi, val: shown, r2, ok: cmp === 'eq' || shown == null || !isFinite(shown) ? null : res(shown) <= 1e-9 + 1e-6 * Math.abs(tg) });
+    });
+    return { f, M, img2, parts };
   }
   const meritOf = f => Math.sqrt(f.reduce((a, b) => a + b * b, 0));
   function optStep(state) {
@@ -1179,7 +1224,7 @@ const OE = (() => {
     const x0 = vars.map(v => getVal(sys, v));
     const J = [];
     for (let k = 0; k < nv; k++) {
-      const v = vars[k], h = v.kind === 'c' ? Math.max(1e-7, Math.abs(x0[k]) * 1e-5) : v.kind === 't' ? 1e-4 : 1e-4;
+      const v = vars[k], sdv = Math.max(1e-3, r0.M.S[v.si].sd || 1), h = v.kind === 'c' ? Math.max(1e-7, Math.abs(x0[k]) * 1e-5) : v.kind === 't' || v.kind === 'k' ? 1e-4 : 1e-6 / Math.pow(sdv, +v.kind.slice(1));
       const s2 = structuredClone(sys); setVal(s2, v, x0[k] + h);
       const r = residuals(s2); const col = new Float64Array(nf);
       if (r && r.f.length === nf) for (let i = 0; i < nf; i++) col[i] = (r.f[i] - f0[i]) / h;
@@ -1203,6 +1248,18 @@ const OE = (() => {
     }
     state.mu = mu; state.merit = m0;
     return { done: true, merit: m0, msg: 'Minimum local atteint' };
+  }
+
+  /**
+   * Quick focus : meilleure mise au point (épaisseur avant l'image) pour un critère (SPOT : spot RMS au barycentre, WFE : front d'onde RMS)
+   * et une sélection de longueurs d'onde (central par défaut). Renvoie la nouvelle épaisseur et le critère avant/après.
+   */
+  function quickFocus(sys, o = {}) {
+    const fz = tolFreeze(sys), N = fz.surfaces.length - 1, sel = wlSel(fz, o.wl ?? 'central'), kind = o.crit === 'WFE' ? 'WFE' : 'SPOT';
+    const s = structuredClone(fz); s.wavelengths = sel.map(i => ({ ...fz.wavelengths[i], w: sel.length === 1 ? 1 : (fz.wavelengths[i].w ?? 1) }));
+    s.primary = Math.max(0, sel.indexOf(fz.primary | 0));
+    const before = criterion(prepare(s), kind), bf = bestFocus(s, kind, focusStep(s));
+    return { t: fz.surfaces[N - 1].t + bf.dt, dt: bf.dt, before, after: bf.c, kind, wls: sel.map(i => fz.wavelengths[i].um), j: N - 1 };
   }
 
   /* ---------------- Tolérancement ---------------- */
@@ -1442,7 +1499,7 @@ const OE = (() => {
     return compensate(s, kind, comp, B.h0, opts).sys;
   }
 
-  return { DEG, fiberInfo, binPSF, detMTF, extSource, binImage, imageSim, polPupil, polOut, POLSTATES, TOLT, TOLC, LT, tolBase, tolDefaults, tolFreeze, tolItems, tolGen, tolApplicable, tolLabel, tolApply, tolWorse, tolSens, tolInverse, tolTrial, tolRebuild, tolValue, niceDown, rng, mtfAt, compensate, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
+  return { DEG, fiberInfo, binPSF, detMTF, extSource, binImage, imageSim, polPupil, polOut, POLSTATES, TOLT, TOLC, LT, quickFocus, wlSel, opValue, tolBase, tolDefaults, tolFreeze, tolItems, tolGen, tolApplicable, tolLabel, tolApply, tolWorse, tolSens, tolInverse, tolTrial, tolRebuild, tolValue, niceDown, rng, mtfAt, compensate, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
     wavefront, psf, mtf, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
     OPS, getVars, residuals, meritOf, optStep, pupilGrid, indices, paraxial };
 })();

@@ -93,4 +93,18 @@ const P = []; OE.ray(M, 1, 20, 0, 1, { pts: P }); near('Visée réelle sur diaph
   near('Arrondi fabricant', OE.niceDown(0.0347), 0.03, 1e-12);
   const o = S['Miroir parabolique f/4 (Newton)'](); o.fields = [{ y: 0 }]; const O = OE.prepare(o), nu = 0.5 / (0.5875618e-3 * 4);
   near('Critère FTM : parabole = limite de diffraction (ν = fc/2)', OE.criterion(O, 'MTF', { mtfF: nu }), OE.mtfDL(0.5), 0.015); }
+// Optimisation : quick focus, longueur d'onde du critère, contraintes, variables asphériques
+{ const d = S['Doublet achromatique f=100']();
+  near('λ centrale (F, d, C) = d', OE.wlSel(d, 'central')[0], 1, 0); near('λ centrale (4 λ) = la plus proche du milieu', OE.wlSel({ ...d, wavelengths: [{ um: 0.4 }, { um: 0.5 }, { um: 0.62 }, { um: 0.7 }] }, 'central')[0], 1, 0);
+  const q = OE.quickFocus(d, { crit: 'WFE', wl: 'central' }), s2 = structuredClone(d); s2.surfaces[3].tsolve = ''; s2.surfaces[3].t = OE.prepare(d).S[3].t; s2.surfaces[3].vt = true; s2.merit = { image: 'WFE', ops: [], wl: 'central' };
+  const st = { sys: s2, mu: 1e-3 }; for (let i = 0; i < 40; i++) if (OE.optStep(st).done) break;
+  near('Quick focus = optimisation de la dernière épaisseur sur la λ centrale (mm)', q.t, st.sys.surfaces[3].t, 2e-3);
+  near('Quick focus : le critère ne se dégrade pas', Math.min(0, q.before - q.after), 0, 1e-12);
+  const c = S['Triplet de Cooke f=50 F/5'](), M = OE.prepare(c), tt = M.par.ttl;
+  c.merit = { image: 'NONE', ops: [{ type: 'TTL', target: tt + 5, weight: 1, cmp: 'le' }, { type: 'TTL', target: tt - 5, weight: 1, cmp: 'le' }, { type: 'TTL', target: tt + 5, weight: 1, cmp: 'ge' }] };
+  const r = OE.residuals(c); near('Contrainte ≤ respectée : résidu nul', r.parts[0].r2, 0, 0); near('Contrainte ≤ violée de 5 mm', Math.sqrt(r.parts[1].r2), 5, 1e-9); near('Contrainte ≥ violée de 5 mm', Math.sqrt(r.parts[2].r2), 5, 1e-9);
+  const ax = OE.opValue(M, { type: 'AXCL' }).val, cs = OE.chromShift(M, 40); near('AXCL = décalage focal λmax − λmin (mm)', ax, (cs.dz[cs.dz.length - 1] - cs.dz[0]) / 1000, 1e-6);
+  const p = S['Lentille plan-convexe f=100'](); p.wavelengths = [{ um: 0.5875618, w: 1 }]; p.primary = 0; p.fields = [{ y: 0 }]; p.surfaces[1].va4 = true; p.merit = { image: 'WFE', ops: [] };
+  const m0 = OE.meritOf(OE.residuals(p).f), sp = { sys: p, mu: 1e-3 }; for (let i = 0; i < 30; i++) if (OE.optStep(sp).done) break;
+  near('Variable A4 : la sphérique est réduite d\'au moins 90 %', OE.meritOf(OE.residuals(sp.sys).f) / m0 < 0.1 ? 1 : 0, 1, 0); }
 console.log(fail ? `${fail} échec(s)` : 'Tous les tests passent'); process.exit(fail ? 1 : 0);

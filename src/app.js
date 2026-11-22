@@ -52,14 +52,14 @@ const elemOf = s => s.elem === 'grating' ? (OE.isMirror(s) ? 'rgrating' : 'grati
 const App = {
   sys: null, M: null, sel: 1, hist: [], hi: -1, focus: null,
   panes: [{ type: 'spot' }, { type: 'wfe', fi: 0 }, { type: 'mtf' }, { type: 'psf', fi: 0 }, { type: 'rayfan' }, { type: 'footprint' }],
-  grid: 4, mode: '2d', view: { auto: true, s: 1, ox: 0, oy: 0, yaw: 0.55, pitch: 0.32 }, nRays: 7, showAsph: false,
+  grid: 4, mode: '2d', view: { auto: true, s: 1, ox: 0, oy: 0, yaw: 0.55, pitch: 0.32 }, nRays: 7, showAsph: false, qf: { crit: 'SPOT', wl: 'central' },
 };
-function save() { try { localStorage.setItem('focale.sys', toJSON(App.sys)); localStorage.setItem('focale.ui', JSON.stringify({ panes: App.panes, grid: App.grid, th: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light' })); } catch (e) { } }
+function save() { try { localStorage.setItem('focale.sys', toJSON(App.sys)); localStorage.setItem('focale.ui', JSON.stringify({ panes: App.panes, grid: App.grid, qf: App.qf, th: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light' })); } catch (e) { } }
 function load() {
   try {
     const s = localStorage.getItem('focale.sys'); if (s) App.sys = normalize(fromJSON(s));
     const u = JSON.parse(localStorage.getItem('focale.ui') || 'null');
-    if (u) { if (Array.isArray(u.panes) && u.panes.length >= 6) App.panes = u.panes; if (u.grid) App.grid = u.grid; }
+    if (u) { if (Array.isArray(u.panes) && u.panes.length >= 6) App.panes = u.panes; if (u.grid) App.grid = u.grid; if (u.qf) App.qf = { ...App.qf, ...u.qf }; }
     // thème : sombre par défaut (premier lancement) ; ensuite le dernier choix de l'utilisateur
     document.documentElement.dataset.theme = u && u.th === 'light' ? '' : 'dark';
   } catch (e) { App.sys = null; }
@@ -132,7 +132,7 @@ function renderLDE() {
       <td><div class="cell"><input class="g ${gOK ? '' : 'bad'}" list="glassList" data-i="${i}" data-k="glass" value="${esc(s.glass)}" ${img ? 'disabled' : ''} placeholder="${img ? '' : 'air'}"></div></td>
       <td><div class="cell"><input data-i="${i}" data-k="sd" class="${s.sdFixed ? '' : 'auto'}" value="${obj ? '' : fmt(sdVal, 5)}" ${obj ? 'disabled' : ''}>${obj ? '' : tg(i, 'sdFixed', '🔒', s.sdFixed, 'l', 'Demi-diamètre fixe (vignetage des rayons au-delà)')}</div></td>
       <td><div class="cell"><input data-i="${i}" data-k="k" value="${obj ? '' : fmt(s.k, 6)}" ${obj ? 'disabled' : ''}>${obj || img ? '' : tg(i, 'vk', 'V', s.vk, '', 'Variable (optimisation)')}</div></td>
-      ${asph ? ['a4', 'a6', 'a8', 'a10'].map(k => `<td><div class="cell"><input data-i="${i}" data-k="${k}" value="${obj ? '' : fmt(s[k], 6)}" ${obj ? 'disabled' : ''}></div></td>`).join('') : ''}
+      ${asph ? ['a4', 'a6', 'a8', 'a10'].map(k => `<td><div class="cell"><input data-i="${i}" data-k="${k}" value="${obj ? '' : fmt(s[k], 6)}" ${obj ? 'disabled' : ''}>${obj || img ? '' : tg(i, 'v' + k, 'V', s['v' + k], '', 'Variable (optimisation)')}</div></td>`).join('') : ''}
     </tr>`;
   });
   h += '</tbody>';
@@ -224,7 +224,7 @@ function selectRow(i, redraw = true) {
 /** menu contextuel (clic droit) d'une ligne de l'éditeur de lentilles */
 function ctxMenu(x, y, i) {
   let m = $('#ctx'); if (!m) { m = document.createElement('div'); m.id = 'ctx'; m.className = 'menu ctx'; document.body.appendChild(m);
-    m.addEventListener('click', e => { const b = e.target.closest('[data-c]'); if (!b || b.disabled) return; hideCtx(); const c = b.dataset.c; if (c === 'glasses') openGlasses(); else lde(c); });
+    m.addEventListener('click', e => { const b = e.target.closest('[data-c]'); if (!b || b.disabled) return; hideCtx(); const c = b.dataset.c; if (c === 'glasses') openGlasses(); else if (c === 'qfocus') quickFocusUI(); else lde(c); });
     const off = e => { if (!e.target.closest || !e.target.closest('#ctx')) hideCtx(); };
     window.addEventListener('mousedown', off, true); window.addEventListener('blur', hideCtx); window.addEventListener('resize', hideCtx); document.addEventListener('scroll', hideCtx, true);
     document.addEventListener('keydown', e => { if (e.key === 'Escape') hideCtx(); }); }
@@ -232,7 +232,7 @@ function ctxMenu(x, y, i) {
   const it = (c, l, on = true, kb = '', cls = '') => `<button data-c="${c}" class="${cls}" ${on ? '' : 'disabled'}>${l}${kb ? `<span class="kb">${kb}</span>` : ''}</button>`;
   m.innerHTML = `<div class="hint" style="padding:4px 10px 6px">Surface ${i}${i === 0 ? ' (objet)' : i === N ? ' (image)' : s.comment ? ' — ' + esc(s.comment) : ''}</div>`
     + it('insB', 'Insérer une surface avant', i > 0) + it('insA', 'Insérer une surface après', i < N, 'Inser') + it('addLens', 'Ajouter une lentille après', i < N)
-    + '<hr>' + it('glasses', 'Choisir le verre dans le catalogue…', i < N) + it('stop', 'Définir comme diaphragme', opt && !s.stop) + it('mirror', OE.isMirror(s) ? 'Redevenir un dioptre' : 'Transformer en miroir', opt) + it('flip', 'Retourner l\'élément', i > 0 && i < N - 1)
+    + '<hr>' + it('qfocus', 'Quick focus (meilleur foyer)', true, 'Ctrl+Maj+F') + it('glasses', 'Choisir le verre dans le catalogue…', i < N) + it('stop', 'Définir comme diaphragme', opt && !s.stop) + it('mirror', OE.isMirror(s) ? 'Redevenir un dioptre' : 'Transformer en miroir', opt) + it('flip', 'Retourner l\'élément', i > 0 && i < N - 1)
     + '<hr>' + it('del', 'Supprimer la surface', opt && N > 2, 'Suppr', 'danger') + it('delEl', `Supprimer l'élément (surfaces ${i} et ${i + 1})`, lens && N > 3, '', 'danger');
   m.classList.add('open'); m.style.left = '0px'; m.style.top = '0px';
   const r = m.getBoundingClientRect(); m.style.left = Math.min(x, innerWidth - r.width - 6) + 'px'; m.style.top = Math.min(y, innerHeight - r.height - 6) + 'px';
@@ -1346,32 +1346,77 @@ function fans(c, w, h, M, data, k, unit) {
 }
 
 /* ---------------- Optimisation ---------------- */
-const OPT = { running: false, st: null, hist: [], it: 0, snap: null };
+const OPT = { running: false, st: null, hist: [], it: 0, snap: null, x0: null, maxIt: 100, gCyc: 10, gAmp: 20 };
 function openOptim() {
-  const s = App.sys, vars = OE.getVars(s), mf = s.merit;
-  const vlab = v => `${{ c: 'C', t: 'T', k: 'K' }[v.kind]}${v.si}`;
-  const ops = Object.entries(OE.OPS);
+  const s = App.sys, mf = s.merit; mf.ops = mf.ops || [];
+  if (!OPT.running && !OPT.x0) OPT.x0 = optSnapVars(s);
+  const ops = Object.entries(OE.OPS), W = s.wavelengths, cen = OE.wlSel(s, 'central')[0];
+  const wlOpts = [['all', 'Toutes les λ (pondérées)'], ['central', `λ centrale (${fmt(W[cen].um * 1000, 5)} nm)`], ['primary', `λ primaire (${fmt(W[s.primary | 0].um * 1000, 5)} nm)`], ...W.map((w, i) => [String(i), `λ${i + 1} seule (${fmt(w.um * 1000, 5)} nm)`])];
+  const wsel = mf.wl == null ? 'all' : String(mf.wl);
   dlg(`<h2>Optimisation — moindres carrés amortis <button class="x" data-d="close">✕</button></h2>
-  <div class="db">
-    <div class="hint">Variables (cliquez sur <b>V</b> dans l'éditeur de lentilles pour en ajouter ; C = courbure, T = épaisseur, K = conique) :</div>
-    <div class="vars">${vars.length ? vars.map(v => `<span>${vlab(v)}</span>`).join('') : '<em class="hint">aucune variable définie</em>'}</div>
-    <div class="row"><label style="flex:none;width:160px">Critère de qualité image</label><select class="in" id="mfImg"><option value="SPOT" ${mf.image === 'SPOT' ? 'selected' : ''}>Spot RMS (centroïde)</option><option value="WFE" ${mf.image === 'WFE' ? 'selected' : ''}>Front d'onde RMS</option><option value="NONE" ${mf.image === 'NONE' ? 'selected' : ''}>Aucun</option></select>
-    <span class="hint">quadrature de Gauss 3 anneaux × 8 bras, tous champs et λ pondérés</span></div>
-    <table class="mt" style="margin-top:8px"><tr><th>Opérande</th><th>Cible</th><th>Poids</th><th></th></tr>
-      ${mf.ops.map((o, i) => `<tr><td><select class="in" data-o="type" data-i="${i}">${ops.map(([k, v]) => `<option value="${k}" ${k === o.type ? 'selected' : ''}>${k} — ${v.label}</option>`).join('')}</select></td><td><input class="in" data-o="target" data-i="${i}" value="${o.target}"></td><td><input class="in" data-o="weight" data-i="${i}" value="${o.weight}"></td><td><button class="x" data-d="odel" data-i="${i}">✕</button></td></tr>`).join('')}
-    </table><button class="add" data-d="oadd">+ Ajouter un opérande</button>
-    <div style="display:flex;gap:16px;align-items:center;margin-top:12px">
-      <div style="flex:none;width:150px"><div class="hint">Fonction de mérite</div><div class="big" id="mval">—</div><div class="hint" id="mit"></div></div>
-      <div style="flex:1;min-width:0;height:140px;position:relative"><canvas id="mchart"></canvas></div>
+  <div class="db"><div class="ogrid">
+    <div class="oL">
+      <h4 class="th4" style="margin-top:0">Variables <span class="hint" id="onv"></span></h4>
+      <div class="hint">Bouton <b>V</b> dans l'éditeur : rayon, épaisseur, conique et, avec « Asphères », A4…A10.</div>
+      <div class="oscroll" id="ovars"></div>
+      <div class="row"><button class="bt" data-d="ovclear" title="Retire toutes les variables (V) du système">Tout libérer</button></div>
+      <h4 class="th4">Critère de qualité image</h4>
+      <div class="row"><select class="in grow" id="mfImg"><option value="SPOT" ${mf.image === 'SPOT' ? 'selected' : ''}>Spot RMS (barycentre)</option><option value="WFE" ${mf.image === 'WFE' ? 'selected' : ''}>Front d'onde RMS</option><option value="NONE" ${mf.image === 'NONE' ? 'selected' : ''}>Aucun (opérandes seuls)</option></select></div>
+      <div class="row"><label style="flex:none">Longueurs d'onde</label><select class="in grow" id="mfWl">${wlOpts.map(([k, l]) => `<option value="${k}" ${wsel === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="hint">Quadrature de Gauss 3 anneaux × 8 bras sur tous les champs (pondérés). Choisir une seule λ permet par exemple d'optimiser une mise au point à la longueur d'onde centrale ; les opérandes de chromatisme utilisent toujours toutes les λ.</div>
+      <h4 class="th4">Mise au point</h4>
+      <div class="row"><button class="bt" data-d="oqf">⌖ Quick focus</button><span class="hint">${App.qf.crit === 'WFE' ? 'front d\'onde' : 'spot'} RMS · ${qfWlLabel()} (options dans l'éditeur ▾)</span></div>
     </div>
-    <div class="row"><label style="flex:none">Itérations max</label><input class="in mini" id="maxIt" value="100"></div>
+    <div class="oR">
+      <h4 class="th4" style="margin-top:0">Opérandes</h4>
+      <div class="oscroll"><table class="mt otab"><tr><th>Opérande</th><th>Param.</th><th></th><th>Cible</th><th>Poids</th><th>Valeur</th><th title="Part de la fonction de mérite (somme des carrés)">%</th><th></th></tr>
+      ${mf.ops.map((o, i) => { const d = OE.OPS[o.type] || {}; const cmp = o.cmp || d.kind; return `<tr><td><select class="in" data-o="type" data-i="${i}" title="${esc(d.label || '')}">${ops.map(([k, v]) => `<option value="${k}" ${k === o.type ? 'selected' : ''}>${k} — ${v.label}</option>`).join('')}</select></td>
+        <td>${d.p ? `<input class="in" data-o="p" data-i="${i}" value="${o.p ?? d.pdef}" title="${d.p}" style="width:56px">` : ''}</td>
+        <td><select class="in" data-o="cmp" data-i="${i}" style="width:44px" title="Égal, au moins (≥) ou au plus (≤)">${[['eq', '='], ['ge', '≥'], ['le', '≤']].map(([k, l]) => `<option value="${k}" ${cmp === k ? 'selected' : ''}>${l}</option>`).join('')}</select></td>
+        <td><input class="in" data-o="target" data-i="${i}" value="${o.target}" style="width:70px"></td><td><input class="in" data-o="weight" data-i="${i}" value="${o.weight}" style="width:48px"></td>
+        <td class="ov" data-ov="${i}"></td><td class="ov" data-oc="${i}"></td><td><button class="x" data-d="odel" data-i="${i}">✕</button></td></tr>`; }).join('')}
+      <tr><td colspan="5" class="hint">Critère image</td><td class="ov" id="oimgv"></td><td class="ov" id="oimgc"></td><td></td></tr></table></div>
+      <button class="add" data-d="oadd">+ Ajouter un opérande</button>
+      <div style="display:flex;gap:16px;align-items:center;margin-top:10px">
+        <div style="flex:none;width:150px"><div class="hint">Fonction de mérite</div><div class="big" id="mval">—</div><div class="hint" id="mit"></div></div>
+        <div style="flex:1;min-width:0;height:130px;position:relative"><canvas id="mchart"></canvas></div>
+      </div>
+    </div>
+  </div>
+  <div class="orow"><span>Itérations max</span><input class="in" id="maxIt" value="${OPT.maxIt || 100}" style="width:60px">
+    <span style="margin-left:18px">Recherche globale :</span><span class="hint">cycles</span><input class="in" id="gCyc" value="${OPT.gCyc || 10}" style="width:50px"><span class="hint">amplitude</span><input class="in" id="gAmp" value="${OPT.gAmp || 20}" style="width:50px"><span class="hint">% (perturbation relative des variables)</span></div>
   </div>
   <div class="df"><span class="hint grow" id="omsg"></span>
-    <button class="bt" data-d="revert">Restaurer l'état initial</button>
+    <button class="bt" data-d="revert" title="Revient au système d'avant la dernière optimisation">Restaurer l'état initial</button>
     <button class="bt" data-d="stop">Arrêter</button>
-    <button class="tb pri" data-d="run">▶ Optimiser</button></div>`);
-  const r = OE.residuals(s); $('#mval').textContent = r ? OE.meritOf(r.f).toExponential(4) : '—';
-  OPT.hist = r ? [OE.meritOf(r.f)] : []; drawMerit();
+    <button class="bt" data-d="glob" title="Perturbe aléatoirement les variables puis optimise, plusieurs fois, et garde le meilleur résultat">Recherche globale</button>
+    <button class="tb pri" data-d="run">▶ Optimiser</button></div>`, true, { w: 1120, h: 720 });
+  if (!OPT.running) { const r = OE.residuals(s); OPT.hist = r ? [OE.meritOf(r.f)] : []; }
+  optLive();
+}
+/** valeurs des variables (pour afficher l'écart depuis le début) */
+function optSnapVars(s) { const o = {}; for (const v of OE.getVars(s)) o[v.kind + v.si] = optVarVal(s, v); return o; }
+function optVarVal(s, v) { const x = s.surfaces[v.si]; return v.kind === 'c' ? x.r : v.kind === 't' ? x.t : v.kind === 'k' ? (x.k || 0) : (+x[v.kind] || 0); }
+const optVarLab = v => v.kind === 'c' ? `R${v.si}` : v.kind === 't' ? `T${v.si}` : v.kind === 'k' ? `K${v.si}` : `${v.kind.toUpperCase()} S${v.si}`;
+/** met à jour variables, valeurs des opérandes, contributions et courbe de mérite */
+function optLive() {
+  const s = App.sys, vars = OE.getVars(s), r = OE.residuals(s), x0 = OPT.x0 || {};
+  const ev = $('#ovars'); if (!ev) return;
+  $('#onv').textContent = `(${vars.length})`;
+  ev.innerHTML = vars.length ? `<table class="mt" style="font-size:12px"><tr><th>Variable</th><th>Valeur</th><th>Écart</th></tr>${vars.map(v => { const x = optVarVal(s, v), a = x0[v.kind + v.si]; const d = a != null && isFinite(a) && isFinite(x) ? x - a : NaN;
+    return `<tr><td>${optVarLab(v)}</td><td style="font-family:var(--mono)">${fmt(x, 7)}</td><td style="font-family:var(--mono);color:var(--mut)">${isFinite(d) && Math.abs(d) > 1e-12 ? (d > 0 ? '+' : '') + fmt(d, 4) : ''}</td></tr>`; }).join('')}</table>` : '<em class="hint">aucune variable définie</em>';
+  if (!r) { $('#mval').textContent = '—'; return; }
+  const m2 = r.f.reduce((a, b) => a + b * b, 0) || 1;
+  $('#mval').textContent = OE.meritOf(r.f).toExponential(4);
+  for (const p of r.parts) {
+    const o = s.merit.ops[p.i], d = OE.OPS[o.type] || {}, cv = $(`[data-ov="${p.i}"]`), cc = $(`[data-oc="${p.i}"]`);
+    if (cv) { cv.textContent = p.val == null || !isFinite(p.val) ? '—' : fmt(p.val, 6) + (d.u ? ' ' + d.u : ''); cv.style.color = p.ok === false ? 'var(--warn)' : ''; }
+    if (cc) cc.textContent = fx(100 * p.r2 / m2, 1);
+  }
+  const iv = $('#oimgv'), ic = $('#oimgc');
+  if (iv) iv.textContent = s.merit.image === 'NONE' ? '—' : s.merit.image === 'SPOT' ? `${fmt(Math.sqrt(r.img2) * 1e3, 5)} µm` : `${fmt(Math.sqrt(r.img2) * 1e6, 5)} nm`;
+  if (ic) ic.textContent = fx(100 * r.img2 / m2, 1);
+  drawMerit();
 }
 /* Fenêtres : flottantes et non modales (on peut continuer à travailler derrière), déplaçables par la barre de titre,
    réductibles, agrandissables et redimensionnables (poignée en bas à droite). La géométrie est mémorisée par fenêtre. */
@@ -1440,7 +1485,11 @@ function setupDlg() {
       return;
     }
     if (t.id === 'mfImg') { commit(s => s.merit.image = t.value, { fast: false }); openOptim(); }
-    if (t.dataset.o) { const i = +t.dataset.i, k = t.dataset.o; commit(s => s.merit.ops[i][k] = k === 'type' ? t.value : (parseFloat(String(t.value).replace(',', '.')) || 0)); openOptim(); }
+    if (t.id === 'mfWl') { commit(s => s.merit.wl = t.value === 'all' ? 'all' : /^\d+$/.test(t.value) ? +t.value : t.value, { fast: false }); openOptim(); }
+    if (t.id === 'maxIt') OPT.maxIt = Math.max(1, parseInt(t.value) || 100);
+    if (t.id === 'gCyc') OPT.gCyc = Math.max(1, Math.min(200, parseInt(t.value) || 10));
+    if (t.id === 'gAmp') OPT.gAmp = Math.max(1, Math.min(100, parseFloat(String(t.value).replace(',', '.')) || 20));
+    if (t.dataset.o) { const i = +t.dataset.i, k = t.dataset.o; commit(s => { const o = s.merit.ops[i]; if (k === 'type') { o.type = t.value; delete o.cmp; const d = OE.OPS[t.value]; if (d.p) o.p = o.p ?? d.pdef; else delete o.p; } else if (k === 'cmp') o.cmp = t.value; else o[k] = parseFloat(String(t.value).replace(',', '.')) || 0; }); openOptim(); }
   });
   $('#dlg').addEventListener('click', e => {
     const tb = e.target.closest('[data-tl],[data-tr]'); if (tb) { if (tb.dataset.tl) { TOL.tabL = tb.dataset.tl; renderTolL(); } else { TOL.tabR = tb.dataset.tr; renderTolRes(); } return; }
@@ -1465,8 +1514,11 @@ function setupDlg() {
     if (a === 'oadd') { commit(s => s.merit.ops.push({ type: 'EFL', target: Math.round(App.M?.par?.efl || 100), weight: 1 })); openOptim(); }
     if (a === 'odel') { commit(s => s.merit.ops.splice(+b.dataset.i, 1)); openOptim(); }
     if (a === 'run') runOpt();
+    if (a === 'glob') runGlobal();
+    if (a === 'oqf') quickFocusUI();
+    if (a === 'ovclear') { commit(s => s.surfaces.forEach(x => { x.vr = x.vt = x.vk = false; for (const k of ['a4', 'a6', 'a8', 'a10']) x['v' + k] = false; })); OPT.x0 = null; openOptim(); }
     if (a === 'stop') { OPT.running = false; }
-    if (a === 'revert') { if (OPT.snap) { OPT.running = false; App.sys = fromJSON(OPT.snap); pushHist(); refresh(); toast('État initial restauré'); openOptim(); } }
+    if (a === 'revert') { if (OPT.snap) { OPT.running = false; App.sys = fromJSON(OPT.snap); pushHist(); refresh(); OPT.x0 = optSnapVars(App.sys); toast('État initial restauré'); openOptim(); } }
     if (a === 'copy') { const ta = $('#dlg textarea'); navigator.clipboard?.writeText(ta.value).then(() => toast('Copié dans le presse-papiers'), () => { ta.select(); toast('Sélectionné — Ctrl+C pour copier'); }); }
     if (a === 'fmtjson') { $('#exTxt').value = toJSON(App.sys); $('#exHint').textContent = 'JSON Focale (format natif complet).'; }
     if (a === 'fmtseq') { const r = IO.toSeq(App.sys); $('#exTxt').value = r.text; $('#exHint').textContent = r.warnings.length ? '⚠ ' + r.warnings.join(' · ') : 'CODE V séquentiel (.seq).'; }
@@ -1479,8 +1531,8 @@ function setupDlg() {
 function runOpt() {
   if (OPT.running) return;
   if (!OE.getVars(App.sys).length) { $('#omsg').textContent = 'Définissez au moins une variable (bouton V).'; return; }
-  OPT.snap = toJSON(App.sys); OPT.st = { sys: structuredClone(App.sys), mu: 1e-3 }; OPT.it = 0; OPT.running = true;
-  const maxIt = Math.max(1, parseInt($('#maxIt').value) || 100);
+  OPT.snap = toJSON(App.sys); OPT.x0 = optSnapVars(App.sys); OPT.st = { sys: structuredClone(App.sys), mu: 1e-3 }; OPT.it = 0; OPT.running = true;
+  const maxIt = OPT.maxIt = Math.max(1, parseInt($('#maxIt').value) || 100);
   $('#omsg').textContent = 'Optimisation en cours…';
   let lastPane = 0;
   const loop = () => {
@@ -1489,12 +1541,58 @@ function runOpt() {
     do { r = OE.optStep(OPT.st); OPT.it++; if (r.merit != null) OPT.hist.push(r.merit); } while (!r.done && OPT.it < maxIt && performance.now() - t < 90);
     App.sys = OPT.st.sys; App.M = OE.prepare(App.sys); renderLDE(); renderSide(); drawLayout();
     if (performance.now() - lastPane > 600) { renderPanes(); lastPane = performance.now(); }
-    const mv = $('#mval'); if (mv) { mv.textContent = (OPT.st.merit ?? r.merit ?? 0).toExponential(4); $('#mit').textContent = `itération ${OPT.it}`; drawMerit(); }
+    if ($('#mval')) { optLive(); $('#mit').textContent = `itération ${OPT.it}`; }
     if (r.done || OPT.it >= maxIt) { OPT.running = false; finish(r.msg || (OPT.it >= maxIt ? 'Nombre max d\'itérations atteint' : 'Convergé')); return; }
     setTimeout(loop, 0);
   };
-  const finish = (msg) => { pushHist(); refresh({ fast: true }); const o = $('#omsg'); if (o) o.textContent = msg + ` — ${OPT.it} itérations`; toast('Optimisation : ' + msg); };
+  const finish = (msg) => { pushHist(); refresh({ fast: true }); optLive(); const o = $('#omsg'); if (o) o.textContent = msg + ` — ${OPT.it} itérations`; toast('Optimisation : ' + msg); };
   setTimeout(loop, 0);
+}
+/** recherche globale : perturbations aléatoires des variables + moindres carrés, on garde le meilleur (type « Hammer ») */
+async function runGlobal() {
+  if (OPT.running) return; const vars = OE.getVars(App.sys);
+  if (!vars.length) { $('#omsg').textContent = 'Définissez au moins une variable (bouton V).'; return; }
+  const cyc = OPT.gCyc = Math.max(1, Math.min(200, parseInt($('#gCyc').value) || 10)), amp = (OPT.gAmp = Math.max(1, Math.min(100, parseFloat(String($('#gAmp').value).replace(',', '.')) || 20))) / 100, maxIt = Math.max(5, Math.min(200, parseInt($('#maxIt').value) || 100));
+  OPT.snap = toJSON(App.sys); OPT.x0 = optSnapVars(App.sys); OPT.running = true; OPT.it = 0;
+  const run = async st => { let r, n = 0, t = performance.now(); do { r = OE.optStep(st); n++; OPT.it++; if (performance.now() - t > 80) { await tick(); t = performance.now(); if (!OPT.running) break; } } while (!r.done && n < maxIt); return st.merit ?? OE.meritOf(OE.residuals(st.sys).f); };
+  // point de départ : optimum local du système actuel
+  let best = { sys: structuredClone(App.sys), mu: 1e-3 }; let bm = await run(best); best = best.sys; OPT.hist.push(bm);
+  App.sys = structuredClone(best); App.M = OE.prepare(App.sys); renderLDE(); drawLayout(); optLive();
+  let improved = 0;
+  for (let c = 0; c < cyc && OPT.running; c++) {
+    const s = structuredClone(best);
+    for (const v of OE.getVars(s)) { const g = 2 * Math.random() - 1, x = (() => { const o = s.surfaces[v.si]; return v.kind === 'c' ? OE.curv(o) : v.kind === 't' ? o.t : v.kind === 'k' ? (o.k || 0) : (+o[v.kind] || 0); })();
+      const nx = v.kind === 'c' ? x * (1 + amp * g) + (Math.abs(x) < 1e-6 ? amp * g * 0.01 : 0) : v.kind === 't' ? Math.sign(x || 1) * Math.max(0.05, Math.abs(x) * (1 + amp * g)) : v.kind === 'k' ? x + amp * g * 2 : x * (1 + amp * g);
+      const o = s.surfaces[v.si]; if (v.kind === 'c') o.r = Math.abs(nx) < 1e-12 ? Infinity : 1 / nx; else if (v.kind === 't') o.t = nx; else if (v.kind === 'k') o.k = nx; else o[v.kind] = nx; }
+    const st = { sys: s, mu: 1e-3 }; const m = await run(st);
+    if (isFinite(m) && m < bm * (1 - 1e-6)) { bm = m; best = st.sys; improved++; App.sys = structuredClone(best); App.M = OE.prepare(App.sys); renderLDE(); drawLayout(); }
+    OPT.hist.push(bm); if ($('#mval')) { optLive(); $('#mit').textContent = `cycle ${c + 1} / ${cyc}`; $('#omsg').textContent = `Recherche globale : cycle ${c + 1} / ${cyc} — ${improved} amélioration(s)`; }
+  }
+  OPT.running = false; App.sys = best; pushHist(); refresh({ fast: true }); optLive();
+  const msg = `Recherche globale terminée — ${improved} amélioration(s), mérite ${bm.toExponential(4)}`; if ($('#omsg')) $('#omsg').textContent = msg; toast(msg);
+}
+/** libellé de la sélection de longueurs d'onde du quick focus */
+function qfWlLabel() { const s = App.sys, k = App.qf.wl, W = s.wavelengths; if (k === 'all') return 'toutes les λ'; const i = OE.wlSel(s, k)[0]; return `${k === 'central' ? 'λ centrale' : k === 'primary' ? 'λ primaire' : 'λ' + (i + 1)} ${fmt(W[i].um * 1000, 5)} nm`; }
+/** Quick focus : ajuste l'épaisseur avant l'image au meilleur foyer (critère et λ choisis dans ▾) */
+function quickFocusUI() {
+  if (!App.M || !App.M.ok) return toast('Système invalide');
+  const N = App.sys.surfaces.length - 1, had = App.sys.surfaces[N - 1].tsolve === 'M', q = OE.quickFocus(App.sys, App.qf), u = q.kind === 'WFE' ? 'λ' : 'µm', k = 1;
+  if (!isFinite(q.t)) return toast('Quick focus impossible (système invalide)');
+  commit(s => { const x = s.surfaces[q.j]; x.t = q.t; x.tsolve = ''; });
+  toast(`Quick focus (${q.kind === 'WFE' ? 'front d\'onde' : 'spot'} RMS, ${qfWlLabel()}) : Δ ${q.dt >= 0 ? '+' : ''}${fx(q.dt * 1e3, 1)} µm · ${fx(q.before * k, 3)} → ${fx(q.after * k, 3)} ${u}${had ? ` · solve M de S${q.j} retiré` : ''}`, 4500);
+  if ($('#ovars')) optLive();
+}
+/** menu des options du quick focus */
+function qfMenu(btn) {
+  let m = $('#qfm'); if (!m) { m = document.createElement('div'); m.id = 'qfm'; m.className = 'menu ctx'; document.body.appendChild(m);
+    m.addEventListener('click', e => { const b = e.target.closest('[data-qf]'); if (!b) return; const [k, v] = b.dataset.qf.split(':'); if (k === 'go') { m.classList.remove('open'); quickFocusUI(); return; } App.qf[k] = k === 'wl' && /^\d+$/.test(v) ? +v : v; save(); qfMenu(btn); });
+    window.addEventListener('mousedown', e => { if (!e.target.closest('#qfm') && !e.target.closest('[data-act="qfopt"]')) m.classList.remove('open'); }, true); }
+  const s = App.sys, W = s.wavelengths, cen = OE.wlSel(s, 'central')[0], it = (key, l, on) => `<button data-qf="${key}">${on ? '● ' : '○ '}${l}</button>`;
+  m.innerHTML = `<div class="hint" style="padding:4px 10px">Critère</div>${it('crit:SPOT', 'Spot RMS (barycentre)', App.qf.crit !== 'WFE')}${it('crit:WFE', 'Front d\'onde RMS', App.qf.crit === 'WFE')}<hr>
+    <div class="hint" style="padding:4px 10px">Longueur d'onde</div>${it('wl:central', `Centrale (${fmt(W[cen].um * 1000, 5)} nm)`, App.qf.wl === 'central')}${it('wl:primary', `Primaire (${fmt(W[s.primary | 0].um * 1000, 5)} nm)`, App.qf.wl === 'primary')}${it('wl:all', 'Toutes (pondérées)', App.qf.wl === 'all')}
+    ${W.map((w, i) => it('wl:' + i, `λ${i + 1} = ${fmt(w.um * 1000, 5)} nm`, App.qf.wl === i)).join('')}<hr><button data-qf="go:1"><b>⌖ Mettre au point</b><span class="kb">Ctrl+Maj+F</span></button>`;
+  m.classList.add('open'); const r = btn.getBoundingClientRect(); m.style.left = '0px'; m.style.top = '0px'; const mr = m.getBoundingClientRect();
+  m.style.left = Math.min(r.left, innerWidth - mr.width - 6) + 'px'; m.style.top = Math.min(r.bottom + 4, innerHeight - mr.height - 6) + 'px';
 }
 function drawMerit() {
   const cv = $('#mchart'); if (!cv) return; readTheme(); const { c, w, h } = prepCanvas(cv);
@@ -1859,6 +1957,8 @@ function init() {
       case 'tol': openTol(); break;
       case 'report': openReport(); break;
       case 'glasses': openGlasses(); break;
+      case 'qfocus': quickFocusUI(); break;
+      case 'qfopt': qfMenu(a); break;
       case 'theme': { const d = document.documentElement; d.dataset.theme = d.dataset.theme === 'dark' ? '' : 'dark'; save(); readTheme(); drawLayout(); renderPanes(); break; }
       case 'help': openHelp(); break;
       case 'fit': fitView(); break;
@@ -1880,6 +1980,7 @@ function init() {
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') { e.preventDefault(); e.shiftKey ? openOptim() : openFile(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveFile(e.shiftKey); }
     else if (e.key === 'F1') { e.preventDefault(); openHelp(); }
+    else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); quickFocusUI(); }
     else if (e.key === 'Insert') { e.preventDefault(); lde('insA'); }
     else if ((e.ctrlKey || e.metaKey) && e.key === 'Delete') { e.preventDefault(); lde('del'); }
     else if (e.key === 'Delete' && !inInput && !e.target.closest?.('#dlg')) { e.preventDefault(); lde('del'); }
