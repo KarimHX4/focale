@@ -36,9 +36,9 @@ const HELP = [
 <tr><td>Demi-diamètre</td><td>Calculé automatiquement (italique) à partir des rayons ; 🔒 le fixe et vignette les rayons au-delà.</td></tr>
 <tr><td>Conique</td><td>Constante de conicité k (0 sphère, −1 parabole, &lt;−1 hyperbole, ]−1,0[ ellipse).</td></tr>
 <tr><td>A4…A10</td><td>Coefficients d'asphérique pair (case « Asphères »).</td></tr></table>
-<p><b>Boutons</b> : <b>V</b> = variable d'optimisation (rayon, épaisseur, conique et, avec « Asphères », A4…A10) ; <b>M</b> = solve de mise au point (épaisseur telle que le rayon marginal paraxial coupe l'axe à la surface suivante) ; 🔒 = demi-diamètre fixe.</p>
+<p><b>Boutons</b> : <b>V</b> = variable d'optimisation (rayon, épaisseur, verre — verre modèle nd/νd puis substitution —, conique et, avec « Asphères », A4…A10) ; <b>M</b> = solve de mise au point (épaisseur telle que le rayon marginal paraxial coupe l'axe à la surface suivante) ; 🔒 = demi-diamètre fixe.</p>
 <p><b>Clavier</b> : Entrée valide et descend, Tab passe à la colonne suivante, flèches haut/bas, Échap annule, Inser insère une surface après la sélection, Suppr (hors d'un champ de saisie) ou Ctrl+Suppr supprime la surface sélectionnée.</p>
-<p><b>Clic droit</b> sur une ligne : menu contextuel — insérer avant/après, ajouter une lentille, quick focus, choisir le verre, diaphragme, miroir, retourner, <b>supprimer la surface</b> ou <b>supprimer l'élément</b> (les deux surfaces d'une lentille). Toute suppression s'annule avec Ctrl+Z.</p>
+<p><b>Clic droit</b> sur une ligne : menu contextuel — insérer avant/après, ajouter une lentille, quick focus, choisir le verre, verre variable, diaphragme, miroir, retourner, <b>supprimer la surface</b> ou <b>supprimer l'élément</b> (les deux surfaces d'une lentille). Toute suppression s'annule avec Ctrl+Z.</p>
 <p><b>Outils</b> : + Avant / + Après / + Lentille (deux surfaces N-BK7), Supprimer, Diaphragme, Miroir, Retourner (inverse un élément), Verres… (catalogue), <b>⌖ Quick focus</b> (meilleur foyer, options ▾ : critère et longueur d'onde — voir <i>Optimisation</i>).</p>` },
 
   { id: 'elements', t: 'Types d\'éléments', h: `
@@ -80,7 +80,7 @@ const HELP = [
 <ul>
 <li>Saisie libre avec auto-complétion ; tirets et casse ignorés (<code>nbk7</code> = N-BK7).</li>
 <li>Homonymes : suffixe fabricant, ex. <code>F2_CDGM</code>. Les noms CODE V (<code>NBK7_SCHOTT</code>) sont reconnus.</li>
-<li>Verre fictif : <code>nd/νd</code> (dispersion de Cauchy ajustée sur F, d, C) ou indice fixe.</li>
+<li>Verre fictif : <code>nd/νd</code> (dispersion de Cauchy ajustée sur F, d, C) ou indice fixe. Un verre peut être rendu <b>variable</b> (bouton V de la colonne Verre) puis remplacé par le meilleur verre réel : voir <i>Optimisation</i>.</li>
 <li><b>Import AGF</b> (catalogue Zemax, formules 1 à 13) : glisser-déposer le fichier ou bouton « Importer un AGF… ». Les verres importés sont gardés dans le navigateur et embarqués dans les fichiers .json qui les utilisent.</li>
 <li>Un avertissement s'affiche si une longueur d'onde sort du domaine de validité d'un verre.</li>
 </ul>` },
@@ -160,7 +160,7 @@ const HELP = [
   { id: 'optimisation', t: 'Optimisation', h: `
 <p>Méthode des <b>moindres carrés amortis</b> (Levenberg-Marquardt) avec Jacobien numérique, comme l'optimisation locale de Zemax ou CODE V. Bouton <b>Optimiser</b> (Ctrl+Maj+O) ; la fenêtre se déplace et se redimensionne, et l'on peut continuer à travailler dans l'éditeur.</p>
 <h4>Variables</h4>
-<ul><li>Bouton <b>V</b> dans l'éditeur : rayon (la variable est la courbure), épaisseur, conique et, avec la case « Asphères », les coefficients <b>A4, A6, A8, A10</b>.</li>
+<ul><li>Bouton <b>V</b> dans l'éditeur : rayon (la variable est la courbure), épaisseur, conique, <b>verre</b> (voir ci-dessous) et, avec la case « Asphères », les coefficients <b>A4, A6, A8, A10</b>.</li>
 <li>La fenêtre liste les variables avec leur valeur et leur <b>écart</b> depuis le début de l'optimisation ; « Tout libérer » retire tous les V.</li>
 <li>Une épaisseur pilotée par le solve M ne peut pas être variable.</li></ul>
 <h4>Fonction de mérite</h4>
@@ -175,8 +175,15 @@ const HELP = [
 <tr><td>SPHA · COMA · ASTI · FCUR</td><td>Sommes de Seidel en ondes : W040, W131, W222, W220 (Petzval).</td></tr>
 <tr><td>MTFA</td><td>FTM moyenne T/S à une fréquence (paramètre, cycles/mm), moyenne pondérée sur les champs ; par défaut « ≥ cible ».</td></tr>
 <tr><td>MNCT · MXCT · MNET · MXET</td><td>Épaisseurs de verre au centre et au bord, min et max (toutes les lentilles).</td></tr>
-<tr><td>MNCA · MXCA · MNEA</td><td>Espaces d'air au centre (min, max) et au bord (min).</td></tr></table></li>
+<tr><td>MNCA · MXCA · MNEA</td><td>Espaces d'air au centre (min, max) et au bord (min).</td></tr>
+<tr><td>RGLA</td><td>Verre modèle « réaliste » : écart normalisé entre chaque verre modèle variable et le verre réel le plus proche (catalogues choisis) ; « ≤ 0 » avec un petit poids les garde près des verres existants.</td></tr></table></li>
 <li>Le tableau affiche en direct la <b>valeur</b> de chaque opérande (en orange si une contrainte ≥/≤ n'est pas respectée) et sa <b>part</b> de la fonction de mérite ; la dernière ligne donne celle du critère image.</li></ul>
+<h4>Verres variables et substitution</h4>
+<ul><li>Bouton <b>V</b> de la colonne <b>Verre</b> (ou clic droit › Verre variable) : le verre devient un <b>verre modèle</b> « nd/νd » (affiché en italique) dont l'indice nd et la constringence νd sont deux variables continues (bornes 1,35–2,2 et 15–100). La dispersion du modèle suit une loi de Cauchy ajustée sur F, d, C.</li>
+<li>Optimisez normalement, typiquement avec l'opérande <b>AXCL</b> (chromatisme axial) ; ajoutez <b>RGLA</b> (bouton « + Opérande RGLA ») pour éviter que les verres modèles partent dans une zone du diagramme nd/νd où aucun verre n'existe.</li>
+<li><b>Substituer par des verres réels</b> : pour chaque verre variable, Focale essaie les verres réels les plus proches dans le diagramme nd/νd (nombre de candidats réglable, catalogues cochés, préférentiels seulement en option, obsolètes exclus) ; à chaque essai les autres variables sont réoptimisées, et le verre qui donne la meilleure fonction de mérite est retenu. Plusieurs <b>passes</b> permettent de revoir les choix une fois les autres verres fixés. Le message liste les remplacements ; « Restaurer l'état initial » ou Ctrl+Z annulent.</li>
+<li>Après substitution, le verre reste marqué V (« réel, substituable ») : une nouvelle substitution peut encore le changer. Pour repartir d'un verre modèle continu, retirez puis remettez le V.</li>
+<li>La recherche globale perturbe aussi les verres modèles.</li></ul>
 <h4>Lancer</h4>
 <ul><li><b>Optimiser</b> : optimisation locale jusqu'à convergence ou au nombre d'itérations max.</li>
 <li><b>Recherche globale</b> : à partir du meilleur système, les variables sont perturbées au hasard (amplitude relative réglable), puis optimisées ; on garde le meilleur résultat sur le nombre de cycles demandé (méthode de type « Hammer »). Utile pour sortir d'un minimum local.</li>

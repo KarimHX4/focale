@@ -1115,7 +1115,32 @@ const OE = (() => {
     MNET: { label: 'Épaisseur bord verre min', kind: 'ge', u: 'mm', list: 1 }, MXET: { label: 'Épaisseur bord verre max', kind: 'le', u: 'mm', list: 1 },
     MNCA: { label: 'Espace d\'air centre min', kind: 'ge', u: 'mm', list: 1 }, MXCA: { label: 'Espace d\'air centre max', kind: 'le', u: 'mm', list: 1 },
     MNEA: { label: 'Espace d\'air bord min', kind: 'ge', u: 'mm', list: 1 },
+    RGLA: { label: 'Verre modèle réaliste (écart au verre réel le plus proche)', kind: 'le', list: 1 },
   };
+  /* ---------------- Verres variables (verre modèle nd/νd) ---------------- */
+  const MODEL_RE = /^\s*([0-9.]+)\s*[,\/;:]\s*([0-9.]+)\s*$/;
+  /** verre modèle « nd/νd » → { nd, vd } (null pour un verre de catalogue) */
+  function parseModel(name) { const m = String(name || '').match(MODEL_RE); return m ? { nd: +m[1], vd: +m[2] } : null; }
+  const fmtModel = (nd, vd) => `${(+nd).toFixed(6)}/${(+vd).toFixed(4)}`;
+  /** écart normalisé dans le diagramme nd/νd : 0,01 sur nd ≈ 1,5 sur νd */
+  const gdist = (a, b) => Math.hypot((a.nd - b.nd) / 0.01, (a.vd - b.vd) / 1.5);
+  let GCACHE = null;
+  /** verres réels candidats (catalogues autorisés, préférentiels seulement, sans obsolètes) */
+  function glassPool(o = {}) {
+    if (!GCACHE || GCACHE.n !== catalog().length) GCACHE = { n: catalog().length, all: catalog().filter(g => isFinite(g.nd) && isFinite(g.vd) && g.vd > 0) };
+    const cats = o.cats && o.cats.length ? new Set(o.cats) : null;
+    return GCACHE.all.filter(g => g.st !== 'o' && (!cats || cats.has(g.cat)) && (!o.pref || g.st === 'p'));
+  }
+  /** les k verres réels les plus proches d'un point (nd, νd) */
+  function glassNearest(nd, vd, o = {}) { return glassPool(o).map(g => ({ name: g.name, cat: g.cat, nd: g.nd, vd: g.vd, d: gdist(g, { nd, vd }) })).sort((a, b) => a.d - b.d).slice(0, o.k || 8); }
+  /** verre de départ d'une surface rendue variable : son nd/νd */
+  function toModel(name) { const g = glassInfo(name); return isFinite(g.nd) && isFinite(g.vd) ? fmtModel(g.nd, g.vd) : null; }
+  /** essai de substitution : verre réel sur la surface j, puis quelques itérations de moindres carrés sur les autres variables */
+  function subTry(sys, j, name, it = 12) {
+    const s = structuredClone(sys); s.surfaces[j].glass = name;
+    const st = { sys: s, mu: 1e-3 }; for (let i = 0; i < it; i++) { const r = optStep(st); if (r.done) break; }
+    const r = residuals(st.sys); return { sys: st.sys, m: r ? meritOf(r.f) : Infinity };
+  }
   const ASPH = ['a4', 'a6', 'a8', 'a10'];
   function getVars(sys) {
     const v = [];
@@ -1124,12 +1149,14 @@ const OE = (() => {
       if (s.vt && s.tsolve !== 'M') v.push({ si: i, kind: 't' });
       if (s.vk) v.push({ si: i, kind: 'k' });
       for (const a of ASPH) if (s['v' + a]) v.push({ si: i, kind: a });
+      if (s.vg && !isMirror(s) && parseModel(s.glass)) { v.push({ si: i, kind: 'nd' }); v.push({ si: i, kind: 'vd' }); }
     });
     return v;
   }
-  function getVal(sys, v) { const s = sys.surfaces[v.si]; return v.kind === 'c' ? curv(s) : v.kind === 't' ? s.t : v.kind === 'k' ? (s.k || 0) : (+s[v.kind] || 0); }
+  function getVal(sys, v) { const s = sys.surfaces[v.si]; if (v.kind === 'nd' || v.kind === 'vd') return (parseModel(s.glass) || {})[v.kind]; return v.kind === 'c' ? curv(s) : v.kind === 't' ? s.t : v.kind === 'k' ? (s.k || 0) : (+s[v.kind] || 0); }
   function setVal(sys, v, x) {
     const s = sys.surfaces[v.si];
+    if (v.kind === 'nd' || v.kind === 'vd') { const m = parseModel(s.glass) || { nd: 1.5, vd: 60 }; m[v.kind] = v.kind === 'nd' ? Math.min(2.2, Math.max(1.35, x)) : Math.min(100, Math.max(15, x)); s.glass = fmtModel(m.nd, m.vd); return; }
     if (v.kind === 'c') s.r = Math.abs(x) < 1e-12 ? Infinity : 1 / x; else if (v.kind === 't') s.t = x; else if (v.kind === 'k') s.k = x; else s[v.kind] = x;
   }
   /** indices des longueurs d'onde retenues : 'all' (toutes pondérées), 'central' (la plus proche du milieu de la bande), 'primary', ou un indice */
@@ -1166,6 +1193,7 @@ const OE = (() => {
       case 'MNCT': case 'MXCT': for (let j = 1; j < N - 1; j++) if (!isAir(S[j].glass) && !isMirror(S[j])) list.push(Math.abs(S[j].t)); break;
       case 'MNCA': case 'MXCA': for (let j = 1; j < N - 1; j++) if (isAir(S[j].glass) && !isMirror(S[j]) && S[j].tsolve !== 'M') list.push(Math.abs(S[j].t)); break;
       case 'MNET': case 'MXET': for (let j = 1; j < N - 1; j++) if (!isAir(S[j].glass) && !isMirror(S[j])) list.push(edge(j, j + 1)); break;
+      case 'RGLA': { const o = (sys.merit && sys.merit.gsub) || {}; for (let j = 1; j < N; j++) if (S[j].vg) { const m = parseModel(S[j].glass); if (m) list.push(glassNearest(m.nd, m.vd, { ...o, k: 1 })[0]?.d ?? 0); } break; }
       case 'MNEA': for (let j = 1; j < N - 1; j++) if (isAir(S[j].glass) && !isMirror(S[j]) && S[j].tsolve !== 'M' && j + 1 < N) list.push(edge(j, j + 1)); break;
     }
     return { list };
@@ -1224,7 +1252,7 @@ const OE = (() => {
     const x0 = vars.map(v => getVal(sys, v));
     const J = [];
     for (let k = 0; k < nv; k++) {
-      const v = vars[k], sdv = Math.max(1e-3, r0.M.S[v.si].sd || 1), h = v.kind === 'c' ? Math.max(1e-7, Math.abs(x0[k]) * 1e-5) : v.kind === 't' || v.kind === 'k' ? 1e-4 : 1e-6 / Math.pow(sdv, +v.kind.slice(1));
+      const v = vars[k], sdv = Math.max(1e-3, r0.M.S[v.si].sd || 1), h = v.kind === 'c' ? Math.max(1e-7, Math.abs(x0[k]) * 1e-5) : v.kind === 't' || v.kind === 'k' ? 1e-4 : v.kind === 'nd' ? 1e-5 : v.kind === 'vd' ? 1e-3 : 1e-6 / Math.pow(sdv, +v.kind.slice(1));
       const s2 = structuredClone(sys); setVal(s2, v, x0[k] + h);
       const r = residuals(s2); const col = new Float64Array(nf);
       if (r && r.f.length === nf) for (let i = 0; i < nf; i++) col[i] = (r.f[i] - f0[i]) / h;
@@ -1499,7 +1527,7 @@ const OE = (() => {
     return compensate(s, kind, comp, B.h0, opts).sys;
   }
 
-  return { DEG, fiberInfo, binPSF, detMTF, extSource, binImage, imageSim, polPupil, polOut, POLSTATES, TOLT, TOLC, LT, quickFocus, wlSel, opValue, tolBase, tolDefaults, tolFreeze, tolItems, tolGen, tolApplicable, tolLabel, tolApply, tolWorse, tolSens, tolInverse, tolTrial, tolRebuild, tolValue, niceDown, rng, mtfAt, compensate, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
+  return { DEG, fiberInfo, binPSF, detMTF, extSource, binImage, imageSim, polPupil, polOut, POLSTATES, TOLT, TOLC, LT, quickFocus, wlSel, opValue, parseModel, fmtModel, glassNearest, glassPool, toModel, subTry, tolBase, tolDefaults, tolFreeze, tolItems, tolGen, tolApplicable, tolLabel, tolApply, tolWorse, tolSens, tolInverse, tolTrial, tolRebuild, tolValue, niceDown, rng, mtfAt, compensate, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
     wavefront, psf, mtf, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
     OPS, getVars, residuals, meritOf, optStep, pupilGrid, indices, paraxial };
 })();

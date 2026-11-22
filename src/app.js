@@ -129,7 +129,7 @@ function renderLDE() {
       <td><div class="cell"><input class="c" data-i="${i}" data-k="comment" value="${esc(s.comment)}"></div></td>
       <td><div class="cell"><input data-i="${i}" data-k="r" value="${obj ? '' : fmt(s.r, 7)}" ${obj ? 'disabled' : ''}>${obj || img ? '' : tg(i, 'vr', 'V', s.vr, '', 'Variable (optimisation)')}</div></td>
       <td><div class="cell"><input data-i="${i}" data-k="t" class="${s.tsolve === 'M' ? 'auto' : ''}" value="${img ? '' : fmt(tVal, 7)}" ${img ? 'disabled' : ''}>${img || obj ? '' : tg(i, 'vt', 'V', s.vt, '', 'Variable (optimisation)') + tg(i, 'tsolve', 'M', s.tsolve === 'M', 'm', 'Solve : hauteur marginale nulle à la surface suivante (focalisation paraxiale)')}</div></td>
-      <td><div class="cell"><input class="g ${gOK ? '' : 'bad'}" list="glassList" data-i="${i}" data-k="glass" value="${esc(s.glass)}" ${img ? 'disabled' : ''} placeholder="${img ? '' : 'air'}"></div></td>
+      <td><div class="cell"><input class="g ${gOK ? '' : 'bad'} ${s.vg && OE.parseModel(s.glass) ? 'model' : ''}" list="glassList" data-i="${i}" data-k="glass" value="${esc(s.glass)}" ${img ? 'disabled' : ''} placeholder="${img ? '' : 'air'}" title="${s.vg ? (OE.parseModel(s.glass) ? 'Verre modèle variable (nd/νd) — à substituer par un verre réel dans la fenêtre d\'optimisation' : 'Verre réel substituable (substitution dans la fenêtre d\'optimisation)') : ''}">${obj || img || mir ? '' : tg(i, 'vg', 'V', s.vg, '', 'Verre variable : nd et νd deviennent des variables (verre modèle), puis substitution par un verre réel')}</div></td>
       <td><div class="cell"><input data-i="${i}" data-k="sd" class="${s.sdFixed ? '' : 'auto'}" value="${obj ? '' : fmt(sdVal, 5)}" ${obj ? 'disabled' : ''}>${obj ? '' : tg(i, 'sdFixed', '🔒', s.sdFixed, 'l', 'Demi-diamètre fixe (vignetage des rayons au-delà)')}</div></td>
       <td><div class="cell"><input data-i="${i}" data-k="k" value="${obj ? '' : fmt(s.k, 6)}" ${obj ? 'disabled' : ''}>${obj || img ? '' : tg(i, 'vk', 'V', s.vk, '', 'Variable (optimisation)')}</div></td>
       ${asph ? ['a4', 'a6', 'a8', 'a10'].map(k => `<td><div class="cell"><input data-i="${i}" data-k="${k}" value="${obj ? '' : fmt(s[k], 6)}" ${obj ? 'disabled' : ''}>${obj || img ? '' : tg(i, 'v' + k, 'V', s['v' + k], '', 'Variable (optimisation)')}</div></td>`).join('') : ''}
@@ -206,6 +206,12 @@ function setupLDE() {
     const b = e.target.closest('[data-tog]');
     if (b) {
       const i = +b.dataset.i, k = b.dataset.tog;
+      if (k === 'vg') { const s0 = App.sys.surfaces[i];
+        if (!s0.vg) { if (OE.isAir(s0.glass) || OE.isMirror(s0)) { toast('Verre variable : seulement pour une surface suivie d\'un verre (pas l\'air ni un miroir)'); return; }
+          const mg = OE.parseModel(s0.glass) ? s0.glass : OE.toModel(s0.glass); if (!mg) { toast('Verre inconnu : impossible d\'en faire un verre modèle'); return; }
+          commit(S => { S.surfaces[i].vg = true; S.surfaces[i].glass = mg; }); toast(`Verre S${i} variable : modèle ${mg} (nd/νd)`); }
+        else commit(S => { S.surfaces[i].vg = false; });
+        if ($('#ovars')) openOptim(); return; }
       commit(S => { const s = S.surfaces[i]; if (k === 'tsolve') { s.tsolve = s.tsolve === 'M' ? '' : 'M'; if (s.tsolve === 'M') s.vt = false; } else if (k === 'sdFixed') { if (!s.sdFixed && App.M && App.M.ok) s.sd = App.M.S[i].sd; s.sdFixed = !s.sdFixed; } else s[k] = !s[k]; });
       return;
     }
@@ -224,7 +230,7 @@ function selectRow(i, redraw = true) {
 /** menu contextuel (clic droit) d'une ligne de l'éditeur de lentilles */
 function ctxMenu(x, y, i) {
   let m = $('#ctx'); if (!m) { m = document.createElement('div'); m.id = 'ctx'; m.className = 'menu ctx'; document.body.appendChild(m);
-    m.addEventListener('click', e => { const b = e.target.closest('[data-c]'); if (!b || b.disabled) return; hideCtx(); const c = b.dataset.c; if (c === 'glasses') openGlasses(); else if (c === 'qfocus') quickFocusUI(); else lde(c); });
+    m.addEventListener('click', e => { const b = e.target.closest('[data-c]'); if (!b || b.disabled) return; hideCtx(); const c = b.dataset.c; if (c === 'glasses') openGlasses(); else if (c === 'qfocus') quickFocusUI(); else if (c === 'vg') $(`#lde button[data-tog="vg"][data-i="${App.sel}"]`)?.click(); else lde(c); });
     const off = e => { if (!e.target.closest || !e.target.closest('#ctx')) hideCtx(); };
     window.addEventListener('mousedown', off, true); window.addEventListener('blur', hideCtx); window.addEventListener('resize', hideCtx); document.addEventListener('scroll', hideCtx, true);
     document.addEventListener('keydown', e => { if (e.key === 'Escape') hideCtx(); }); }
@@ -232,7 +238,7 @@ function ctxMenu(x, y, i) {
   const it = (c, l, on = true, kb = '', cls = '') => `<button data-c="${c}" class="${cls}" ${on ? '' : 'disabled'}>${l}${kb ? `<span class="kb">${kb}</span>` : ''}</button>`;
   m.innerHTML = `<div class="hint" style="padding:4px 10px 6px">Surface ${i}${i === 0 ? ' (objet)' : i === N ? ' (image)' : s.comment ? ' — ' + esc(s.comment) : ''}</div>`
     + it('insB', 'Insérer une surface avant', i > 0) + it('insA', 'Insérer une surface après', i < N, 'Inser') + it('addLens', 'Ajouter une lentille après', i < N)
-    + '<hr>' + it('qfocus', 'Quick focus (meilleur foyer)', true, 'Ctrl+Maj+F') + it('glasses', 'Choisir le verre dans le catalogue…', i < N) + it('stop', 'Définir comme diaphragme', opt && !s.stop) + it('mirror', OE.isMirror(s) ? 'Redevenir un dioptre' : 'Transformer en miroir', opt) + it('flip', 'Retourner l\'élément', i > 0 && i < N - 1)
+    + '<hr>' + it('qfocus', 'Quick focus (meilleur foyer)', true, 'Ctrl+Maj+F') + it('glasses', 'Choisir le verre dans le catalogue…', i < N) + it('vg', s.vg ? 'Verre fixe (retirer la variable)' : 'Verre variable (nd/νd, puis substitution)', opt && !OE.isAir(s.glass) && !OE.isMirror(s)) + it('stop', 'Définir comme diaphragme', opt && !s.stop) + it('mirror', OE.isMirror(s) ? 'Redevenir un dioptre' : 'Transformer en miroir', opt) + it('flip', 'Retourner l\'élément', i > 0 && i < N - 1)
     + '<hr>' + it('del', 'Supprimer la surface', opt && N > 2, 'Suppr', 'danger') + it('delEl', `Supprimer l'élément (surfaces ${i} et ${i + 1})`, lens && N > 3, '', 'danger');
   m.classList.add('open'); m.style.left = '0px'; m.style.top = '0px';
   const r = m.getBoundingClientRect(); m.style.left = Math.min(x, innerWidth - r.width - 6) + 'px'; m.style.top = Math.min(y, innerHeight - r.height - 6) + 'px';
@@ -1348,7 +1354,7 @@ function fans(c, w, h, M, data, k, unit) {
 /* ---------------- Optimisation ---------------- */
 const OPT = { running: false, st: null, hist: [], it: 0, snap: null, x0: null, maxIt: 100, gCyc: 10, gAmp: 20 };
 function openOptim() {
-  const s = App.sys, mf = s.merit; mf.ops = mf.ops || [];
+  const s = App.sys, mf = s.merit, wasOpen = !!$('#ovars'); mf.ops = mf.ops || [];
   if (!OPT.running && !OPT.x0) OPT.x0 = optSnapVars(s);
   const ops = Object.entries(OE.OPS), W = s.wavelengths, cen = OE.wlSel(s, 'central')[0];
   const wlOpts = [['all', 'Toutes les λ (pondérées)'], ['central', `λ centrale (${fmt(W[cen].um * 1000, 5)} nm)`], ['primary', `λ primaire (${fmt(W[s.primary | 0].um * 1000, 5)} nm)`], ...W.map((w, i) => [String(i), `λ${i + 1} seule (${fmt(w.um * 1000, 5)} nm)`])];
@@ -1360,6 +1366,7 @@ function openOptim() {
       <div class="hint">Bouton <b>V</b> dans l'éditeur : rayon, épaisseur, conique et, avec « Asphères », A4…A10.</div>
       <div class="oscroll" id="ovars"></div>
       <div class="row"><button class="bt" data-d="ovclear" title="Retire toutes les variables (V) du système">Tout libérer</button></div>
+      ${optGlassHTML()}
       <h4 class="th4">Critère de qualité image</h4>
       <div class="row"><select class="in grow" id="mfImg"><option value="SPOT" ${mf.image === 'SPOT' ? 'selected' : ''}>Spot RMS (barycentre)</option><option value="WFE" ${mf.image === 'WFE' ? 'selected' : ''}>Front d'onde RMS</option><option value="NONE" ${mf.image === 'NONE' ? 'selected' : ''}>Aucun (opérandes seuls)</option></select></div>
       <div class="row"><label style="flex:none">Longueurs d'onde</label><select class="in grow" id="mfWl">${wlOpts.map(([k, l]) => `<option value="${k}" ${wsel === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
@@ -1391,13 +1398,56 @@ function openOptim() {
     <button class="bt" data-d="stop">Arrêter</button>
     <button class="bt" data-d="glob" title="Perturbe aléatoirement les variables puis optimise, plusieurs fois, et garde le meilleur résultat">Recherche globale</button>
     <button class="tb pri" data-d="run">▶ Optimiser</button></div>`, true, { w: 1120, h: 720 });
-  if (!OPT.running) { const r = OE.residuals(s); OPT.hist = r ? [OE.meritOf(r.f)] : []; }
+  if (!OPT.running) { const r = OE.residuals(s), m = r ? OE.meritOf(r.f) : NaN; if (!wasOpen || !OPT.hist.length) OPT.hist = isFinite(m) ? [m] : []; else if (isFinite(m) && m !== OPT.hist[OPT.hist.length - 1]) OPT.hist.push(m); }
   optLive();
+}
+/** section « verres variables » de la fenêtre d'optimisation */
+function optGlassHTML() {
+  const s = App.sys, G = s.surfaces.map((x, j) => [x, j]).filter(([x, j]) => x.vg && j > 0 && j < s.surfaces.length - 1);
+  const g = { cats: null, pref: false, k: 6, passes: 2, ...(s.merit.gsub || {}) }, all = OE.cats(), on = new Set(g.cats && g.cats.length ? g.cats : all);
+  const hasR = (s.merit.ops || []).some(o => o.type === 'RGLA');
+  return `<h4 class="th4">Verres variables (${G.length})</h4>
+    ${G.length ? `<table class="mt" style="font-size:12px">${G.map(([x, j]) => { const m = OE.parseModel(x.glass), near = m ? OE.glassNearest(m.nd, m.vd, { ...g, k: 1 })[0] : null;
+      return `<tr><td>S${j}</td><td style="font-family:var(--mono)">${esc(x.glass)}</td><td class="hint">${m ? `modèle · proche ${near ? `${esc(near.name)} (${fx(near.d, 2)})` : '—'}` : 'réel'}</td></tr>`; }).join('')}</table>` : '<div class="hint">Bouton <b>V</b> de la colonne Verre : le verre devient un verre modèle (nd, νd variables).</div>'}
+    <div class="hint" style="margin-top:4px">Catalogues de substitution</div>
+    <div class="chips">${all.map(c => `<label class="ck" style="margin:0 8px 0 0"><input type="checkbox" data-gs="cat" value="${esc(c)}" ${on.has(c) ? 'checked' : ''}> ${esc(c)}</label>`).join('')}</div>
+    <label class="ck"><input type="checkbox" data-gs="pref" ${g.pref ? 'checked' : ''}> verres préférentiels seulement</label>
+    <div class="row"><span class="hint">candidats / surface</span><input class="in" data-gs="k" value="${g.k}" style="width:44px"><span class="hint">passes</span><input class="in" data-gs="passes" value="${g.passes}" style="width:36px"></div>
+    <div class="row" style="flex-wrap:wrap"><button class="bt" data-d="gsub" ${G.length ? '' : 'disabled'} title="Remplace chaque verre variable par le verre réel qui donne la meilleure fonction de mérite (réoptimisation à chaque essai)">Substituer par des verres réels</button>${hasR ? '' : '<button class="bt" data-d="grgla" title="Ajoute l\'opérande RGLA : garde les verres modèles près des verres existants">+ Opérande RGLA</button>'}</div>`;
+}
+/** substitution : chaque verre variable est remplacé par le meilleur verre réel parmi ses voisins dans le diagramme nd/νd */
+async function runSubst() {
+  if (OPT.running) return; const s0 = App.sys, g = { cats: null, pref: false, k: 6, passes: 2, ...(s0.merit.gsub || {}) };
+  const J = s0.surfaces.map((x, j) => j).filter(j => s0.surfaces[j].vg && j > 0 && j < s0.surfaces.length - 1); if (!J.length) return;
+  OPT.snap = toJSON(App.sys); OPT.x0 = optSnapVars(App.sys); OPT.running = true; const msg = t => { const o = $('#omsg'); if (o) o.textContent = t; };
+  let best = structuredClone(s0), bm = Infinity; const log = [];
+  try {
+    for (let p = 0; p < g.passes && OPT.running; p++) {
+      let changed = false;
+      for (const j of J) {
+        if (!OPT.running) break;
+        const cur = best.surfaces[j].glass, m = OE.parseModel(cur), gi = m || OE.glassInfo(cur);
+        const cands = OE.glassNearest(gi.nd, gi.vd, { ...g, k: g.k }).map(c => c.name); if (!m && !cands.includes(OE.glassKey(cur) || cur)) cands.unshift(cur);
+        if (!cands.length) { msg('Aucun verre dans les catalogues choisis'); break; }
+        let pick = null;
+        for (let c = 0; c < cands.length && OPT.running; c++) {
+          msg(`Substitution — passe ${p + 1}/${g.passes} · S${j} : essai ${c + 1}/${cands.length} (${cands[c]})`); await tick();
+          const r = OE.subTry(best, j, cands[c], 12); if (!pick || r.m < pick.m) pick = { ...r, name: cands[c] };
+          OPT.hist.push(Math.min(bm, pick.m)); if ($('#mchart')) drawMerit();
+        }
+        if (pick && (m || pick.m < bm * (1 - 1e-9))) { if (pick.name !== cur) { log.push(`S${j} : ${cur} → ${pick.name}`); changed = true; } best = pick.sys; bm = pick.m; App.sys = structuredClone(best); App.M = OE.prepare(App.sys); renderLDE(); drawLayout(); if ($('#ovars')) optLive(); }
+      }
+      if (!changed && p > 0) break;
+    }
+  } finally {
+    OPT.running = false; App.sys = best; pushHist(); refresh({ fast: true });
+    if ($('#ovars')) openOptim(); const t = `Substitution terminée${isFinite(bm) ? ` — mérite ${bm.toExponential(4)}` : ''}${log.length ? ' · ' + log.join(' · ') : ' · aucun changement'}`; msg(t); toast(t, 6000);
+  }
 }
 /** valeurs des variables (pour afficher l'écart depuis le début) */
 function optSnapVars(s) { const o = {}; for (const v of OE.getVars(s)) o[v.kind + v.si] = optVarVal(s, v); return o; }
-function optVarVal(s, v) { const x = s.surfaces[v.si]; return v.kind === 'c' ? x.r : v.kind === 't' ? x.t : v.kind === 'k' ? (x.k || 0) : (+x[v.kind] || 0); }
-const optVarLab = v => v.kind === 'c' ? `R${v.si}` : v.kind === 't' ? `T${v.si}` : v.kind === 'k' ? `K${v.si}` : `${v.kind.toUpperCase()} S${v.si}`;
+function optVarVal(s, v) { const x = s.surfaces[v.si]; if (v.kind === 'nd' || v.kind === 'vd') return (OE.parseModel(x.glass) || {})[v.kind]; return v.kind === 'c' ? x.r : v.kind === 't' ? x.t : v.kind === 'k' ? (x.k || 0) : (+x[v.kind] || 0); }
+const optVarLab = v => v.kind === 'c' ? `R${v.si}` : v.kind === 't' ? `T${v.si}` : v.kind === 'k' ? `K${v.si}` : v.kind === 'nd' ? `nd S${v.si}` : v.kind === 'vd' ? `νd S${v.si}` : `${v.kind.toUpperCase()} S${v.si}`;
 /** met à jour variables, valeurs des opérandes, contributions et courbe de mérite */
 function optLive() {
   const s = App.sys, vars = OE.getVars(s), r = OE.residuals(s), x0 = OPT.x0 || {};
@@ -1487,6 +1537,9 @@ function setupDlg() {
     if (t.id === 'mfImg') { commit(s => s.merit.image = t.value, { fast: false }); openOptim(); }
     if (t.id === 'mfWl') { commit(s => s.merit.wl = t.value === 'all' ? 'all' : /^\d+$/.test(t.value) ? +t.value : t.value, { fast: false }); openOptim(); }
     if (t.id === 'maxIt') OPT.maxIt = Math.max(1, parseInt(t.value) || 100);
+    if (t.dataset.gs) { const k = t.dataset.gs; commit(s => { const g = s.merit.gsub = { cats: null, pref: false, k: 6, passes: 2, ...(s.merit.gsub || {}) };
+      if (k === 'cat') { const all = OE.cats(), cur = new Set(g.cats && g.cats.length ? g.cats : all); t.checked ? cur.add(t.value) : cur.delete(t.value); g.cats = cur.size === all.length ? null : [...cur]; }
+      else if (k === 'pref') g.pref = t.checked; else g[k] = Math.max(1, Math.min(k === 'k' ? 30 : 5, parseInt(t.value) || g[k])); }); openOptim(); }
     if (t.id === 'gCyc') OPT.gCyc = Math.max(1, Math.min(200, parseInt(t.value) || 10));
     if (t.id === 'gAmp') OPT.gAmp = Math.max(1, Math.min(100, parseFloat(String(t.value).replace(',', '.')) || 20));
     if (t.dataset.o) { const i = +t.dataset.i, k = t.dataset.o; commit(s => { const o = s.merit.ops[i]; if (k === 'type') { o.type = t.value; delete o.cmp; const d = OE.OPS[t.value]; if (d.p) o.p = o.p ?? d.pdef; else delete o.p; } else if (k === 'cmp') o.cmp = t.value; else o[k] = parseFloat(String(t.value).replace(',', '.')) || 0; }); openOptim(); }
@@ -1516,7 +1569,9 @@ function setupDlg() {
     if (a === 'run') runOpt();
     if (a === 'glob') runGlobal();
     if (a === 'oqf') quickFocusUI();
-    if (a === 'ovclear') { commit(s => s.surfaces.forEach(x => { x.vr = x.vt = x.vk = false; for (const k of ['a4', 'a6', 'a8', 'a10']) x['v' + k] = false; })); OPT.x0 = null; openOptim(); }
+    if (a === 'ovclear') { commit(s => s.surfaces.forEach(x => { x.vr = x.vt = x.vk = x.vg = false; for (const k of ['a4', 'a6', 'a8', 'a10']) x['v' + k] = false; })); OPT.x0 = null; openOptim(); }
+    if (a === 'gsub') runSubst();
+    if (a === 'grgla') { commit(s => { s.merit.ops.push({ type: 'RGLA', target: 0, weight: 0.002, cmp: 'le' }); }); openOptim(); }
     if (a === 'stop') { OPT.running = false; }
     if (a === 'revert') { if (OPT.snap) { OPT.running = false; App.sys = fromJSON(OPT.snap); pushHist(); refresh(); OPT.x0 = optSnapVars(App.sys); toast('État initial restauré'); openOptim(); } }
     if (a === 'copy') { const ta = $('#dlg textarea'); navigator.clipboard?.writeText(ta.value).then(() => toast('Copié dans le presse-papiers'), () => { ta.select(); toast('Sélectionné — Ctrl+C pour copier'); }); }
@@ -1562,8 +1617,10 @@ async function runGlobal() {
   for (let c = 0; c < cyc && OPT.running; c++) {
     const s = structuredClone(best);
     for (const v of OE.getVars(s)) { const g = 2 * Math.random() - 1, x = (() => { const o = s.surfaces[v.si]; return v.kind === 'c' ? OE.curv(o) : v.kind === 't' ? o.t : v.kind === 'k' ? (o.k || 0) : (+o[v.kind] || 0); })();
+      const o = s.surfaces[v.si];
+      if (v.kind === 'nd' || v.kind === 'vd') { const m = OE.parseModel(o.glass); if (m) { m[v.kind] += v.kind === 'nd' ? amp * g * 0.3 : amp * g * 40; o.glass = OE.fmtModel(Math.min(2.2, Math.max(1.35, m.nd)), Math.min(100, Math.max(15, m.vd))); } continue; }
       const nx = v.kind === 'c' ? x * (1 + amp * g) + (Math.abs(x) < 1e-6 ? amp * g * 0.01 : 0) : v.kind === 't' ? Math.sign(x || 1) * Math.max(0.05, Math.abs(x) * (1 + amp * g)) : v.kind === 'k' ? x + amp * g * 2 : x * (1 + amp * g);
-      const o = s.surfaces[v.si]; if (v.kind === 'c') o.r = Math.abs(nx) < 1e-12 ? Infinity : 1 / nx; else if (v.kind === 't') o.t = nx; else if (v.kind === 'k') o.k = nx; else o[v.kind] = nx; }
+      if (v.kind === 'c') o.r = Math.abs(nx) < 1e-12 ? Infinity : 1 / nx; else if (v.kind === 't') o.t = nx; else if (v.kind === 'k') o.k = nx; else o[v.kind] = nx; }
     const st = { sys: s, mu: 1e-3 }; const m = await run(st);
     if (isFinite(m) && m < bm * (1 - 1e-6)) { bm = m; best = st.sys; improved++; App.sys = structuredClone(best); App.M = OE.prepare(App.sys); renderLDE(); drawLayout(); }
     OPT.hist.push(bm); if ($('#mval')) { optLive(); $('#mit').textContent = `cycle ${c + 1} / ${cyc}`; $('#omsg').textContent = `Recherche globale : cycle ${c + 1} / ${cyc} — ${improved} amélioration(s)`; }

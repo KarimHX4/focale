@@ -109,10 +109,11 @@ table.lde{border-collapse:separate;border-spacing:0;width:max-content;min-width:
 .ty .b.mi{background:#374151;color:#e5e7eb}
 .cell{display:flex;align-items:center;gap:2px;padding:0 3px}
 .lde input{border:1px solid transparent;background:transparent;height:23px;padding:0 5px;border-radius:5px;font-family:var(--mono);font-size:12px;width:84px}
-.lde select.el{border:1px solid transparent;background:transparent;height:23px;border-radius:5px;font-size:12px;padding:0 2px;max-width:104px;cursor:pointer}
+.lde select.el{border:1px solid transparent;background:transparent;height:23px;border-radius:5px;font-size:12px;padding:0 2px;max-width:96px;cursor:pointer}
 .lde select.el:hover{border-color:var(--line)}
-.lde input.c{font-family:inherit;width:96px}
-.lde input.g{width:88px}
+.lde input.c{font-family:inherit;width:84px}
+.lde input.g{width:96px}
+.lde input.g.model{color:var(--acc);font-style:italic}
 .lde input:hover{border-color:var(--line)}
 .lde input:focus{border-color:var(--acc);background:var(--panel);outline:none}
 .lde input.auto{color:var(--mut);font-style:italic}
@@ -193,6 +194,7 @@ table.ht{border-collapse:collapse;width:100%;font-size:12.5px}table.ht td,table.
 .vars{display:flex;flex-wrap:wrap;gap:5px;margin:4px 0 10px}
 .ogrid{display:grid;grid-template-columns:minmax(300px,360px) minmax(0,1fr);gap:18px;flex:1;min-height:0}
 .oL,.oR{display:flex;flex-direction:column;min-height:0;min-width:0}
+.oL{overflow:auto;padding-right:4px}
 .oscroll{overflow:auto;border:1px solid var(--line);border-radius:8px;margin:4px 0;min-height:60px;max-height:100%;flex:0 1 auto}
 .oR .oscroll{flex:1 1 auto}
 table.otab select.in{max-width:210px}
@@ -302,7 +304,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 <div class="toast" id="toast"></div>
 <input type="file" id="fileIn" accept=".json,.zmx,.seq,.txt,.agf" style="display:none">
 <div class="drop" id="drop">Déposez un fichier .zmx, .seq, .json ou .agf</div>
-<script>const FOCALE_VERSION = '457af156';</script>
+<script>const FOCALE_VERSION = 'e7499534';</script>
 <script>
 'use strict';
 /* =====================================================================
@@ -1421,7 +1423,32 @@ const OE = (() => {
     MNET: { label: 'Épaisseur bord verre min', kind: 'ge', u: 'mm', list: 1 }, MXET: { label: 'Épaisseur bord verre max', kind: 'le', u: 'mm', list: 1 },
     MNCA: { label: 'Espace d\'air centre min', kind: 'ge', u: 'mm', list: 1 }, MXCA: { label: 'Espace d\'air centre max', kind: 'le', u: 'mm', list: 1 },
     MNEA: { label: 'Espace d\'air bord min', kind: 'ge', u: 'mm', list: 1 },
+    RGLA: { label: 'Verre modèle réaliste (écart au verre réel le plus proche)', kind: 'le', list: 1 },
   };
+  /* ---------------- Verres variables (verre modèle nd/νd) ---------------- */
+  const MODEL_RE = /^\s*([0-9.]+)\s*[,\/;:]\s*([0-9.]+)\s*$/;
+  /** verre modèle « nd/νd » → { nd, vd } (null pour un verre de catalogue) */
+  function parseModel(name) { const m = String(name || '').match(MODEL_RE); return m ? { nd: +m[1], vd: +m[2] } : null; }
+  const fmtModel = (nd, vd) => `${(+nd).toFixed(6)}/${(+vd).toFixed(4)}`;
+  /** écart normalisé dans le diagramme nd/νd : 0,01 sur nd ≈ 1,5 sur νd */
+  const gdist = (a, b) => Math.hypot((a.nd - b.nd) / 0.01, (a.vd - b.vd) / 1.5);
+  let GCACHE = null;
+  /** verres réels candidats (catalogues autorisés, préférentiels seulement, sans obsolètes) */
+  function glassPool(o = {}) {
+    if (!GCACHE || GCACHE.n !== catalog().length) GCACHE = { n: catalog().length, all: catalog().filter(g => isFinite(g.nd) && isFinite(g.vd) && g.vd > 0) };
+    const cats = o.cats && o.cats.length ? new Set(o.cats) : null;
+    return GCACHE.all.filter(g => g.st !== 'o' && (!cats || cats.has(g.cat)) && (!o.pref || g.st === 'p'));
+  }
+  /** les k verres réels les plus proches d'un point (nd, νd) */
+  function glassNearest(nd, vd, o = {}) { return glassPool(o).map(g => ({ name: g.name, cat: g.cat, nd: g.nd, vd: g.vd, d: gdist(g, { nd, vd }) })).sort((a, b) => a.d - b.d).slice(0, o.k || 8); }
+  /** verre de départ d'une surface rendue variable : son nd/νd */
+  function toModel(name) { const g = glassInfo(name); return isFinite(g.nd) && isFinite(g.vd) ? fmtModel(g.nd, g.vd) : null; }
+  /** essai de substitution : verre réel sur la surface j, puis quelques itérations de moindres carrés sur les autres variables */
+  function subTry(sys, j, name, it = 12) {
+    const s = structuredClone(sys); s.surfaces[j].glass = name;
+    const st = { sys: s, mu: 1e-3 }; for (let i = 0; i < it; i++) { const r = optStep(st); if (r.done) break; }
+    const r = residuals(st.sys); return { sys: st.sys, m: r ? meritOf(r.f) : Infinity };
+  }
   const ASPH = ['a4', 'a6', 'a8', 'a10'];
   function getVars(sys) {
     const v = [];
@@ -1430,12 +1457,14 @@ const OE = (() => {
       if (s.vt && s.tsolve !== 'M') v.push({ si: i, kind: 't' });
       if (s.vk) v.push({ si: i, kind: 'k' });
       for (const a of ASPH) if (s['v' + a]) v.push({ si: i, kind: a });
+      if (s.vg && !isMirror(s) && parseModel(s.glass)) { v.push({ si: i, kind: 'nd' }); v.push({ si: i, kind: 'vd' }); }
     });
     return v;
   }
-  function getVal(sys, v) { const s = sys.surfaces[v.si]; return v.kind === 'c' ? curv(s) : v.kind === 't' ? s.t : v.kind === 'k' ? (s.k || 0) : (+s[v.kind] || 0); }
+  function getVal(sys, v) { const s = sys.surfaces[v.si]; if (v.kind === 'nd' || v.kind === 'vd') return (parseModel(s.glass) || {})[v.kind]; return v.kind === 'c' ? curv(s) : v.kind === 't' ? s.t : v.kind === 'k' ? (s.k || 0) : (+s[v.kind] || 0); }
   function setVal(sys, v, x) {
     const s = sys.surfaces[v.si];
+    if (v.kind === 'nd' || v.kind === 'vd') { const m = parseModel(s.glass) || { nd: 1.5, vd: 60 }; m[v.kind] = v.kind === 'nd' ? Math.min(2.2, Math.max(1.35, x)) : Math.min(100, Math.max(15, x)); s.glass = fmtModel(m.nd, m.vd); return; }
     if (v.kind === 'c') s.r = Math.abs(x) < 1e-12 ? Infinity : 1 / x; else if (v.kind === 't') s.t = x; else if (v.kind === 'k') s.k = x; else s[v.kind] = x;
   }
   /** indices des longueurs d'onde retenues : 'all' (toutes pondérées), 'central' (la plus proche du milieu de la bande), 'primary', ou un indice */
@@ -1472,6 +1501,7 @@ const OE = (() => {
       case 'MNCT': case 'MXCT': for (let j = 1; j < N - 1; j++) if (!isAir(S[j].glass) && !isMirror(S[j])) list.push(Math.abs(S[j].t)); break;
       case 'MNCA': case 'MXCA': for (let j = 1; j < N - 1; j++) if (isAir(S[j].glass) && !isMirror(S[j]) && S[j].tsolve !== 'M') list.push(Math.abs(S[j].t)); break;
       case 'MNET': case 'MXET': for (let j = 1; j < N - 1; j++) if (!isAir(S[j].glass) && !isMirror(S[j])) list.push(edge(j, j + 1)); break;
+      case 'RGLA': { const o = (sys.merit && sys.merit.gsub) || {}; for (let j = 1; j < N; j++) if (S[j].vg) { const m = parseModel(S[j].glass); if (m) list.push(glassNearest(m.nd, m.vd, { ...o, k: 1 })[0]?.d ?? 0); } break; }
       case 'MNEA': for (let j = 1; j < N - 1; j++) if (isAir(S[j].glass) && !isMirror(S[j]) && S[j].tsolve !== 'M' && j + 1 < N) list.push(edge(j, j + 1)); break;
     }
     return { list };
@@ -1530,7 +1560,7 @@ const OE = (() => {
     const x0 = vars.map(v => getVal(sys, v));
     const J = [];
     for (let k = 0; k < nv; k++) {
-      const v = vars[k], sdv = Math.max(1e-3, r0.M.S[v.si].sd || 1), h = v.kind === 'c' ? Math.max(1e-7, Math.abs(x0[k]) * 1e-5) : v.kind === 't' || v.kind === 'k' ? 1e-4 : 1e-6 / Math.pow(sdv, +v.kind.slice(1));
+      const v = vars[k], sdv = Math.max(1e-3, r0.M.S[v.si].sd || 1), h = v.kind === 'c' ? Math.max(1e-7, Math.abs(x0[k]) * 1e-5) : v.kind === 't' || v.kind === 'k' ? 1e-4 : v.kind === 'nd' ? 1e-5 : v.kind === 'vd' ? 1e-3 : 1e-6 / Math.pow(sdv, +v.kind.slice(1));
       const s2 = structuredClone(sys); setVal(s2, v, x0[k] + h);
       const r = residuals(s2); const col = new Float64Array(nf);
       if (r && r.f.length === nf) for (let i = 0; i < nf; i++) col[i] = (r.f[i] - f0[i]) / h;
@@ -1805,7 +1835,7 @@ const OE = (() => {
     return compensate(s, kind, comp, B.h0, opts).sys;
   }
 
-  return { DEG, fiberInfo, binPSF, detMTF, extSource, binImage, imageSim, polPupil, polOut, POLSTATES, TOLT, TOLC, LT, quickFocus, wlSel, opValue, tolBase, tolDefaults, tolFreeze, tolItems, tolGen, tolApplicable, tolLabel, tolApply, tolWorse, tolSens, tolInverse, tolTrial, tolRebuild, tolValue, niceDown, rng, mtfAt, compensate, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
+  return { DEG, fiberInfo, binPSF, detMTF, extSource, binImage, imageSim, polPupil, polOut, POLSTATES, TOLT, TOLC, LT, quickFocus, wlSel, opValue, parseModel, fmtModel, glassNearest, glassPool, toModel, subTry, tolBase, tolDefaults, tolFreeze, tolItems, tolGen, tolApplicable, tolLabel, tolApply, tolWorse, tolSens, tolInverse, tolTrial, tolRebuild, tolValue, niceDown, rng, mtfAt, compensate, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
     wavefront, psf, mtf, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
     OPS, getVars, residuals, meritOf, optStep, pupilGrid, indices, paraxial };
 })();
@@ -2895,9 +2925,9 @@ const HELP = [
 <tr><td>Demi-diamètre</td><td>Calculé automatiquement (italique) à partir des rayons ; 🔒 le fixe et vignette les rayons au-delà.</td></tr>
 <tr><td>Conique</td><td>Constante de conicité k (0 sphère, −1 parabole, &lt;−1 hyperbole, ]−1,0[ ellipse).</td></tr>
 <tr><td>A4…A10</td><td>Coefficients d'asphérique pair (case « Asphères »).</td></tr></table>
-<p><b>Boutons</b> : <b>V</b> = variable d'optimisation (rayon, épaisseur, conique et, avec « Asphères », A4…A10) ; <b>M</b> = solve de mise au point (épaisseur telle que le rayon marginal paraxial coupe l'axe à la surface suivante) ; 🔒 = demi-diamètre fixe.</p>
+<p><b>Boutons</b> : <b>V</b> = variable d'optimisation (rayon, épaisseur, verre — verre modèle nd/νd puis substitution —, conique et, avec « Asphères », A4…A10) ; <b>M</b> = solve de mise au point (épaisseur telle que le rayon marginal paraxial coupe l'axe à la surface suivante) ; 🔒 = demi-diamètre fixe.</p>
 <p><b>Clavier</b> : Entrée valide et descend, Tab passe à la colonne suivante, flèches haut/bas, Échap annule, Inser insère une surface après la sélection, Suppr (hors d'un champ de saisie) ou Ctrl+Suppr supprime la surface sélectionnée.</p>
-<p><b>Clic droit</b> sur une ligne : menu contextuel — insérer avant/après, ajouter une lentille, quick focus, choisir le verre, diaphragme, miroir, retourner, <b>supprimer la surface</b> ou <b>supprimer l'élément</b> (les deux surfaces d'une lentille). Toute suppression s'annule avec Ctrl+Z.</p>
+<p><b>Clic droit</b> sur une ligne : menu contextuel — insérer avant/après, ajouter une lentille, quick focus, choisir le verre, verre variable, diaphragme, miroir, retourner, <b>supprimer la surface</b> ou <b>supprimer l'élément</b> (les deux surfaces d'une lentille). Toute suppression s'annule avec Ctrl+Z.</p>
 <p><b>Outils</b> : + Avant / + Après / + Lentille (deux surfaces N-BK7), Supprimer, Diaphragme, Miroir, Retourner (inverse un élément), Verres… (catalogue), <b>⌖ Quick focus</b> (meilleur foyer, options ▾ : critère et longueur d'onde — voir <i>Optimisation</i>).</p>` },
 
   { id: 'elements', t: 'Types d\'éléments', h: `
@@ -2939,7 +2969,7 @@ const HELP = [
 <ul>
 <li>Saisie libre avec auto-complétion ; tirets et casse ignorés (<code>nbk7</code> = N-BK7).</li>
 <li>Homonymes : suffixe fabricant, ex. <code>F2_CDGM</code>. Les noms CODE V (<code>NBK7_SCHOTT</code>) sont reconnus.</li>
-<li>Verre fictif : <code>nd/νd</code> (dispersion de Cauchy ajustée sur F, d, C) ou indice fixe.</li>
+<li>Verre fictif : <code>nd/νd</code> (dispersion de Cauchy ajustée sur F, d, C) ou indice fixe. Un verre peut être rendu <b>variable</b> (bouton V de la colonne Verre) puis remplacé par le meilleur verre réel : voir <i>Optimisation</i>.</li>
 <li><b>Import AGF</b> (catalogue Zemax, formules 1 à 13) : glisser-déposer le fichier ou bouton « Importer un AGF… ». Les verres importés sont gardés dans le navigateur et embarqués dans les fichiers .json qui les utilisent.</li>
 <li>Un avertissement s'affiche si une longueur d'onde sort du domaine de validité d'un verre.</li>
 </ul>` },
@@ -3019,7 +3049,7 @@ const HELP = [
   { id: 'optimisation', t: 'Optimisation', h: `
 <p>Méthode des <b>moindres carrés amortis</b> (Levenberg-Marquardt) avec Jacobien numérique, comme l'optimisation locale de Zemax ou CODE V. Bouton <b>Optimiser</b> (Ctrl+Maj+O) ; la fenêtre se déplace et se redimensionne, et l'on peut continuer à travailler dans l'éditeur.</p>
 <h4>Variables</h4>
-<ul><li>Bouton <b>V</b> dans l'éditeur : rayon (la variable est la courbure), épaisseur, conique et, avec la case « Asphères », les coefficients <b>A4, A6, A8, A10</b>.</li>
+<ul><li>Bouton <b>V</b> dans l'éditeur : rayon (la variable est la courbure), épaisseur, conique, <b>verre</b> (voir ci-dessous) et, avec la case « Asphères », les coefficients <b>A4, A6, A8, A10</b>.</li>
 <li>La fenêtre liste les variables avec leur valeur et leur <b>écart</b> depuis le début de l'optimisation ; « Tout libérer » retire tous les V.</li>
 <li>Une épaisseur pilotée par le solve M ne peut pas être variable.</li></ul>
 <h4>Fonction de mérite</h4>
@@ -3034,8 +3064,15 @@ const HELP = [
 <tr><td>SPHA · COMA · ASTI · FCUR</td><td>Sommes de Seidel en ondes : W040, W131, W222, W220 (Petzval).</td></tr>
 <tr><td>MTFA</td><td>FTM moyenne T/S à une fréquence (paramètre, cycles/mm), moyenne pondérée sur les champs ; par défaut « ≥ cible ».</td></tr>
 <tr><td>MNCT · MXCT · MNET · MXET</td><td>Épaisseurs de verre au centre et au bord, min et max (toutes les lentilles).</td></tr>
-<tr><td>MNCA · MXCA · MNEA</td><td>Espaces d'air au centre (min, max) et au bord (min).</td></tr></table></li>
+<tr><td>MNCA · MXCA · MNEA</td><td>Espaces d'air au centre (min, max) et au bord (min).</td></tr>
+<tr><td>RGLA</td><td>Verre modèle « réaliste » : écart normalisé entre chaque verre modèle variable et le verre réel le plus proche (catalogues choisis) ; « ≤ 0 » avec un petit poids les garde près des verres existants.</td></tr></table></li>
 <li>Le tableau affiche en direct la <b>valeur</b> de chaque opérande (en orange si une contrainte ≥/≤ n'est pas respectée) et sa <b>part</b> de la fonction de mérite ; la dernière ligne donne celle du critère image.</li></ul>
+<h4>Verres variables et substitution</h4>
+<ul><li>Bouton <b>V</b> de la colonne <b>Verre</b> (ou clic droit › Verre variable) : le verre devient un <b>verre modèle</b> « nd/νd » (affiché en italique) dont l'indice nd et la constringence νd sont deux variables continues (bornes 1,35–2,2 et 15–100). La dispersion du modèle suit une loi de Cauchy ajustée sur F, d, C.</li>
+<li>Optimisez normalement, typiquement avec l'opérande <b>AXCL</b> (chromatisme axial) ; ajoutez <b>RGLA</b> (bouton « + Opérande RGLA ») pour éviter que les verres modèles partent dans une zone du diagramme nd/νd où aucun verre n'existe.</li>
+<li><b>Substituer par des verres réels</b> : pour chaque verre variable, Focale essaie les verres réels les plus proches dans le diagramme nd/νd (nombre de candidats réglable, catalogues cochés, préférentiels seulement en option, obsolètes exclus) ; à chaque essai les autres variables sont réoptimisées, et le verre qui donne la meilleure fonction de mérite est retenu. Plusieurs <b>passes</b> permettent de revoir les choix une fois les autres verres fixés. Le message liste les remplacements ; « Restaurer l'état initial » ou Ctrl+Z annulent.</li>
+<li>Après substitution, le verre reste marqué V (« réel, substituable ») : une nouvelle substitution peut encore le changer. Pour repartir d'un verre modèle continu, retirez puis remettez le V.</li>
+<li>La recherche globale perturbe aussi les verres modèles.</li></ul>
 <h4>Lancer</h4>
 <ul><li><b>Optimiser</b> : optimisation locale jusqu'à convergence ou au nombre d'itérations max.</li>
 <li><b>Recherche globale</b> : à partir du meilleur système, les variables sont perturbées au hasard (amplitude relative réglable), puis optimisées ; on garde le meilleur résultat sur le nombre de cycles demandé (méthode de type « Hammer »). Utile pour sortir d'un minimum local.</li>
@@ -3836,7 +3873,7 @@ function renderLDE() {
       <td><div class="cell"><input class="c" data-i="${i}" data-k="comment" value="${esc(s.comment)}"></div></td>
       <td><div class="cell"><input data-i="${i}" data-k="r" value="${obj ? '' : fmt(s.r, 7)}" ${obj ? 'disabled' : ''}>${obj || img ? '' : tg(i, 'vr', 'V', s.vr, '', 'Variable (optimisation)')}</div></td>
       <td><div class="cell"><input data-i="${i}" data-k="t" class="${s.tsolve === 'M' ? 'auto' : ''}" value="${img ? '' : fmt(tVal, 7)}" ${img ? 'disabled' : ''}>${img || obj ? '' : tg(i, 'vt', 'V', s.vt, '', 'Variable (optimisation)') + tg(i, 'tsolve', 'M', s.tsolve === 'M', 'm', 'Solve : hauteur marginale nulle à la surface suivante (focalisation paraxiale)')}</div></td>
-      <td><div class="cell"><input class="g ${gOK ? '' : 'bad'}" list="glassList" data-i="${i}" data-k="glass" value="${esc(s.glass)}" ${img ? 'disabled' : ''} placeholder="${img ? '' : 'air'}"></div></td>
+      <td><div class="cell"><input class="g ${gOK ? '' : 'bad'} ${s.vg && OE.parseModel(s.glass) ? 'model' : ''}" list="glassList" data-i="${i}" data-k="glass" value="${esc(s.glass)}" ${img ? 'disabled' : ''} placeholder="${img ? '' : 'air'}" title="${s.vg ? (OE.parseModel(s.glass) ? 'Verre modèle variable (nd/νd) — à substituer par un verre réel dans la fenêtre d\'optimisation' : 'Verre réel substituable (substitution dans la fenêtre d\'optimisation)') : ''}">${obj || img || mir ? '' : tg(i, 'vg', 'V', s.vg, '', 'Verre variable : nd et νd deviennent des variables (verre modèle), puis substitution par un verre réel')}</div></td>
       <td><div class="cell"><input data-i="${i}" data-k="sd" class="${s.sdFixed ? '' : 'auto'}" value="${obj ? '' : fmt(sdVal, 5)}" ${obj ? 'disabled' : ''}>${obj ? '' : tg(i, 'sdFixed', '🔒', s.sdFixed, 'l', 'Demi-diamètre fixe (vignetage des rayons au-delà)')}</div></td>
       <td><div class="cell"><input data-i="${i}" data-k="k" value="${obj ? '' : fmt(s.k, 6)}" ${obj ? 'disabled' : ''}>${obj || img ? '' : tg(i, 'vk', 'V', s.vk, '', 'Variable (optimisation)')}</div></td>
       ${asph ? ['a4', 'a6', 'a8', 'a10'].map(k => `<td><div class="cell"><input data-i="${i}" data-k="${k}" value="${obj ? '' : fmt(s[k], 6)}" ${obj ? 'disabled' : ''}>${obj || img ? '' : tg(i, 'v' + k, 'V', s['v' + k], '', 'Variable (optimisation)')}</div></td>`).join('') : ''}
@@ -3913,6 +3950,12 @@ function setupLDE() {
     const b = e.target.closest('[data-tog]');
     if (b) {
       const i = +b.dataset.i, k = b.dataset.tog;
+      if (k === 'vg') { const s0 = App.sys.surfaces[i];
+        if (!s0.vg) { if (OE.isAir(s0.glass) || OE.isMirror(s0)) { toast('Verre variable : seulement pour une surface suivie d\'un verre (pas l\'air ni un miroir)'); return; }
+          const mg = OE.parseModel(s0.glass) ? s0.glass : OE.toModel(s0.glass); if (!mg) { toast('Verre inconnu : impossible d\'en faire un verre modèle'); return; }
+          commit(S => { S.surfaces[i].vg = true; S.surfaces[i].glass = mg; }); toast(`Verre S${i} variable : modèle ${mg} (nd/νd)`); }
+        else commit(S => { S.surfaces[i].vg = false; });
+        if ($('#ovars')) openOptim(); return; }
       commit(S => { const s = S.surfaces[i]; if (k === 'tsolve') { s.tsolve = s.tsolve === 'M' ? '' : 'M'; if (s.tsolve === 'M') s.vt = false; } else if (k === 'sdFixed') { if (!s.sdFixed && App.M && App.M.ok) s.sd = App.M.S[i].sd; s.sdFixed = !s.sdFixed; } else s[k] = !s[k]; });
       return;
     }
@@ -3931,7 +3974,7 @@ function selectRow(i, redraw = true) {
 /** menu contextuel (clic droit) d'une ligne de l'éditeur de lentilles */
 function ctxMenu(x, y, i) {
   let m = $('#ctx'); if (!m) { m = document.createElement('div'); m.id = 'ctx'; m.className = 'menu ctx'; document.body.appendChild(m);
-    m.addEventListener('click', e => { const b = e.target.closest('[data-c]'); if (!b || b.disabled) return; hideCtx(); const c = b.dataset.c; if (c === 'glasses') openGlasses(); else if (c === 'qfocus') quickFocusUI(); else lde(c); });
+    m.addEventListener('click', e => { const b = e.target.closest('[data-c]'); if (!b || b.disabled) return; hideCtx(); const c = b.dataset.c; if (c === 'glasses') openGlasses(); else if (c === 'qfocus') quickFocusUI(); else if (c === 'vg') $(`#lde button[data-tog="vg"][data-i="${App.sel}"]`)?.click(); else lde(c); });
     const off = e => { if (!e.target.closest || !e.target.closest('#ctx')) hideCtx(); };
     window.addEventListener('mousedown', off, true); window.addEventListener('blur', hideCtx); window.addEventListener('resize', hideCtx); document.addEventListener('scroll', hideCtx, true);
     document.addEventListener('keydown', e => { if (e.key === 'Escape') hideCtx(); }); }
@@ -3939,7 +3982,7 @@ function ctxMenu(x, y, i) {
   const it = (c, l, on = true, kb = '', cls = '') => `<button data-c="${c}" class="${cls}" ${on ? '' : 'disabled'}>${l}${kb ? `<span class="kb">${kb}</span>` : ''}</button>`;
   m.innerHTML = `<div class="hint" style="padding:4px 10px 6px">Surface ${i}${i === 0 ? ' (objet)' : i === N ? ' (image)' : s.comment ? ' — ' + esc(s.comment) : ''}</div>`
     + it('insB', 'Insérer une surface avant', i > 0) + it('insA', 'Insérer une surface après', i < N, 'Inser') + it('addLens', 'Ajouter une lentille après', i < N)
-    + '<hr>' + it('qfocus', 'Quick focus (meilleur foyer)', true, 'Ctrl+Maj+F') + it('glasses', 'Choisir le verre dans le catalogue…', i < N) + it('stop', 'Définir comme diaphragme', opt && !s.stop) + it('mirror', OE.isMirror(s) ? 'Redevenir un dioptre' : 'Transformer en miroir', opt) + it('flip', 'Retourner l\'élément', i > 0 && i < N - 1)
+    + '<hr>' + it('qfocus', 'Quick focus (meilleur foyer)', true, 'Ctrl+Maj+F') + it('glasses', 'Choisir le verre dans le catalogue…', i < N) + it('vg', s.vg ? 'Verre fixe (retirer la variable)' : 'Verre variable (nd/νd, puis substitution)', opt && !OE.isAir(s.glass) && !OE.isMirror(s)) + it('stop', 'Définir comme diaphragme', opt && !s.stop) + it('mirror', OE.isMirror(s) ? 'Redevenir un dioptre' : 'Transformer en miroir', opt) + it('flip', 'Retourner l\'élément', i > 0 && i < N - 1)
     + '<hr>' + it('del', 'Supprimer la surface', opt && N > 2, 'Suppr', 'danger') + it('delEl', `Supprimer l'élément (surfaces ${i} et ${i + 1})`, lens && N > 3, '', 'danger');
   m.classList.add('open'); m.style.left = '0px'; m.style.top = '0px';
   const r = m.getBoundingClientRect(); m.style.left = Math.min(x, innerWidth - r.width - 6) + 'px'; m.style.top = Math.min(y, innerHeight - r.height - 6) + 'px';
@@ -5055,7 +5098,7 @@ function fans(c, w, h, M, data, k, unit) {
 /* ---------------- Optimisation ---------------- */
 const OPT = { running: false, st: null, hist: [], it: 0, snap: null, x0: null, maxIt: 100, gCyc: 10, gAmp: 20 };
 function openOptim() {
-  const s = App.sys, mf = s.merit; mf.ops = mf.ops || [];
+  const s = App.sys, mf = s.merit, wasOpen = !!$('#ovars'); mf.ops = mf.ops || [];
   if (!OPT.running && !OPT.x0) OPT.x0 = optSnapVars(s);
   const ops = Object.entries(OE.OPS), W = s.wavelengths, cen = OE.wlSel(s, 'central')[0];
   const wlOpts = [['all', 'Toutes les λ (pondérées)'], ['central', `λ centrale (${fmt(W[cen].um * 1000, 5)} nm)`], ['primary', `λ primaire (${fmt(W[s.primary | 0].um * 1000, 5)} nm)`], ...W.map((w, i) => [String(i), `λ${i + 1} seule (${fmt(w.um * 1000, 5)} nm)`])];
@@ -5067,6 +5110,7 @@ function openOptim() {
       <div class="hint">Bouton <b>V</b> dans l'éditeur : rayon, épaisseur, conique et, avec « Asphères », A4…A10.</div>
       <div class="oscroll" id="ovars"></div>
       <div class="row"><button class="bt" data-d="ovclear" title="Retire toutes les variables (V) du système">Tout libérer</button></div>
+      ${optGlassHTML()}
       <h4 class="th4">Critère de qualité image</h4>
       <div class="row"><select class="in grow" id="mfImg"><option value="SPOT" ${mf.image === 'SPOT' ? 'selected' : ''}>Spot RMS (barycentre)</option><option value="WFE" ${mf.image === 'WFE' ? 'selected' : ''}>Front d'onde RMS</option><option value="NONE" ${mf.image === 'NONE' ? 'selected' : ''}>Aucun (opérandes seuls)</option></select></div>
       <div class="row"><label style="flex:none">Longueurs d'onde</label><select class="in grow" id="mfWl">${wlOpts.map(([k, l]) => `<option value="${k}" ${wsel === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
@@ -5098,13 +5142,56 @@ function openOptim() {
     <button class="bt" data-d="stop">Arrêter</button>
     <button class="bt" data-d="glob" title="Perturbe aléatoirement les variables puis optimise, plusieurs fois, et garde le meilleur résultat">Recherche globale</button>
     <button class="tb pri" data-d="run">▶ Optimiser</button></div>`, true, { w: 1120, h: 720 });
-  if (!OPT.running) { const r = OE.residuals(s); OPT.hist = r ? [OE.meritOf(r.f)] : []; }
+  if (!OPT.running) { const r = OE.residuals(s), m = r ? OE.meritOf(r.f) : NaN; if (!wasOpen || !OPT.hist.length) OPT.hist = isFinite(m) ? [m] : []; else if (isFinite(m) && m !== OPT.hist[OPT.hist.length - 1]) OPT.hist.push(m); }
   optLive();
+}
+/** section « verres variables » de la fenêtre d'optimisation */
+function optGlassHTML() {
+  const s = App.sys, G = s.surfaces.map((x, j) => [x, j]).filter(([x, j]) => x.vg && j > 0 && j < s.surfaces.length - 1);
+  const g = { cats: null, pref: false, k: 6, passes: 2, ...(s.merit.gsub || {}) }, all = OE.cats(), on = new Set(g.cats && g.cats.length ? g.cats : all);
+  const hasR = (s.merit.ops || []).some(o => o.type === 'RGLA');
+  return `<h4 class="th4">Verres variables (${G.length})</h4>
+    ${G.length ? `<table class="mt" style="font-size:12px">${G.map(([x, j]) => { const m = OE.parseModel(x.glass), near = m ? OE.glassNearest(m.nd, m.vd, { ...g, k: 1 })[0] : null;
+      return `<tr><td>S${j}</td><td style="font-family:var(--mono)">${esc(x.glass)}</td><td class="hint">${m ? `modèle · proche ${near ? `${esc(near.name)} (${fx(near.d, 2)})` : '—'}` : 'réel'}</td></tr>`; }).join('')}</table>` : '<div class="hint">Bouton <b>V</b> de la colonne Verre : le verre devient un verre modèle (nd, νd variables).</div>'}
+    <div class="hint" style="margin-top:4px">Catalogues de substitution</div>
+    <div class="chips">${all.map(c => `<label class="ck" style="margin:0 8px 0 0"><input type="checkbox" data-gs="cat" value="${esc(c)}" ${on.has(c) ? 'checked' : ''}> ${esc(c)}</label>`).join('')}</div>
+    <label class="ck"><input type="checkbox" data-gs="pref" ${g.pref ? 'checked' : ''}> verres préférentiels seulement</label>
+    <div class="row"><span class="hint">candidats / surface</span><input class="in" data-gs="k" value="${g.k}" style="width:44px"><span class="hint">passes</span><input class="in" data-gs="passes" value="${g.passes}" style="width:36px"></div>
+    <div class="row" style="flex-wrap:wrap"><button class="bt" data-d="gsub" ${G.length ? '' : 'disabled'} title="Remplace chaque verre variable par le verre réel qui donne la meilleure fonction de mérite (réoptimisation à chaque essai)">Substituer par des verres réels</button>${hasR ? '' : '<button class="bt" data-d="grgla" title="Ajoute l\'opérande RGLA : garde les verres modèles près des verres existants">+ Opérande RGLA</button>'}</div>`;
+}
+/** substitution : chaque verre variable est remplacé par le meilleur verre réel parmi ses voisins dans le diagramme nd/νd */
+async function runSubst() {
+  if (OPT.running) return; const s0 = App.sys, g = { cats: null, pref: false, k: 6, passes: 2, ...(s0.merit.gsub || {}) };
+  const J = s0.surfaces.map((x, j) => j).filter(j => s0.surfaces[j].vg && j > 0 && j < s0.surfaces.length - 1); if (!J.length) return;
+  OPT.snap = toJSON(App.sys); OPT.x0 = optSnapVars(App.sys); OPT.running = true; const msg = t => { const o = $('#omsg'); if (o) o.textContent = t; };
+  let best = structuredClone(s0), bm = Infinity; const log = [];
+  try {
+    for (let p = 0; p < g.passes && OPT.running; p++) {
+      let changed = false;
+      for (const j of J) {
+        if (!OPT.running) break;
+        const cur = best.surfaces[j].glass, m = OE.parseModel(cur), gi = m || OE.glassInfo(cur);
+        const cands = OE.glassNearest(gi.nd, gi.vd, { ...g, k: g.k }).map(c => c.name); if (!m && !cands.includes(OE.glassKey(cur) || cur)) cands.unshift(cur);
+        if (!cands.length) { msg('Aucun verre dans les catalogues choisis'); break; }
+        let pick = null;
+        for (let c = 0; c < cands.length && OPT.running; c++) {
+          msg(`Substitution — passe ${p + 1}/${g.passes} · S${j} : essai ${c + 1}/${cands.length} (${cands[c]})`); await tick();
+          const r = OE.subTry(best, j, cands[c], 12); if (!pick || r.m < pick.m) pick = { ...r, name: cands[c] };
+          OPT.hist.push(Math.min(bm, pick.m)); if ($('#mchart')) drawMerit();
+        }
+        if (pick && (m || pick.m < bm * (1 - 1e-9))) { if (pick.name !== cur) { log.push(`S${j} : ${cur} → ${pick.name}`); changed = true; } best = pick.sys; bm = pick.m; App.sys = structuredClone(best); App.M = OE.prepare(App.sys); renderLDE(); drawLayout(); if ($('#ovars')) optLive(); }
+      }
+      if (!changed && p > 0) break;
+    }
+  } finally {
+    OPT.running = false; App.sys = best; pushHist(); refresh({ fast: true });
+    if ($('#ovars')) openOptim(); const t = `Substitution terminée${isFinite(bm) ? ` — mérite ${bm.toExponential(4)}` : ''}${log.length ? ' · ' + log.join(' · ') : ' · aucun changement'}`; msg(t); toast(t, 6000);
+  }
 }
 /** valeurs des variables (pour afficher l'écart depuis le début) */
 function optSnapVars(s) { const o = {}; for (const v of OE.getVars(s)) o[v.kind + v.si] = optVarVal(s, v); return o; }
-function optVarVal(s, v) { const x = s.surfaces[v.si]; return v.kind === 'c' ? x.r : v.kind === 't' ? x.t : v.kind === 'k' ? (x.k || 0) : (+x[v.kind] || 0); }
-const optVarLab = v => v.kind === 'c' ? `R${v.si}` : v.kind === 't' ? `T${v.si}` : v.kind === 'k' ? `K${v.si}` : `${v.kind.toUpperCase()} S${v.si}`;
+function optVarVal(s, v) { const x = s.surfaces[v.si]; if (v.kind === 'nd' || v.kind === 'vd') return (OE.parseModel(x.glass) || {})[v.kind]; return v.kind === 'c' ? x.r : v.kind === 't' ? x.t : v.kind === 'k' ? (x.k || 0) : (+x[v.kind] || 0); }
+const optVarLab = v => v.kind === 'c' ? `R${v.si}` : v.kind === 't' ? `T${v.si}` : v.kind === 'k' ? `K${v.si}` : v.kind === 'nd' ? `nd S${v.si}` : v.kind === 'vd' ? `νd S${v.si}` : `${v.kind.toUpperCase()} S${v.si}`;
 /** met à jour variables, valeurs des opérandes, contributions et courbe de mérite */
 function optLive() {
   const s = App.sys, vars = OE.getVars(s), r = OE.residuals(s), x0 = OPT.x0 || {};
@@ -5194,6 +5281,9 @@ function setupDlg() {
     if (t.id === 'mfImg') { commit(s => s.merit.image = t.value, { fast: false }); openOptim(); }
     if (t.id === 'mfWl') { commit(s => s.merit.wl = t.value === 'all' ? 'all' : /^\d+$/.test(t.value) ? +t.value : t.value, { fast: false }); openOptim(); }
     if (t.id === 'maxIt') OPT.maxIt = Math.max(1, parseInt(t.value) || 100);
+    if (t.dataset.gs) { const k = t.dataset.gs; commit(s => { const g = s.merit.gsub = { cats: null, pref: false, k: 6, passes: 2, ...(s.merit.gsub || {}) };
+      if (k === 'cat') { const all = OE.cats(), cur = new Set(g.cats && g.cats.length ? g.cats : all); t.checked ? cur.add(t.value) : cur.delete(t.value); g.cats = cur.size === all.length ? null : [...cur]; }
+      else if (k === 'pref') g.pref = t.checked; else g[k] = Math.max(1, Math.min(k === 'k' ? 30 : 5, parseInt(t.value) || g[k])); }); openOptim(); }
     if (t.id === 'gCyc') OPT.gCyc = Math.max(1, Math.min(200, parseInt(t.value) || 10));
     if (t.id === 'gAmp') OPT.gAmp = Math.max(1, Math.min(100, parseFloat(String(t.value).replace(',', '.')) || 20));
     if (t.dataset.o) { const i = +t.dataset.i, k = t.dataset.o; commit(s => { const o = s.merit.ops[i]; if (k === 'type') { o.type = t.value; delete o.cmp; const d = OE.OPS[t.value]; if (d.p) o.p = o.p ?? d.pdef; else delete o.p; } else if (k === 'cmp') o.cmp = t.value; else o[k] = parseFloat(String(t.value).replace(',', '.')) || 0; }); openOptim(); }
@@ -5223,7 +5313,9 @@ function setupDlg() {
     if (a === 'run') runOpt();
     if (a === 'glob') runGlobal();
     if (a === 'oqf') quickFocusUI();
-    if (a === 'ovclear') { commit(s => s.surfaces.forEach(x => { x.vr = x.vt = x.vk = false; for (const k of ['a4', 'a6', 'a8', 'a10']) x['v' + k] = false; })); OPT.x0 = null; openOptim(); }
+    if (a === 'ovclear') { commit(s => s.surfaces.forEach(x => { x.vr = x.vt = x.vk = x.vg = false; for (const k of ['a4', 'a6', 'a8', 'a10']) x['v' + k] = false; })); OPT.x0 = null; openOptim(); }
+    if (a === 'gsub') runSubst();
+    if (a === 'grgla') { commit(s => { s.merit.ops.push({ type: 'RGLA', target: 0, weight: 0.002, cmp: 'le' }); }); openOptim(); }
     if (a === 'stop') { OPT.running = false; }
     if (a === 'revert') { if (OPT.snap) { OPT.running = false; App.sys = fromJSON(OPT.snap); pushHist(); refresh(); OPT.x0 = optSnapVars(App.sys); toast('État initial restauré'); openOptim(); } }
     if (a === 'copy') { const ta = $('#dlg textarea'); navigator.clipboard?.writeText(ta.value).then(() => toast('Copié dans le presse-papiers'), () => { ta.select(); toast('Sélectionné — Ctrl+C pour copier'); }); }
@@ -5269,8 +5361,10 @@ async function runGlobal() {
   for (let c = 0; c < cyc && OPT.running; c++) {
     const s = structuredClone(best);
     for (const v of OE.getVars(s)) { const g = 2 * Math.random() - 1, x = (() => { const o = s.surfaces[v.si]; return v.kind === 'c' ? OE.curv(o) : v.kind === 't' ? o.t : v.kind === 'k' ? (o.k || 0) : (+o[v.kind] || 0); })();
+      const o = s.surfaces[v.si];
+      if (v.kind === 'nd' || v.kind === 'vd') { const m = OE.parseModel(o.glass); if (m) { m[v.kind] += v.kind === 'nd' ? amp * g * 0.3 : amp * g * 40; o.glass = OE.fmtModel(Math.min(2.2, Math.max(1.35, m.nd)), Math.min(100, Math.max(15, m.vd))); } continue; }
       const nx = v.kind === 'c' ? x * (1 + amp * g) + (Math.abs(x) < 1e-6 ? amp * g * 0.01 : 0) : v.kind === 't' ? Math.sign(x || 1) * Math.max(0.05, Math.abs(x) * (1 + amp * g)) : v.kind === 'k' ? x + amp * g * 2 : x * (1 + amp * g);
-      const o = s.surfaces[v.si]; if (v.kind === 'c') o.r = Math.abs(nx) < 1e-12 ? Infinity : 1 / nx; else if (v.kind === 't') o.t = nx; else if (v.kind === 'k') o.k = nx; else o[v.kind] = nx; }
+      if (v.kind === 'c') o.r = Math.abs(nx) < 1e-12 ? Infinity : 1 / nx; else if (v.kind === 't') o.t = nx; else if (v.kind === 'k') o.k = nx; else o[v.kind] = nx; }
     const st = { sys: s, mu: 1e-3 }; const m = await run(st);
     if (isFinite(m) && m < bm * (1 - 1e-6)) { bm = m; best = st.sys; improved++; App.sys = structuredClone(best); App.M = OE.prepare(App.sys); renderLDE(); drawLayout(); }
     OPT.hist.push(bm); if ($('#mval')) { optLive(); $('#mit').textContent = `cycle ${c + 1} / ${cyc}`; $('#omsg').textContent = `Recherche globale : cycle ${c + 1} / ${cyc} — ${improved} amélioration(s)`; }

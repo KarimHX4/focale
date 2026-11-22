@@ -107,4 +107,15 @@ const P = []; OE.ray(M, 1, 20, 0, 1, { pts: P }); near('Visée réelle sur diaph
   const p = S['Lentille plan-convexe f=100'](); p.wavelengths = [{ um: 0.5875618, w: 1 }]; p.primary = 0; p.fields = [{ y: 0 }]; p.surfaces[1].va4 = true; p.merit = { image: 'WFE', ops: [] };
   const m0 = OE.meritOf(OE.residuals(p).f), sp = { sys: p, mu: 1e-3 }; for (let i = 0; i < 30; i++) if (OE.optStep(sp).done) break;
   near('Variable A4 : la sphérique est réduite d\'au moins 90 %', OE.meritOf(OE.residuals(sp.sys).f) / m0 < 0.1 ? 1 : 0, 1, 0); }
+// Verres variables : verre modèle, RGLA, substitution
+{ const d = S['Doublet achromatique f=100'](); d.surfaces[2].glass = OE.toModel('N-SF5'); d.surfaces[2].vg = true; [1, 2, 3].forEach(j => d.surfaces[j].vr = true);
+  near('Verre modèle : nd de N-SF5 conservé', OE.parseModel(d.surfaces[2].glass).nd, 1.67271, 2e-5);
+  near('Variables nd et νd ajoutées', OE.getVars(d).filter(v => v.kind === 'nd' || v.kind === 'vd').length, 2, 0);
+  d.merit = { image: 'SPOT', wl: 'all', ops: [{ type: 'EFL', target: 100, weight: 1 }, { type: 'AXCL', target: 0, weight: 5 }, { type: 'RGLA', target: 0, weight: 0.002 }] };
+  const st = { sys: d, mu: 1e-3 }; for (let i = 0; i < 80; i++) if (OE.optStep(st).done) break;
+  near('Verre modèle optimisé : chromatisme axial annulé (µm)', OE.opValue(OE.prepare(st.sys), { type: 'AXCL' }).val * 1e3, 0, 0.5);
+  const m = OE.parseModel(st.sys.surfaces[2].glass), c = OE.glassNearest(m.nd, m.vd, { k: 6 }); let best = null; for (const g of c) { const r = OE.subTry(st.sys, 2, g.name, 12); if (!best || r.m < best.m) best = { ...r, g: g.name }; }
+  near('Substitution : verre réel du catalogue', OE.glassRecord(best.sys.surfaces[2].glass) ? 1 : 0, 1, 0);
+  near('Substitution : chromatisme axial < 5 µm', Math.abs(OE.opValue(OE.prepare(best.sys), { type: 'AXCL' }).val * 1e3) < 5 ? 1 : 0, 1, 0);
+  near('Catalogue filtré (préférentiels Schott)', OE.glassNearest(1.5168, 64.17, { cats: ['SCHOTT'], pref: true, k: 50 }).every(g => g.cat === 'SCHOTT') ? 1 : 0, 1, 0); }
 console.log(fail ? `${fail} échec(s)` : 'Tous les tests passent'); process.exit(fail ? 1 : 0);

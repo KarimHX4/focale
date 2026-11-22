@@ -109,10 +109,11 @@ table.lde{border-collapse:separate;border-spacing:0;width:max-content;min-width:
 .ty .b.mi{background:#374151;color:#e5e7eb}
 .cell{display:flex;align-items:center;gap:2px;padding:0 3px}
 .lde input{border:1px solid transparent;background:transparent;height:23px;padding:0 5px;border-radius:5px;font-family:var(--mono);font-size:12px;width:84px}
-.lde select.el{border:1px solid transparent;background:transparent;height:23px;border-radius:5px;font-size:12px;padding:0 2px;max-width:104px;cursor:pointer}
+.lde select.el{border:1px solid transparent;background:transparent;height:23px;border-radius:5px;font-size:12px;padding:0 2px;max-width:96px;cursor:pointer}
 .lde select.el:hover{border-color:var(--line)}
-.lde input.c{font-family:inherit;width:96px}
-.lde input.g{width:88px}
+.lde input.c{font-family:inherit;width:84px}
+.lde input.g{width:96px}
+.lde input.g.model{color:var(--acc);font-style:italic}
 .lde input:hover{border-color:var(--line)}
 .lde input:focus{border-color:var(--acc);background:var(--panel);outline:none}
 .lde input.auto{color:var(--mut);font-style:italic}
@@ -193,6 +194,7 @@ table.ht{border-collapse:collapse;width:100%;font-size:12.5px}table.ht td,table.
 .vars{display:flex;flex-wrap:wrap;gap:5px;margin:4px 0 10px}
 .ogrid{display:grid;grid-template-columns:minmax(300px,360px) minmax(0,1fr);gap:18px;flex:1;min-height:0}
 .oL,.oR{display:flex;flex-direction:column;min-height:0;min-width:0}
+.oL{overflow:auto;padding-right:4px}
 .oscroll{overflow:auto;border:1px solid var(--line);border-radius:8px;margin:4px 0;min-height:60px;max-height:100%;flex:0 1 auto}
 .oR .oscroll{flex:1 1 auto}
 table.otab select.in{max-width:210px}
