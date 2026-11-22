@@ -306,7 +306,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 <div class="toast" id="toast"></div>
 <input type="file" id="fileIn" accept=".json,.zmx,.seq,.txt,.agf" style="display:none">
 <div class="drop" id="drop">Déposez un fichier .zmx, .seq, .json ou .agf</div>
-<script>const FOCALE_VERSION = '21eeee19';</script>
+<script>const FOCALE_VERSION = 'a90c4f04';</script>
 <script>
 'use strict';
 /* =====================================================================
@@ -3119,7 +3119,8 @@ const HELP = [
 <h4>Réglages de compréhension (⚙)</h4>
 <p>Le panneau ⚙ est compact (moteur, modèle Ollama avec « Tester », modèle du navigateur avec « Charger ») ; les options et l'aide à l'installation sont repliées sous « Options et installation ». Il se referme à l'envoi d'un message.</p>
 <ul><li><b>Demandes simples traitées par les règles</b> (activé par défaut) : une demande courte reconnue sans ambiguïté (« verre de la 2e lentille en N-SF11 », « f/4 », « quick focus »…) est exécutée immédiatement, sans attendre le modèle ; la ligne grise indique alors « règles (instantané) ». Les phrases plus libres ou composées (« puis », « pour que »…) vont au modèle.</li>
-<li><b>Appel d'outils natif</b> (Ollama, activé par défaut) : chaque action est décrite au modèle comme une fonction avec ses paramètres typés, format pour lequel Qwen3 est entraîné — plus fiable qu'un JSON libre pour un petit modèle. Les nombres renvoyés en texte (« 120 », « f/4 ») sont corrigés automatiquement. Décocher pour revenir au mode JSON contraint (utile avec un modèle qui ne gère pas les outils ; bascule automatique dans ce cas).</li>
+<li><b>Appel d'outils natif</b> (Ollama, activé par défaut) : chaque action est décrite au modèle comme une fonction avec ses paramètres typés, format pour lequel Qwen3 est entraîné — plus fiable qu'un JSON libre pour un petit modèle. Les nombres renvoyés en texte (« 120 », « f/4 ») sont corrigés automatiquement. Décocher pour revenir au mode JSON contraint (utile avec un modèle qui ne gère pas les outils ; bascule automatique dans ce cas). Si le modèle répond seulement par du texte (« Compris : … ») sans appeler d'outil, Focale le <b>relance une fois</b> en lui demandant d'exécuter les actions ; une réponse terminée par « ? » est traitée comme une question.</li>
+<li>Les contraintes s'expriment simplement : « épaisseur minimale des verres 5 mm » (MNCT ≥ 5), « épaisseur maximale… » (MXCT), « espace d'air minimum 0,5 mm » (MNCA), « … au bord » (MNET, MNEA), « longueur totale inférieure à 120 mm » (TTL ≤ 120). Elles s'appliquent à toutes les lentilles ; pour fixer l'épaisseur d'une lentille précise, demandez-la directement (« épaisseur S1 = 5 »).</li>
 <li>Pour une meilleure compréhension, <code>qwen3:8b</code> est nettement plus capable que <code>qwen3:4b-instruct</code>, au prix d'une réponse plus lente sans carte graphique.</li></ul>
 <p>Rien n'est envoyé sur Internet. Sur un PC sans carte graphique, une réponse d'Ollama prend de quelques secondes à une minute selon le modèle.</p>
 <h4>Module facultatif</h4>

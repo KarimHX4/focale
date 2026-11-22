@@ -1,4 +1,4 @@
-/* Focale 21eeee19 — module assistant facultatif */
+/* Focale a90c4f04 — module assistant facultatif */
 /* Focale — assistant en langage naturel (module FACULTATIF, chargé à la demande).
    Le logiciel fonctionne sans ce fichier. Moteurs : Ollama (local), WebLLM (dans le navigateur, WebGPU) ou règles (sans IA).
    Le modèle ne calcule rien : il traduit la demande en actions de Focale ; les calculs optiques restent ceux du moteur. */
@@ -180,7 +180,7 @@
     set_wavelengths: [{ preset: T_('jeu prédéfini', ['FdC', 'visible', 'HeNe', 'NIR', 'd', 'e']), values_nm: { type: 'array', items: { type: 'number' }, description: 'longueurs d\'onde en nm' }, primary: I_('numéro de la λ primaire (1…)') }, []],
     set_stop: [{ s: I_('surface du diaphragme') }, ['s']],
     set_variables: [{ targets: { type: 'array', items: { type: 'string' }, description: 'mots-clés radii | thicknesses | air | glasses | all, ou paramètres précis "R1", "T2", "K3", "G2" (G = verre)' }, clear: B_('retirer d\'abord toutes les variables') }, ['targets']],
-    set_merit: [{ criterion: T_('critère image', ['SPOT', 'WFE', 'NONE']), wavelength: T_('longueurs d\'onde du critère : all, central, primary ou un numéro'), operands: { type: 'array', description: 'contraintes', items: { type: 'object', properties: { type: T_('code', Object.keys(OE.OPS)), target: N_('cible'), weight: N_('poids'), cmp: T_('eq (=), ge (≥), le (≤)', ['eq', 'ge', 'le']), p: N_('paramètre (fréquence pour MTFA)') }, required: ['type', 'target'] } }, replace: B_('remplacer les opérandes existants') }, []],
+    set_merit: [{ criterion: T_('critère image', ['SPOT', 'WFE', 'NONE']), wavelength: T_('longueurs d\'onde du critère : all, central, primary ou un numéro'), operands: { type: 'array', description: 'contraintes : EFL focale, TTL longueur totale, BFL distance image, WFNO F/#, PMAG grandissement, DIST distorsion %, AXCL chromatisme axial, LACL chromatisme latéral, SPHA/COMA/ASTI/FCUR aberrations de Seidel (λ), MNCT épaisseur MIN des verres au centre, MXCT épaisseur MAX des verres, MNET épaisseur min des verres au bord, MNCA espace d\'air min, MXCA espace d\'air max, MNEA air min au bord, MTFA FTM à une fréquence p', items: { type: 'object', properties: { type: T_('code', Object.keys(OE.OPS)), target: N_('cible'), weight: N_('poids'), cmp: T_('eq (=), ge (≥), le (≤)', ['eq', 'ge', 'le']), p: N_('paramètre (fréquence pour MTFA)') }, required: ['type', 'target'] } }, replace: B_('remplacer les opérandes existants') }, []],
     optimize: [{ iterations: I_('itérations maximum') }, []],
     substitute_glasses: [{ catalogs: { type: 'array', items: { type: 'string' }, description: 'catalogues : SCHOTT, OHARA, CDGM, HOYA' }, preferred: B_('verres préférentiels seulement') }, []],
     quick_focus: [{ criterion: T_('critère', ['SPOT', 'WFE']), wavelength: T_('central, primary, all ou un numéro') }, []],
@@ -245,6 +245,8 @@ Appelle les outils nécessaires, dans l'ordre, avec des valeurs numériques. Tu 
 - Unités : mm ; champs en degrés si l'objet est à l'infini ; longueurs d'onde en nm ; face plane = "inf".
 - « optimise » : set_variables (si aucune variable) puis éventuellement set_merit, puis optimize.
 - « focale de X mm » sur le système existant = set_merit avec l'opérande EFL ; « crée/fais un doublet » = design_doublet ; « une lentille simple » = design_singlet.
+- Contraintes (« épaisseur minimale des verres 5 mm », « longueur totale < 120 mm », « pas de chromatisme ») : set_merit avec l'opérande correspondant (MNCT ≥ 5, TTL ≤ 120, AXCL = 0) ; elles s'appliquent à toutes les lentilles. Pour fixer l'épaisseur d'une lentille précise : set_surface sur sa première surface.
+- Chaque action DOIT passer par un appel d'outil : n'écris jamais que tu fais quelque chose sans appeler l'outil.
 - Si la demande est ambiguë ou qu'il manque une valeur indispensable, appelle seulement ask_question.`;
   const SCHEMA = { type: 'object', properties: { message: { type: 'string' }, actions: { type: 'array', items: { type: 'object', properties: { tool: { type: 'string', enum: Object.keys(TOOLS) }, args: { type: 'object' } }, required: ['tool', 'args'] } }, question: { type: 'string' } }, required: ['message', 'actions', 'question'] };
   function buildMessages(text, tools) {
@@ -275,10 +277,18 @@ Appelle les outils nécessaires, dans l'ordre, avec des valeurs numériques. Tu 
     let res = await fetch(url + '/api/chat', { method: 'POST', body: JSON.stringify(body), signal: A.abort.signal });
     if (res.status === 400 && body.think === false) { delete body.think; res = await fetch(url + '/api/chat', { method: 'POST', body: JSON.stringify(body), signal: A.abort.signal }); }
     if (!res.ok) { const t = await res.text(); const e = new Error(`Ollama : HTTP ${res.status} ${t.slice(0, 200)}`); e.noTools = /does not support tools/i.test(t); throw e; }
-    const j = await res.json(), msg = j.message || {}, calls = msg.tool_calls || [];
+    let j = await res.json(), msg = j.message || {}, calls = msg.tool_calls || [];
     let content = String(msg.content || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+    // le modèle a répondu en texte sans appeler d'outil : une relance qui le lui demande explicitement
+    if (!calls.length && content && !/\?\s*$/.test(content) && !/^\s*\{/.test(content) && !A.stop) {
+      status('Le modèle n\'a appelé aucun outil : relance', true);
+      body.messages = [...body.messages, { role: 'assistant', content }, { role: 'user', content: 'Exécute maintenant exactement cela en appelant les outils correspondants (appels d\'outils uniquement, sans texte).' }];
+      const r2 = await fetch(url + '/api/chat', { method: 'POST', body: JSON.stringify(body), signal: A.abort.signal });
+      if (r2.ok) { const j2 = await r2.json(), m2 = j2.message || {}; if ((m2.tool_calls || []).length) { calls = m2.tool_calls; } }
+    }
     if (!calls.length && /^\s*\{[\s\S]*"actions"/.test(content)) { try { return { rep: parseReply(content), by: `Ollama · ${model}` }; } catch (e) { } }
     const rep = { message: content, question: '', actions: [] };
+    if (!calls.length && /\?\s*$/.test(content)) return { rep: { message: '', question: content, actions: [] }, by: `Ollama · ${model} · outils` };
     for (const c of calls) { const f = c.function || {}; let a = f.arguments || {}; if (typeof a === 'string') { try { a = JSON.parse(a); } catch (e) { a = {}; } }
       if (f.name === 'ask_question') rep.question = String(a.question || ''); else rep.actions.push({ tool: String(f.name), args: a }); }
     if (rep.question) rep.actions = [];
@@ -357,6 +367,11 @@ Appelle les outils nécessaires, dans l'ordre, avec des valeurs numériques. Tu 
     if ((m = t.match(new RegExp(`(?:diaphragme|stop)\\s*(?:sur|en|a|:)?\\s*(?:la\\s*)?(?:surface|s)\\s*(\\d+)`)))) acts.push({ tool: 'set_stop', args: { s: +m[1] } });
     if (/champ/.test(t) && (m = t.match(/champs?\s*(?:de|=|a|:|max(?:imal|imum)?)?\s*((?:±?\s*-?\d+(?:[.,]\d+)?\s*°?\s*(?:,|;|et|\s)\s*)*±?\s*-?\d+(?:[.,]\d+)?)\s*(°|deg|mm)?/))) { const v = m[1].match(/-?\d+(?:[.,]\d+)?/g).map(toN); acts.push({ tool: 'set_fields', args: v.length === 1 ? { max: v[0] } : { values: v } }); }
     if (/(longueur|lambda|λ)/.test(t)) { if (/visible/.test(t)) acts.push({ tool: 'set_wavelengths', args: { preset: 'visible' } }); else if (/(he-?ne|632)/.test(t)) acts.push({ tool: 'set_wavelengths', args: { preset: 'HeNe' } }); else if (/(f\s*,?\s*d\s*,?\s*c|fdc)/.test(t)) acts.push({ tool: 'set_wavelengths', args: { preset: 'FdC' } }); else if (/(infrarouge|nir|proche ir)/.test(t)) acts.push({ tool: 'set_wavelengths', args: { preset: 'NIR' } }); else if ((m = t.match(/(\d{3,4}(?:[.,]\d+)?)(?:\s*(?:,|et)\s*(\d{3,4}(?:[.,]\d+)?))*\s*nm/g))) { const v = m.join(' ').match(/\d{3,4}(?:[.,]\d+)?/g).map(toN); acts.push({ tool: 'set_wavelengths', args: { values_nm: v } }); } }
+    if ((m = t.match(new RegExp(`(?:epaisseur|espace|air)s?\\s*(?:d air\\s*)?(minimum|minimale|minimales|min|maximum|maximale|maximales|max)\\b[^0-9]*${NUM}`))) && !/\blentilles?\s*(l?\d|premiere|deuxieme|troisieme|derniere)/.test(t)) {
+      const mx = /^max/.test(m[1]), air = /(air|espace)/.test(t), edge = /bord/.test(t);
+      const type = air ? (edge ? 'MNEA' : mx ? 'MXCA' : 'MNCA') : (edge ? (mx ? 'MXET' : 'MNET') : (mx ? 'MXCT' : 'MNCT'));
+      acts.push({ tool: 'set_merit', args: { operands: [{ type, target: toN(m[2]), cmp: mx ? 'le' : 'ge', weight: 1 }] } });
+    }
     if ((m = t.match(new RegExp(`(?:focale|efl)\\s*(?:=|de|a|:)?\\s*${NUM}`))) && !/(quelle|combien)/.test(t)) acts.push({ tool: 'set_merit', args: { operands: [{ type: 'EFL', target: toN(m[1]) }] } });
     if ((m = t.match(new RegExp(`(?:longueur totale|ttl|encombrement)\\s*(?:<|<=|inferieur\\w*\\s*a|max\\w*|de|=)?\\s*${NUM}`)))) acts.push({ tool: 'set_merit', args: { operands: [{ type: 'TTL', target: toN(m[1]), cmp: /(<|inferieur|max)/.test(t) ? 'le' : 'eq' }] } });
     if (/(achromat|chromatisme)/.test(t) && /(corrige|annule|supprime|reduis|minimis)/.test(t)) acts.push({ tool: 'set_merit', args: { operands: [{ type: 'AXCL', target: 0, weight: 5 }] } });
