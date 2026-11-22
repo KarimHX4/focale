@@ -203,20 +203,33 @@ async function genReport() {
       await renderAn({ type: 'source', fi: 0, pix: false }, 'Image de la source');
     }
     // ---------------- tolérancement ----------------
-    if (cf.sec.tol && (TOL.sens || TOL.mc)) {
+    if (cf.sec.tol && (TOL.sens || TOL.mc || TOL.inv)) {
       await step('Tolérancement…'); h1('Tolérancement');
+      const C0 = (TOL.sens || TOL.mc || TOL.inv).c;
+      para(`Critère : ${tolCritLabel(C0)} · compensateurs : ${tolCompLabel(C0)}. Puissance et irrégularité en franges à 632,8 nm sur l'ouverture utile ; Δ > 0 = dégradation.`);
       if (TOL.sens) {
-        const Sx = TOL.sens, u = tolUnit(Sx.c.crit), rows = Sx.rows.map(r => ({ r, dp: r.cp - Sx.B.nominal, dm: r.cm - Sx.B.nominal })).map(o => ({ ...o, w: Math.max(o.dp, o.dm) })).sort((a, b) => b.w - a.w);
-        const rss = Sx.B.nominal + Math.sqrt(rows.reduce((a, o) => a + Math.max(0, o.w) ** 2, 0));
-        para(`Critère : ${Sx.c.crit === 'SPOT' ? 'spot RMS (µm)' : 'front d\'onde RMS (λ)'} · compensateur : ${Sx.c.comp ? 'mise au point' : 'aucun'} · nominal ${fx(Sx.B.nominal, 4)} ${u} · estimation RSS ${fx(rss, 4)} ${u}.`);
-        h2('Sensibilités (20 plus fortes)');
-        table([{ t: 'Tolérance', w: CW - 270 }, { t: 'Valeur', w: 70, a: 'right', mono: true }, { t: 'Δ (+)', w: 100, a: 'right', mono: true }, { t: 'Δ (−)', w: 100, a: 'right', mono: true }], rows.slice(0, 20).map(o => [o.r.it.label, '±' + o.r.it.tol, fx(o.dp, 4), fx(o.dm, 4)]));
+        const Sx = TOL.sens, u = tolUnit(Sx.c.crit), rows = Sx.rows.map(r => ({ r, w: Math.max(r.lo ? r.lo.d : -Infinity, r.hi ? r.hi.d : -Infinity), b: Math.max(r.lo ? r.lo.bore : 0, r.hi ? r.hi.bore : 0) })).sort((a, b) => b.w - a.w);
+        const rss = Math.sqrt(rows.reduce((a, o) => a + Math.max(0, o.w) ** 2, 0)), est = OE.TOLC[Sx.c.crit].up ? Sx.B.nominal - rss : Sx.B.nominal + rss;
+        kv([['Nominal' + (Sx.c.comp ? ' (compensé)' : ''), `${fx(Sx.B.nominal, 4)} ${u}`], ['Estimation RSS', `${fx(est, 4)} ${u}`], ['Dégradation RSS', `${fx(rss, 4)} ${u}`], ...(Sx.c.comp ? [['Mise au point nominale', `${fx(Sx.B.focus * 1e3, 1)} µm`]] : []), ['Tolérances analysées', String(rows.length)]]);
+        h2(`Sensibilités (${Math.min(25, rows.length)} plus fortes)`, 140);
+        table([{ t: 'Tolérance', w: CW - 330 }, { t: 'Min', w: 60, a: 'right', mono: true }, { t: 'Max', w: 60, a: 'right', mono: true }, { t: 'Δ (min)', w: 70, a: 'right', mono: true }, { t: 'Δ (max)', w: 70, a: 'right', mono: true }, { t: 'Visée µm', w: 70, a: 'right', mono: true }],
+          rows.slice(0, 25).map(o => [o.r.it.label, fmt(o.r.it.min, 4), fmt(o.r.it.max, 4), o.r.lo ? fx(o.r.lo.d, 4) : '—', o.r.hi ? fx(o.r.hi.d, 4) : '—', fx(o.b * 1e3, 1)]));
+      }
+      if (TOL.inv) {
+        const I = TOL.inv, u = tolUnit(I.c.crit);
+        h2('Tolérances inverses', 140);
+        para(`Δ admissible par tolérance : ${fx(I.dmax, 4)} ${u} (${I.c.invMode === 'item' ? 'valeur imposée' : `budget : cible ${fmt(I.c.invVal, 4)} ${u}, marge répartie en RSS sur ${I.rows.length} tolérances`}).`);
+        table([{ t: 'Tolérance', w: CW - 300 }, { t: 'Actuelle', w: 75, a: 'right', mono: true }, { t: 'Calculée', w: 75, a: 'right', mono: true }, { t: 'Proposée', w: 75, a: 'right', mono: true }, { t: 'Δ obtenu', w: 75, a: 'right', mono: true }],
+          I.rows.map(r => [r.it.label, '±' + fmt(r.it.tol, 4), (r.capped ? '> ±' : '±') + fmt(r.t, 4), '±' + fmt(r.tr, 3), fx(r.d, 4)]));
       }
       if (TOL.mc && TOL.mc.vals.length) {
-        const MC = TOL.mc, u = tolUnit(MC.c.crit), v = MC.vals, mean = v.reduce((a, b) => a + b, 0) / v.length;
-        h2(`Monte-Carlo (${v.length} tirages, distribution ${({ normal: 'gaussienne', uniform: 'uniforme', end: 'extrêmes' })[MC.c.dist]})`);
-        kv([['Moyenne', `${fx(mean, 4)} ${u}`], ['50 % des systèmes <', `${fx(pct(v, 0.5), 4)} ${u}`], ['80 % <', `${fx(pct(v, 0.8), 4)} ${u}`], ['90 % <', `${fx(pct(v, 0.9), 4)} ${u}`], ['98 % <', `${fx(pct(v, 0.98), 4)} ${u}`], ['Maximum', `${fx(Math.max(...v), 4)} ${u}`]]);
-        image(rptCanvas((c, w, h) => drawMC({ c, w, h }), 780, 300), 'Histogramme des tirages, courbe cumulée (orange) et valeur nominale (pointillés).');
+        const MC = TOL.mc, u = tolUnit(MC.c.crit), st = mcStats(MC);
+        h2(`Monte-Carlo (${MC.vals.length} tirages, distribution ${({ normal: 'gaussienne', uniform: 'uniforme', para: 'parabolique', end: 'extrêmes' })[MC.c.dist]}${MC.c.seed !== '' && MC.c.seed != null ? `, graine ${MC.c.seed}` : ''})`, 260);
+        kv([['Moyenne ± écart-type', `${fx(st.mean, 4)} ± ${fx(st.sd, 4)} ${u}`], ...[0.5, 0.8, 0.9, 0.95, 0.98].map(p => [`${p * 100} % des systèmes ${st.up ? '≥' : '≤'}`, `${fx(st.q(p), 4)} ${u}`]), ['Meilleur / pire', `${fx(st.up ? st.max : st.min, 4)} / ${fx(st.up ? st.min : st.max, 4)} ${u}`],
+          ...(st.yieldP != null ? [[`Rendement (spécification ${st.up ? '≥' : '≤'} ${fmt(st.spec, 4)} ${u})`, `${fx(100 * st.yieldP, 1)} %`]] : []), ...(MC.c.comp ? [['Course de mise au point', `${fx(Math.min(...MC.foc) * 1e3, 0)} … ${fx(Math.max(...MC.foc) * 1e3, 0)} µm`]] : [])]);
+        image(rptCanvas((c, w, h) => drawMC({ c, w, h }), 780, 320), 'Histogramme des tirages, fonction de répartition (orange, %), valeur nominale (pointillés) et spécification (rouge).');
+        const ctb = mcContrib(MC).slice(0, 10).filter(o => o.r2 > 0.005);
+        if (ctb.length) { h2('Principaux contributeurs (Monte-Carlo)', 120); table([{ t: 'Tolérance', w: CW - 120 }, { t: 'R² signé', w: 120, a: 'right', mono: true }], ctb.map(o => [o.it.label, fx(o.r2, 3)])); }
       }
     }
     // pieds de page

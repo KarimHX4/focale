@@ -23,8 +23,11 @@ Interface et commentaires en français. Unités : mm, longueurs d'onde en µm.
 - Décentrements par surface (dx, dy, dz, tx, ty, tz en °, dmode DEC | DAR | BEN, rotations X→Y→Z main droite) : `frames()` calcule le repère de chaque surface, le tracé réel se fait en coordonnées globales et `trace()` renvoie le rayon dans le repère local de l'image. Le paraxial ignore décentrements et bascules.
 - `sag(sf, x, y)` / `sGrad(sf, x, y)` : flèche et pente locales (partie de révolution + forme libre éventuelle).
 - Avant chaque commit : `node tests/engine.test.js` doit passer, puis `python3 build.py`.
-- Tolérancement (`TOLT`, `tolBase`, `tolItems`, `tolApply`, `criterion`, `bestFocus`) : système de base = solves figés + nominal au meilleur foyer ;
-  chaque tolérance est appliquée par décentrements DAR / champ `dn` (indice) ; compensateur = épaisseur avant l'image (encadrement + section dorée).
+- Tolérancement (engine : `TOLT` types TFRN/TRAD/TIRR/TCON/TTHI/TIND/TABB/TSD*/TST*/TED*/TET*, `TOLC` critères WFE/SPOT/MTF (MTF : `up`, plus grand = meilleur, `tolWorse`)) :
+  `tolBase` = solves figés + même compensation que les systèmes perturbés (`compensate` : variables V par `optStep` si `opts.vars`, puis `bestFocus` sur l'épaisseur avant l'image ; FTM → foyer au meilleur WFE).
+  Liste : `cfg.list` (personnalisée, {type, j, min, max, on}) sinon `tolGen` depuis `cfg.types` ; `tolItems` filtre par `tolApplicable` et ajoute l'ouverture utile `h` (franges à `LT` = 632,8 nm).
+  Application : décentrements DAR, `dn` (indice), `dv` (% sur νd, dispersion autour de nd dans `indices`), TFRN conversion exacte de flèche, TIRR → polynôme XY (ou Zernike) Δz = A(½ρ⁴ + ½ρy²).
+  `tolSens`, `tolInverse` (modèle Δ ∝ t^p), `tolTrial`/`tolRebuild` (tirages, `rng` mulberry32 pour la graine, `tolDraw` normal/uniform/para/end), `niceDown`. UI : `openTol`, `renderTolL`, `renderTolRes`, `mcStats`, `mcContrib`, `tolLoad`.
 - Verres : registre `glassRecord / addGlasses` (clé normalisée sans tirets ni espaces, suffixe `_CATALOGUE` pour lever les homonymies), formules refractiveindex.info `R2`/`R3` et Zemax AGF `A1`…`A13` dans `dispN`. `src/glasses.js` est généré : ne pas éditer à la main.
 - Surfaces de forme libre : `type` = STD | XY (`xy` : {"i,j": c}) | ZERN (`zc`[16], rayon `zr`) ; intersection par Newton ; ignorées par le paraxial et les Seidel.
 - Types d'éléments (`elem`) : '' (dioptre) | grating (`lpmm`, `gm`, `gang` ; réflexion si verre MIRROR) | ideal (`fid`, plan, puissance ajoutée au paraxial) | polarizer (`pang`) | waveplate (`ret` en ondes, `wang`). Traités dans `trace()` après l'intersection.

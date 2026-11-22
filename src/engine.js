@@ -169,7 +169,11 @@ const OE = (() => {
     let sg = 1;
     for (let j = 1; j < S.length; j++) {
       if (isMirror(S[j])) { sg = -sg; n[j] = sg * Math.abs(n[j - 1]); }
-      else n[j] = sg * (glassN(S[j].glass, l) + (isAir(S[j].glass) ? 0 : (+S[j].dn || 0)));
+      else {
+        let v = glassN(S[j].glass, l);
+        if (!isAir(S[j].glass)) { if (+S[j].dv) { const nd = glassN(S[j].glass, 0.5875618); v = nd + (v - nd) / (1 + S[j].dv / 100); } v += +S[j].dn || 0; }
+        n[j] = sg * v;
+      }
     }
     return n;
   }
@@ -1202,43 +1206,93 @@ const OE = (() => {
   }
 
   /* ---------------- Tolérancement ---------------- */
+  /** λ d'essai des franges (interféromètre He-Ne), mm */
+  const LT = 0.6328e-3;
+  /** types de tolérances (codes proches de Zemax) ; on = actif par défaut */
   const TOLT = {
-    TRAD: { label: 'Rayon', unit: '%', def: 0.2, desc: 'Variation relative du rayon de courbure' },
-    TTHI: { label: 'Épaisseur', unit: 'mm', def: 0.05, desc: 'Épaisseur ou espace d\'air' },
-    TIND: { label: 'Indice', unit: 'Δn', def: 0.0005, desc: 'Indice de réfraction du verre' },
-    TSDX: { label: 'Décentrement surface X', unit: 'mm', def: 0.02 }, TSDY: { label: 'Décentrement surface Y', unit: 'mm', def: 0.02 },
-    TSTX: { label: 'Bascule surface α', unit: '°', def: 0.02 }, TSTY: { label: 'Bascule surface β', unit: '°', def: 0.02 },
-    TEDX: { label: 'Décentrement élément X', unit: 'mm', def: 0.02 }, TEDY: { label: 'Décentrement élément Y', unit: 'mm', def: 0.02 },
-    TETX: { label: 'Bascule élément α', unit: '°', def: 0.02 }, TETY: { label: 'Bascule élément β', unit: '°', def: 0.02 },
+    TFRN: { label: 'Puissance', unit: 'fr', def: 3, on: true, desc: 'Écart de rayon exprimé en franges de Newton (λ = 632,8 nm) sur l\'ouverture utile : Δc = F·λ/h²' },
+    TRAD: { label: 'Rayon', unit: '%', def: 0.2, on: false, desc: 'Variation relative du rayon de courbure' },
+    TIRR: { label: 'Irrégularité', unit: 'fr', def: 1, on: true, desc: 'Défaut de forme en franges (PV = F·λ/2) : moitié sphérique, moitié astigmatisme' },
+    TCON: { label: 'Conique', unit: 'Δk', def: 0.01, on: true, desc: 'Constante de conicité (surfaces coniques ou asphériques seulement)' },
+    TTHI: { label: 'Épaisseur', unit: 'mm', def: 0.05, on: true, desc: 'Épaisseur ou espace d\'air' },
+    TIND: { label: 'Indice', unit: 'Δn', def: 0.0005, on: true, desc: 'Indice de réfraction du verre (décalage à toutes les λ)' },
+    TABB: { label: 'Constringence', unit: '%', def: 0.5, on: true, desc: 'Nombre d\'Abbe νd (dispersion autour de nd)' },
+    TSDX: { label: 'Décentrement surface X', unit: 'mm', def: 0.02, on: true }, TSDY: { label: 'Décentrement surface Y', unit: 'mm', def: 0.02, on: true },
+    TSTX: { label: 'Bascule surface α', unit: '°', def: 0.02, on: true }, TSTY: { label: 'Bascule surface β', unit: '°', def: 0.02, on: true },
+    TEDX: { label: 'Décentrement élément X', unit: 'mm', def: 0.02, on: true }, TEDY: { label: 'Décentrement élément Y', unit: 'mm', def: 0.02, on: true },
+    TETX: { label: 'Bascule élément α', unit: '°', def: 0.02, on: true }, TETY: { label: 'Bascule élément β', unit: '°', def: 0.02, on: true },
   };
-  const tolDefaults = () => ({ crit: 'WFE', comp: true, trials: 100, dist: 'normal', types: Object.fromEntries(Object.entries(TOLT).map(([k, v]) => [k, { on: true, v: v.def }])) });
+  /** critères : unité et sens (MTF : plus grand = meilleur) */
+  const TOLC = { WFE: { label: 'Front d\'onde RMS', unit: 'λ' }, SPOT: { label: 'Spot RMS', unit: 'µm' }, MTF: { label: 'FTM moyenne', unit: '', up: true } };
+  const tolDefaults = () => ({ crit: 'WFE', mtfF: 30, comp: true, compVars: false, compIt: 3, trials: 200, dist: 'normal', seed: '', spec: null,
+    invMode: 'budget', invVal: null, invRound: true, types: Object.fromEntries(Object.entries(TOLT).map(([k, v]) => [k, { on: v.on !== false, v: v.def }])), list: null });
+  /** dégradation (> 0 = pire) */
+  const tolWorse = (kind, c, nom) => TOLC[kind] && TOLC[kind].up ? nom - c : c - nom;
   /** fige les solves (épaisseurs calculées) pour que le compensateur soit numérique */
   function tolFreeze(sys) {
     const M = prepare(sys), s = structuredClone(sys);
     if (M.ok) s.surfaces.forEach((x, j) => { x.t = M.S[j].t; x.tsolve = ''; });
     return s;
   }
-  function tolItems(sys, cfg) {
+  /** la tolérance « type » a-t-elle un sens sur la surface j ? */
+  function tolApplicable(S, type, j, comp) {
+    const N = S.length - 1, s = S[j]; if (!s || j < 1 || j >= N) return false;
+    const curved = isFinite(s.r) && s.r !== 0, glass = !isAir(s.glass) && !isMirror(s);
+    const optical = curved || isMirror(s) || (s.type && s.type !== 'STD') || glass || (j > 1 && !isAir(S[j - 1].glass) && !isMirror(S[j - 1]));
+    switch (type) {
+      case 'TRAD': return curved;
+      case 'TFRN': case 'TIRR': return optical && s.elem !== 'ideal';
+      case 'TCON': return curved && (!!s.k || !!(s.a4 || s.a6 || s.a8 || s.a10));
+      case 'TTHI': return j < N - 1 || !comp;
+      case 'TIND': case 'TABB': return glass;
+      case 'TSDX': case 'TSDY': case 'TSTX': case 'TSTY': return curved || isMirror(s) || (s.type && s.type !== 'STD');
+      case 'TEDX': case 'TEDY': case 'TETX': case 'TETY': return glass && j + 1 < N;
+    }
+    return false;
+  }
+  const tolLabel = (type, j) => `${TOLT[type] ? TOLT[type].label : type} ${type.startsWith('TE') || type === 'TIND' || type === 'TABB' ? `S${j}-${j + 1}` : `S${j}`}`;
+  /** liste générée à partir des valeurs par défaut de chaque type */
+  function tolGen(sys, cfg) {
     const S = sys.surfaces, N = S.length - 1, T = cfg.types, out = [];
-    const add = (type, j, lbl) => { const t = T[type]; if (t && t.on && +t.v) out.push({ type, j, tol: +t.v, label: `${TOLT[type].label} ${lbl}` }); };
-    for (let j = 1; j < N; j++) {
-      const s = S[j];
-      if (isFinite(s.r) && s.r !== 0) add('TRAD', j, `S${j}`);
-      if (j < N - 1 || !cfg.comp) add('TTHI', j, `S${j}`);
-      if (!isAir(s.glass) && !isMirror(s)) add('TIND', j, `S${j}-${j + 1}`);
-      const optical = isFinite(s.r) && s.r !== 0 || isMirror(s) || (s.type && s.type !== 'STD');
-      if (optical) { add('TSDX', j, `S${j}`); add('TSDY', j, `S${j}`); add('TSTX', j, `S${j}`); add('TSTY', j, `S${j}`); }
-      if (!isAir(s.glass) && !isMirror(s) && j + 1 < N) { for (const k of ['TEDX', 'TEDY', 'TETX', 'TETY']) add(k, j, `S${j}-${j + 1}`); }
+    for (let j = 1; j < N; j++) for (const type of Object.keys(TOLT)) {
+      const t = T[type]; if (!t || !t.on || !(+t.v) || !tolApplicable(S, type, j, cfg.comp)) continue;
+      out.push({ type, j, min: -Math.abs(+t.v), max: Math.abs(+t.v), on: true });
     }
     return out;
   }
+  /** éléments actifs : liste détaillée de l'utilisateur (si définie) sinon liste générée ; ouverture utile h pour les franges */
+  function tolItems(sys, cfg) {
+    const S = sys.surfaces, src = Array.isArray(cfg.list) ? cfg.list : tolGen(sys, cfg), M = prepare(sys);
+    return src.filter(it => it.on !== false && TOLT[it.type] && tolApplicable(S, it.type, it.j, cfg.comp) && (+it.min || +it.max))
+      .map(it => { const mn = Math.min(+it.min || 0, +it.max || 0), mx = Math.max(+it.min || 0, +it.max || 0);
+        return { type: it.type, j: it.j, min: mn, max: mx, tol: Math.max(Math.abs(mn), Math.abs(mx)), h: M.ok ? Math.max(1e-6, M.S[it.j].sd) : 1, label: tolLabel(it.type, it.j) }; });
+  }
   function addDec(s, k, v) { if (!(s.dx || s.dy || s.dz || s.tx || s.ty || s.tz)) s.dmode = 'DAR'; s[k] = (+s[k] || 0) + v; }
+  /** ajoute à la surface un défaut de forme Δz = A·(½ ρ⁴ + ½ ρy²), ρ = r/h (moitié sphérique, moitié astigmatisme) */
+  function addIrr(s, A, h) {
+    if (s.type === 'ZERN') {
+      const zr = +s.zr > 0 ? +s.zr : h, k4 = (zr / h) ** 4, k2 = (zr / h) ** 2; s.zc = Array.from({ length: 16 }, (_, k) => +((s.zc || [])[k]) || 0);
+      // ρ⁴ = Z9/6 + Z4/2 + cte ; ρ² sin²θ = (Z4 + 1)/4 − Z5/2
+      s.zc[8] += 0.5 * A * k4 / 6; s.zc[3] += 0.5 * A * k4 / 2 + 0.5 * A * k2 / 4; s.zc[4] -= 0.5 * A * k2 / 2; return;
+    }
+    if (s.type !== 'XY') { s.type = 'XY'; s.xy = {}; } else s.xy = { ...(s.xy || {}) };
+    const add = (k, v) => { s.xy[k] = (+s.xy[k] || 0) + v; }, h2 = h * h, h4 = h2 * h2;
+    add('4,0', 0.5 * A / h4); add('0,4', 0.5 * A / h4); add('2,2', A / h4); add('0,2', 0.5 * A / h2);
+  }
   function tolApply(sys, it, v) {
-    const S = sys.surfaces, s = S[it.j], n = S[it.j + 1];
+    const S = sys.surfaces, s = S[it.j], n = S[it.j + 1], h = it.h || 1;
     switch (it.type) {
       case 'TRAD': s.r = s.r * (1 + v / 100); break;
+      case 'TFRN': { // franges de puissance : écart de flèche exact F·λ/2 au bord de l'ouverture utile (conique comprise)
+        const k = +s.k || 0, sg = c => { const a = 1 - (1 + k) * c * c * h * h; return a > 0 ? c * h * h / (1 + Math.sqrt(a)) : NaN; };
+        const c0 = curv(s), z = sg(c0) + v * LT / 2; let c = c0 + v * LT / (h * h);
+        for (let i = 0; i < 8; i++) { const e = 1e-9 / (h * h), f = sg(c) - z, d = (sg(c + e) - sg(c - e)) / (2 * e); if (!isFinite(f) || !d) break; c -= f / d; if (Math.abs(f) < 1e-13) break; }
+        s.r = Math.abs(c) < 1e-15 ? Infinity : 1 / c; break; }
+      case 'TIRR': addIrr(s, v * LT / 2, h); break;
+      case 'TCON': s.k = (+s.k || 0) + v; break;
       case 'TTHI': s.t += v; break;
       case 'TIND': s.dn = (+s.dn || 0) + v; break;
+      case 'TABB': s.dv = (+s.dv || 0) + v; break;
       case 'TSDX': addDec(s, 'dx', v); break; case 'TSDY': addDec(s, 'dy', v); break;
       case 'TSTX': addDec(s, 'tx', v); break; case 'TSTY': addDec(s, 'ty', v); break;
       case 'TEDX': addDec(s, 'dx', v); addDec(n, 'dx', v); break;
@@ -1248,10 +1302,27 @@ const OE = (() => {
     }
     return sys;
   }
-  /** critère : WFE RMS (λ, piston et tilt retirés) ou spot RMS (µm), moyenne quadratique pondérée sur les champs */
-  function criterion(M, kind) {
-    if (!M.ok) return Infinity;
+  /** FTM polychromatique (moyenne T/S) à la fréquence nu (cycles/mm) pour un champ */
+  function mtfAt(M, f, nu) {
+    const W = M.sys.wavelengths.map(w => w.w ?? 1); let acc = 0, ws = 0;
+    M.wls.forEach((_, wi) => {
+      const N = 32, P = 128, p = psf(M, f, wi, N, P), fc = 1 / (M.ctxs[wi].lmm * M.par.wfno);
+      let v = 0;
+      if (nu < fc && p.wf.ok) {
+        const re = Float64Array.from(p.I), im = new Float64Array(P * P); fft2(re, im, P, false);
+        const mag = (x, y) => Math.hypot(re[y * P + x], im[y * P + x]), m0 = mag(0, 0) || 1, k = nu / (fc / N), k0 = Math.floor(k), t = k - k0;
+        const T = (1 - t) * mag(0, k0 % P) + t * mag(0, (k0 + 1) % P), Sg = (1 - t) * mag(k0 % P, 0) + t * mag((k0 + 1) % P, 0);
+        v = (T + Sg) / 2 / m0;
+      }
+      acc += W[wi] * v; ws += W[wi];
+    });
+    return acc / (ws || 1);
+  }
+  /** critère : WFE RMS (λ, piston et tilt retirés) ou spot RMS (µm), moyenne quadratique pondérée sur les champs ; MTF : moyenne pondérée */
+  function criterion(M, kind, opts = {}) {
+    if (!M.ok) return kind === 'MTF' ? 0 : Infinity;
     const F = M.sys.fields, Wl = M.sys.wavelengths, nArm = 8, pts = [];
+    if (kind === 'MTF') { let a = 0, ws = 0; F.forEach(f => { const w = f.w ?? 1; a += w * mtfAt(M, f, +opts.mtfF || 30); ws += w; }); return a / (ws || 1); }
     for (const [r, w] of GQ) for (let a = 0; a < nArm; a++) { const th = 2 * Math.PI * (a + 0.5) / nArm; pts.push([r * Math.cos(th), r * Math.sin(th), w / nArm]); }
     let acc = 0, wsum = 0;
     F.forEach(f => {
@@ -1276,10 +1347,11 @@ const OE = (() => {
     });
     return Math.sqrt(acc / (wsum || 1));
   }
-  /** compensateur : recherche du meilleur foyer sur l'épaisseur avant l'image */
+  /** compensateur : recherche du meilleur foyer sur l'épaisseur avant l'image (critère FTM : foyer au meilleur front d'onde, plus robuste et rapide) */
   function bestFocus(sys, kind, h0) {
+    const fk = kind === 'MTF' ? 'WFE' : kind;
     const N = sys.surfaces.length - 1, t0 = sys.surfaces[N - 1].t, memo = new Map();
-    const ev = dt => { if (memo.has(dt)) return memo.get(dt); const s2 = structuredClone(sys); s2.surfaces[N - 1].t = t0 + dt; const v = criterion(prepare(s2), kind); memo.set(dt, v); return v; };
+    const ev = dt => { if (memo.has(dt)) return memo.get(dt); const s2 = structuredClone(sys); s2.surfaces[N - 1].t = t0 + dt; const v = criterion(prepare(s2), fk); memo.set(dt, v); return v; };
     let a = -h0, b = 0, c = h0, fa = ev(a), fb = ev(b), fc = ev(c), k = 0;
     // encadrement du minimum
     while (k++ < 25 && !(fb <= fa && fb <= fc)) {
@@ -1293,21 +1365,84 @@ const OE = (() => {
     }
     return { dt: b, c: fb };
   }
+  /** compensation complète : variables de l'optimiseur (quelques itérations DLS sur le critère) puis mise au point */
+  function compensate(sys, kind, comp, h0, opts = {}) {
+    let s = sys, nv = 0;
+    if (opts.vars && getVars(s).length) {
+      const st = { sys: structuredClone(s), mu: 1e-3 }; st.sys.merit = { image: kind === 'SPOT' ? 'SPOT' : 'WFE', ops: [] }; nv = getVars(s).length;
+      for (let i = 0; i < (opts.it || 3); i++) { const r = optStep(st); if (r.done) break; }
+      s = st.sys; s.merit = sys.merit;
+    }
+    let dt = 0;
+    if (comp) { const N = s.surfaces.length - 1, bf = bestFocus(s, kind, h0); dt = bf.dt; if (dt) { s = s === sys ? structuredClone(s) : s; s.surfaces[N - 1].t += dt; } }
+    return { sys: s, dt, nv };
+  }
+  /** position du rayon principal du premier champ sur l'image (dérive de visée) */
+  function boresight(M) { if (!M.ok) return [NaN, NaN]; const r = ray(M, M.pw, M.sys.fields[0], 0, 0); return r.vig ? [NaN, NaN] : [r.x, r.y]; }
   /** système de base pour le tolérancement : solves figés et, si compensateur, nominal au meilleur foyer */
-  function tolBase(sys, kind, comp) {
-    const base = tolFreeze(sys), h0 = focusStep(base);
-    if (comp) { const N = base.surfaces.length - 1, bf = bestFocus(base, kind, h0); base.surfaces[N - 1].t += bf.dt; return { base, h0, nominal: bf.c, focus: bf.dt }; }
-    return { base, h0, nominal: criterion(prepare(base), kind), focus: 0 };
+  function tolBase(sys, kind, comp, opts = {}) {
+    // le nominal passe par la même compensation que les systèmes perturbés (variables puis mise au point)
+    const fz = tolFreeze(sys), h0 = focusStep(fz), r = compensate(fz, kind, comp, h0, { ...opts, it: Math.max(10, opts.it || 3) }), base = r.sys === fz ? fz : structuredClone(r.sys);
+    const M = prepare(base);
+    return { base, h0, nominal: criterion(M, kind, opts), focus: r.dt, bore: boresight(M) };
   }
-  function tolEval(base, kind, comp, h0) {
-    if (!comp) return { c: criterion(prepare(base), kind), dt: 0 };
-    return bestFocus(base, kind, h0);
+  /** évalue un système perturbé : critère après compensation, mouvement du compensateur et dérive de visée */
+  function tolEval(sys, kind, comp, h0, opts = {}) {
+    const r = compensate(sys, kind, comp, h0, opts), M = prepare(r.sys), b = boresight(M);
+    return { c: criterion(M, kind, opts), dt: r.dt, bx: b[0], by: b[1], sys: opts.keep ? r.sys : undefined };
   }
+  /** sensibilité d'un élément : critère aux bornes min et max */
+  function tolSens(B, it, kind, comp, opts = {}) {
+    const ev = v => { const r = tolEval(tolApply(structuredClone(B.base), it, v), kind, comp, B.h0, opts); return { ...r, d: tolWorse(kind, r.c, B.nominal), bore: Math.hypot(r.bx - B.bore[0], r.by - B.bore[1]) }; };
+    return { it, lo: it.min ? ev(it.min) : null, hi: it.max ? ev(it.max) : null };
+  }
+  /**
+   * tolérance inverse : valeur symétrique ±t telle que la dégradation (pire des deux signes) vaille dmax.
+   * Modèle Δ ∝ t^p (p ajusté à chaque itération, initialement 2), 5 itérations au plus.
+   */
+  function tolInverse(B, it, kind, comp, dmax, opts = {}) {
+    const ev = t => { const w = [t, -t].map(v => tolWorse(kind, tolEval(tolApply(structuredClone(B.base), it, v), kind, comp, B.h0, opts).c, B.nominal)); return Math.max(...w.map(x => isFinite(x) ? x : 1e9)); };
+    let t0 = it.tol, d0 = opts.d0 != null ? opts.d0 : ev(t0), p = 2, n = opts.d0 != null ? 0 : 1;
+    if (!(d0 > 1e-12)) return { t: t0 * 1000, d: d0, n, capped: true };
+    let t = t0, d = d0;
+    for (let k = 0; k < 5; k++) {
+      if (Math.abs(d - dmax) < 0.05 * dmax) break;
+      let t1 = t * Math.pow(dmax / Math.max(d, 1e-15), 1 / p); t1 = Math.min(t0 * 1000, Math.max(t0 / 1000, t1));
+      const d1 = ev(t1); n++;
+      if (d1 > 1e-12 && d > 1e-12 && Math.abs(Math.log(t1 / t)) > 1e-6) p = Math.min(4, Math.max(0.7, Math.log(d1 / d) / Math.log(t1 / t)));
+      t = t1; d = d1;
+    }
+    return { t, d, n, capped: t >= t0 * 999 };
+  }
+  /** arrondi « fabricant » vers le bas : 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8 × 10ⁿ */
+  function niceDown(x) { if (!(x > 0)) return x; const e = Math.floor(Math.log10(x)), m = x / 10 ** e, steps = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]; let b = 1; for (const q of steps) if (q <= m + 1e-9) b = q; return +(b * 10 ** e).toPrecision(3); }
   function focusStep(sys) { const M = prepare(sys); return M.ok ? Math.max(1e-4, 2 * M.ctxs[M.pw].lmm * M.par.wfno * M.par.wfno) : 0.01; }
   function gaussTrunc(rnd) { let v; do { const u = 1 - rnd(), w = rnd(); v = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * w) / 2; } while (Math.abs(v) > 1); return v; }
-  function tolDraw(dist, rnd) { return dist === 'uniform' ? 2 * rnd() - 1 : dist === 'end' ? (rnd() < 0.5 ? -1 : 1) : gaussTrunc(rnd); }
+  /** tirage normalisé dans [−1, 1] : gaussienne (σ = ½, tronquée à ±2σ), uniforme, parabolique (extrêmes favorisés, p ∝ x²), extrêmes */
+  function tolDraw(dist, rnd) {
+    if (dist === 'uniform') return 2 * rnd() - 1;
+    if (dist === 'end') return rnd() < 0.5 ? -1 : 1;
+    if (dist === 'para') { const u = 2 * rnd() - 1; return Math.sign(u) * Math.cbrt(Math.abs(u)); }
+    return gaussTrunc(rnd);
+  }
+  /** valeur tirée entre min et max d'un élément */
+  const tolValue = (it, d) => (it.min + it.max) / 2 + d * (it.max - it.min) / 2;
+  /** générateur pseudo-aléatoire reproductible (mulberry32) */
+  function rng(seed) { let a = (seed >>> 0) || 0x9e3779b9; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+  /** un tirage Monte-Carlo : renvoie le critère, le compensateur et les valeurs tirées */
+  function tolTrial(B, items, kind, comp, dist, rnd, opts = {}) {
+    const s = structuredClone(B.base), draws = new Float64Array(items.length);
+    items.forEach((it, k) => { const v = tolValue(it, tolDraw(dist, rnd)); draws[k] = v; tolApply(s, it, v); });
+    const r = tolEval(s, kind, comp, B.h0, opts);
+    return { c: r.c, dt: r.dt, bore: Math.hypot(r.bx - B.bore[0], r.by - B.bore[1]), draws, sys: r.sys };
+  }
+  /** reconstruit le système d'un tirage (valeurs tirées connues), compensateurs appliqués */
+  function tolRebuild(B, items, draws, kind, comp, opts = {}) {
+    const s = structuredClone(B.base); items.forEach((it, k) => tolApply(s, it, draws[k]));
+    return compensate(s, kind, comp, B.h0, opts).sys;
+  }
 
-  return { DEG, fiberInfo, binPSF, detMTF, extSource, binImage, imageSim, polPupil, polOut, POLSTATES, TOLT, tolBase, tolDefaults, tolFreeze, tolItems, tolApply, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
+  return { DEG, fiberInfo, binPSF, detMTF, extSource, binImage, imageSim, polPupil, polOut, POLSTATES, TOLT, TOLC, LT, tolBase, tolDefaults, tolFreeze, tolItems, tolGen, tolApplicable, tolLabel, tolApply, tolWorse, tolSens, tolInverse, tolTrial, tolRebuild, tolValue, niceDown, rng, mtfAt, compensate, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
     wavefront, psf, mtf, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
     OPS, getVars, residuals, meritOf, optStep, pupilGrid, indices, paraxial };
 })();

@@ -1422,22 +1422,46 @@ function setupDlg() {
   $('#dlg').addEventListener('change', e => {
     const t = e.target;
     if (t.dataset.t) {
-      const k = t.dataset.t, ty = t.dataset.k;
-      commit(s => { tolCfg(); const c = s.tol; if (k === 'on') c.types[ty].on = t.checked; else if (k === 'v') { const v = parseNum(t.value, false); if (isFinite(v) && v >= 0) c.types[ty].v = v; } else if (k === 'comp') c.comp = t.checked; else if (k === 'trials') c.trials = Math.max(5, parseInt(t.value) || 100); else c[k] = t.value; });
-      TOL.stale = !!(TOL.sens || TOL.mc); renderTolRes(); return;
+      const k = t.dataset.t, ty = t.dataset.k, num = () => { const v = parseNum(t.value, false); return isFinite(v) ? v : null; };
+      commit(s => { tolCfg(); const c = s.tol;
+        if (k === 'on') c.types[ty].on = t.checked; else if (k === 'v') { const v = num(); if (v != null && v >= 0) c.types[ty].v = v; }
+        else if (['comp', 'compVars', 'invRound'].includes(k)) c[k] = t.checked;
+        else if (k === 'trials') c.trials = Math.max(5, Math.min(5000, parseInt(t.value) || 200));
+        else if (k === 'compIt') c.compIt = Math.max(1, Math.min(10, parseInt(t.value) || 3));
+        else if (['mtfF', 'spec', 'invVal'].includes(k)) { const v = num(); c[k] = t.value.trim() === '' ? null : v != null && (k === 'spec' || v > 0) ? v : c[k]; }
+        else c[k] = t.value; });
+      if (!['spec', 'invVal', 'invMode', 'invRound', 'trials', 'dist', 'seed'].includes(k)) TOL.stale = !!(TOL.sens || TOL.mc || TOL.inv);
+      renderTolL(); renderTolRes(); return;
+    }
+    if (t.dataset.li != null) {
+      const i = +t.dataset.li, k = t.dataset.lk;
+      if (k === 'on') tolEditList(L => { L[i].on = t.checked; });
+      else { const v = parseNum(t.value, false); if (!isFinite(v)) { toast('Valeur invalide'); renderTolL(); return; } tolEditList(L => { L[i][k] = v; }); }
+      return;
     }
     if (t.id === 'mfImg') { commit(s => s.merit.image = t.value, { fast: false }); openOptim(); }
     if (t.dataset.o) { const i = +t.dataset.i, k = t.dataset.o; commit(s => s.merit.ops[i][k] = k === 'type' ? t.value : (parseFloat(String(t.value).replace(',', '.')) || 0)); openOptim(); }
   });
   $('#dlg').addEventListener('click', e => {
+    const tb = e.target.closest('[data-tl],[data-tr]'); if (tb) { if (tb.dataset.tl) { TOL.tabL = tb.dataset.tl; renderTolL(); } else { TOL.tabR = tb.dataset.tr; renderTolRes(); } return; }
     const b = e.target.closest('[data-d]'); if (!b) return;
     const a = b.dataset.d;
     if (a === 'close') closeDlg();
     if (a === 'rgen') genReport();
     if (a === 'tsens') runSens();
     if (a === 'tmc') runMC();
+    if (a === 'tinv') runInv();
     if (a === 'tstop') TOL.running = false;
-    if (a === 'tcopy') { const r = tolReport(); navigator.clipboard?.writeText(r).then(() => toast('Rapport copié (CSV)'), () => download(fileBase() + '_tolerances.txt', r, 'text/plain')); }
+    if (a === 'tcopy') { const r = tolReport(); navigator.clipboard?.writeText(r).then(() => toast('Rapport copié (CSV, séparateur ;)'), () => download(fileBase() + '_tolerances.csv', r, 'text/csv')); }
+    if (a === 'tgen') { commit(s => { const c = tolCfg(); c.list = OE.tolGen(s, c).map(x => ({ ...x })); }); TOL.stale = !!(TOL.sens || TOL.mc || TOL.inv); TOL.tabL = 'list'; renderTolL(); renderTolRes(); toast('Liste détaillée créée depuis les valeurs par défaut'); }
+    if (a === 'tlauto') { commit(s => { tolCfg().list = null; }); TOL.stale = !!(TOL.sens || TOL.mc || TOL.inv); renderTolL(); renderTolRes(); }
+    if (a === 'tldel') { const i = +b.dataset.i; tolEditList(L => L.splice(i, 1)); }
+    if (a === 'tladd') { const ty = $('#tlType').value, j = parseInt($('#tlJ').value), N = App.sys.surfaces.length - 1; if (!(j >= 1 && j < N)) { toast('Surface invalide'); return; }
+      if (!OE.tolApplicable(App.sys.surfaces, ty, j, tolCfg().comp)) toast('Attention : cette tolérance ne s\'applique pas à cette surface (elle sera ignorée)');
+      const v = tolCfg().types[ty].v || OE.TOLT[ty].def; tolEditList(L => L.push({ type: ty, j, min: -v, max: v, on: true })); }
+    if (a === 'tinvApply' && TOL.inv) { const only = $('#tinvTight')?.checked; const I = TOL.inv;
+      tolEditList(L => { for (const r of I.rows) { if (only && !(r.tr < r.it.tol * 0.999)) continue; const e = L.find(x => x.type === r.it.type && x.j === r.it.j); if (e) { e.min = -r.tr; e.max = r.tr; } } }); toast('Tolérances proposées appliquées à la liste détaillée'); }
+    if (a === 'tload') tolLoad(b.dataset.k);
     if (a === 'oadd') { commit(s => s.merit.ops.push({ type: 'EFL', target: Math.round(App.M?.par?.efl || 100), weight: 1 })); openOptim(); }
     if (a === 'odel') { commit(s => s.merit.ops.splice(+b.dataset.i, 1)); openOptim(); }
     if (a === 'run') runOpt();
@@ -1481,97 +1505,212 @@ function drawMerit() {
 }
 
 /* ---------------- Tolérancement ---------------- */
-const TOL = { running: false, sens: null, mc: null, stale: false };
+const TOL = { running: false, sens: null, inv: null, mc: null, stale: false, tabL: 'set', tabR: 'sens' };
 const tick = () => new Promise(r => setTimeout(r, 0));
-function tolCfg() { const d = OE.tolDefaults(), s = App.sys; s.tol = { ...d, ...(s.tol || {}) }; s.tol.types = { ...d.types, ...(s.tol.types || {}) }; return s.tol; }
-const tolUnit = k => k === 'SPOT' ? 'µm' : 'λ';
+function tolCfg() {
+  const d = OE.tolDefaults(), s = App.sys; s.tol = { ...d, ...(s.tol || {}) };
+  s.tol.types = Object.fromEntries(Object.keys(d.types).map(k => [k, { ...d.types[k], ...((s.tol.types || {})[k] || {}) }]));
+  return s.tol;
+}
+const tolUnit = k => (OE.TOLC[k] || OE.TOLC.WFE).unit;
+const tolCritLabel = c => c.crit === 'MTF' ? `FTM moyenne T/S à ${fmt(+c.mtfF || 30, 4)} cycles/mm` : c.crit === 'SPOT' ? 'spot RMS (µm)' : 'front d\'onde RMS (λ)';
+const tolOpts = c => ({ mtfF: +c.mtfF || 30, vars: !!c.compVars, it: Math.max(1, Math.min(10, +c.compIt || 3)) });
+const tolCompLabel = c => [c.comp ? 'mise au point' : '', c.compVars ? `variables de l'optimiseur (${OE.getVars(App.sys).length})` : ''].filter(Boolean).join(' + ') || 'aucun';
+/** liste détaillée : celle de l'utilisateur, sinon générée depuis les valeurs par défaut */
+const tolList = c => Array.isArray(c.list) ? c.list : OE.tolGen(App.sys, c);
+const fxT = (v, u) => u === '%' || u === 'fr' ? fmt(v, 4) : fmt(v, 4);
 function openTol() {
-  const c = tolCfg();
-  const rows = Object.entries(OE.TOLT).map(([k, v]) => `<tr><td><input type="checkbox" data-t="on" data-k="${k}" ${c.types[k].on ? 'checked' : ''}></td><td title="${v.desc || ''}">${v.label}</td><td><input class="in" style="width:70px" data-t="v" data-k="${k}" value="${c.types[k].v}"></td><td class="hint">± ${v.unit}</td></tr>`).join('');
+  tolCfg();
   dlg(`<h2>Tolérancement <button class="x" data-d="close">✕</button></h2>
-  <div class="db"><div style="display:grid;grid-template-columns:300px 1fr;gap:18px">
-    <div>
-      <div class="row"><label>Critère</label><select class="in" data-t="crit"><option value="WFE" ${c.crit === 'WFE' ? 'selected' : ''}>Front d'onde RMS (λ)</option><option value="SPOT" ${c.crit === 'SPOT' ? 'selected' : ''}>Spot RMS (µm)</option></select></div>
-      <div class="row"><label title="L'épaisseur avant l'image est réoptimisée pour chaque tirage">Compensateur : mise au point</label><input type="checkbox" data-t="comp" ${c.comp ? 'checked' : ''}></div>
-      <table class="mt" style="margin-top:6px"><tr><th></th><th>Tolérance</th><th>Valeur</th><th></th></tr>${rows}</table>
-      <div class="hint" style="margin:10px 0 4px;font-weight:600;color:var(--fg)">Monte-Carlo</div>
-      <div class="row"><label>Tirages</label><input class="in mini" data-t="trials" value="${c.trials}"></div>
-      <div class="row"><label>Distribution</label><select class="in" data-t="dist"><option value="normal" ${c.dist === 'normal' ? 'selected' : ''}>Gaussienne (σ = tol/2, tronquée)</option><option value="uniform" ${c.dist === 'uniform' ? 'selected' : ''}>Uniforme</option><option value="end" ${c.dist === 'end' ? 'selected' : ''}>Extrêmes (± tol)</option></select></div>
-      <div class="hint" style="margin-top:8px">Rayon en % de R, épaisseurs et décentrements en mm, bascules en degrés. Les bascules d'élément pivotent autour du sommet de sa première surface.</div>
-    </div>
-    <div id="tolres" style="min-width:0"></div>
+  <div class="db"><div class="tolg">
+    <div class="tolL"><div class="seg tseg">${[['set', 'Réglages'], ['list', 'Liste détaillée'], ['mcs', 'Monte-Carlo']].map(([k, l]) => `<button data-tl="${k}" class="${TOL.tabL === k ? 'on' : ''}">${l}</button>`).join('')}</div><div id="tolL"></div></div>
+    <div class="tolR"><div class="seg tseg">${[['sens', 'Sensibilité'], ['inv', 'Tolérances inverses'], ['mc', 'Monte-Carlo']].map(([k, l]) => `<button data-tr="${k}" class="${TOL.tabR === k ? 'on' : ''}">${l}</button>`).join('')}</div><div id="tolres"></div></div>
   </div></div>
-  <div class="df"><span class="hint grow" id="tmsg"></span><button class="bt" data-d="tcopy">Copier le rapport</button><button class="bt" data-d="tstop">Arrêter</button><button class="bt" data-d="tsens">Analyse de sensibilité</button><button class="tb pri" data-d="tmc">▶ Monte-Carlo</button></div>`, true);
-  renderTolRes();
+  <div class="df"><span class="hint grow" id="tmsg"></span><button class="bt" data-d="tcopy" title="Copie le rapport (CSV) dans le presse-papiers">Exporter CSV</button><button class="bt" data-d="tstop">Arrêter</button><button class="bt" data-d="tsens">Sensibilité</button><button class="bt" data-d="tinv">Calcul inverse</button><button class="tb pri" data-d="tmc">▶ Monte-Carlo</button></div>`, true, { w: 1180, h: 760 });
+  renderTolL(); renderTolRes();
+}
+function renderTolL() {
+  const el = $('#tolL'); if (!el) return; const c = tolCfg(), T = OE.TOLT, nv = OE.getVars(App.sys).length;
+  $$('#dlg [data-tl]').forEach(b => b.classList.toggle('on', b.dataset.tl === TOL.tabL));
+  if (TOL.tabL === 'set') {
+    const custom = Array.isArray(c.list);
+    el.innerHTML = `<div class="row"><label style="width:96px">Critère</label><select class="in grow" data-t="crit">${Object.entries(OE.TOLC).map(([k, v]) => `<option value="${k}" ${c.crit === k ? 'selected' : ''}>${v.label}${v.unit ? ` (${v.unit})` : ''}</option>`).join('')}</select></div>
+      ${c.crit === 'MTF' ? `<div class="row"><label style="width:96px">Fréquence</label><input class="in mini" data-t="mtfF" value="${c.mtfF}"><span class="hint">cycles/mm${App.sys.det && App.sys.det.on ? ` · Nyquist détecteur ${fmt(1000 / (2 * App.sys.det.p), 4)}` : ''}</span></div>` : ''}
+      <h4 class="th4">Compensateurs</h4>
+      <label class="ck"><input type="checkbox" data-t="comp" ${c.comp ? 'checked' : ''}> Mise au point (épaisseur avant l'image)</label>
+      <label class="ck" title="${nv ? 'Les paramètres marqués V dans l\'éditeur sont réajustés (moindres carrés amortis) pour chaque système perturbé' : 'Marquez des paramètres avec V dans l\'éditeur de lentilles pour les utiliser comme compensateurs'}"><input type="checkbox" data-t="compVars" ${c.compVars ? 'checked' : ''} ${nv ? '' : 'disabled'}> Variables de l'optimiseur (${nv})</label>
+      ${c.compVars && nv ? `<div class="row" style="padding-left:22px"><label>Itérations par évaluation</label><input class="in mini" data-t="compIt" value="${c.compIt}"></div>` : ''}
+      <h4 class="th4">Valeurs par défaut</h4>
+      <table class="mt"><tr><th></th><th>Tolérance</th><th>±</th><th></th></tr>${Object.entries(T).map(([k, v]) => `<tr><td><input type="checkbox" data-t="on" data-k="${k}" ${c.types[k].on ? 'checked' : ''}></td><td title="${esc(v.desc || '')}">${v.label} <span class="hint">${k}</span></td><td><input class="in" style="width:70px" data-t="v" data-k="${k}" value="${c.types[k].v}"></td><td class="hint">${v.unit}</td></tr>`).join('')}</table>
+      <div class="hint" style="margin-top:6px">${custom ? '<b>Liste détaillée personnalisée</b> : ces valeurs ne s\'y appliquent qu\'en la régénérant.' : 'La liste détaillée suit automatiquement ces valeurs tant que vous ne la modifiez pas.'}</div>
+      <div class="row"><button class="bt" data-d="tgen">${custom ? 'Régénérer la liste depuis ces valeurs' : 'Personnaliser la liste…'}</button></div>
+      <div class="hint">Franges à λ = 632,8 nm sur l'ouverture utile de chaque surface. Rayon en %, épaisseurs et décentrements en mm, bascules en degrés ; les bascules d'élément pivotent autour du sommet de sa première surface.</div>`;
+  } else if (TOL.tabL === 'list') {
+    const L = tolList(c), custom = Array.isArray(c.list), N = App.sys.surfaces.length - 1;
+    const bad = L.filter(it => !OE.tolApplicable(App.sys.surfaces, it.type, it.j, c.comp)).length;
+    el.innerHTML = `<div class="hint" style="margin-bottom:4px">${L.filter(i => i.on !== false).length} actives / ${L.length} · ${custom ? 'liste <b>personnalisée</b>' : 'liste <b>automatique</b> (une modification la rend personnalisée)'}${bad ? ` · <span style="color:var(--warn)">${bad} ne s'appliquent plus (ignorées)</span>` : ''}</div>
+      <div style="max-height:calc(100% - 92px);overflow:auto;border:1px solid var(--line);border-radius:8px"><table class="mt tlist"><tr><th></th><th>Tolérance</th><th>Min</th><th>Max</th><th></th><th></th></tr>
+      ${L.map((it, i) => { const t = T[it.type] || { label: it.type, unit: '' }, ok = OE.tolApplicable(App.sys.surfaces, it.type, it.j, c.comp); return `<tr class="${ok ? '' : 'off'}"><td><input type="checkbox" data-li="${i}" data-lk="on" ${it.on !== false ? 'checked' : ''}></td><td title="${esc(t.desc || '')}">${esc(OE.tolLabel(it.type, it.j))}</td><td><input class="in" data-li="${i}" data-lk="min" value="${fmt(it.min, 5)}"></td><td><input class="in" data-li="${i}" data-lk="max" value="${fmt(it.max, 5)}"></td><td class="hint">${t.unit}</td><td><button class="x" data-d="tldel" data-i="${i}" title="Supprimer">✕</button></td></tr>`; }).join('')}</table></div>
+      <div class="row" style="margin-top:6px"><select class="in" id="tlType">${Object.entries(T).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('')}</select><span class="hint">surface</span><input class="in" id="tlJ" style="width:48px" value="${Math.min(Math.max(1, App.sel), N - 1)}"><button class="bt" data-d="tladd">+ Ajouter</button>${custom ? '<button class="bt" data-d="tlauto" title="Revenir à la liste générée automatiquement">Liste automatique</button>' : ''}</div>`;
+  } else {
+    el.innerHTML = `<div class="row"><label style="width:120px">Tirages</label><input class="in mini" data-t="trials" value="${c.trials}"></div>
+      <div class="row"><label style="width:120px">Distribution</label><select class="in grow" data-t="dist">${[['normal', 'Gaussienne (σ = demi-intervalle / 2, tronquée)'], ['uniform', 'Uniforme'], ['para', 'Parabolique (extrêmes favorisés)'], ['end', 'Extrêmes seulement (min ou max)']].map(([k, l]) => `<option value="${k}" ${c.dist === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="row"><label style="width:120px">Graine</label><input class="in mini" data-t="seed" value="${esc(String(c.seed ?? ''))}" placeholder="aléatoire"><span class="hint">même graine = mêmes tirages</span></div>
+      <div class="row"><label style="width:120px">Spécification</label><input class="in mini" data-t="spec" value="${c.spec ?? ''}" placeholder="—"><span class="hint">${OE.TOLC[c.crit].up ? 'FTM minimale' : 'valeur maximale'} ${tolUnit(c.crit)} → rendement</span></div>
+      <div class="hint" style="margin-top:8px">Chaque tirage perturbe <b>simultanément</b> toutes les tolérances actives de la liste détaillée (valeur tirée entre min et max), puis réajuste les compensateurs. La distribution parabolique (p ∝ x²) représente une fabrication qui tend vers les limites de tolérance ; « extrêmes seulement » donne un cas défavorable.</div>`;
+  }
 }
 function tolMsg(t) { const e = $('#tmsg'); if (e) e.textContent = t; }
+/** fige la liste détaillée (passe en mode personnalisé) puis applique fn */
+function tolEditList(fn) { commit(s => { const c = tolCfg(); if (!Array.isArray(c.list)) c.list = OE.tolGen(s, c).map(x => ({ ...x })); fn(c.list, c); }); TOL.stale = !!(TOL.sens || TOL.mc || TOL.inv); renderTolL(); renderTolRes(); }
+async function tolPrep(c) { tolMsg('Préparation (système nominal' + (c.comp ? ', mise au point' : '') + ')…'); await tick(); const B = OE.tolBase(App.sys, c.crit, c.comp, tolOpts(c)); return { B, items: OE.tolItems(B.base, c) }; }
 async function runSens() {
-  if (TOL.running) return; const c = structuredClone(tolCfg()); TOL.running = true; TOL.stale = false; tolMsg('Préparation (mise au point nominale)…'); await tick();
-  const B = OE.tolBase(App.sys, c.crit, c.comp), items = OE.tolItems(B.base, c), rows = [];
-  let tl = performance.now();
+  if (TOL.running) return; const c = structuredClone(tolCfg()); TOL.running = true; TOL.stale = false; TOL.tabR = 'sens';
+  const { B, items } = await tolPrep(c), rows = [], o = tolOpts(c); let tl = performance.now(), t0 = performance.now();
+  TOL.sens = { B, rows, c, n: items.length, items };
   for (let i = 0; i < items.length && TOL.running; i++) {
-    const it = items[i], r = [1, -1].map(sg => OE.tolEval(OE.tolApply(structuredClone(B.base), it, sg * it.tol), c.crit, c.comp, B.h0));
-    rows.push({ it, cp: r[0].c, cm: r[1].c, fp: r[0].dt, fm: r[1].dt });
-    if (performance.now() - tl > 70) { TOL.sens = { B, rows, c, n: items.length }; renderTolRes(); tolMsg(`Sensibilité : ${i + 1} / ${items.length}`); await tick(); tl = performance.now(); }
+    rows.push(OE.tolSens(B, items[i], c.crit, c.comp, o));
+    if (performance.now() - tl > 80) { renderTolRes(); const el = (performance.now() - t0) / 1000; tolMsg(`Sensibilité : ${i + 1} / ${items.length} · reste ≈ ${Math.ceil(el / (i + 1) * (items.length - i - 1))} s`); await tick(); tl = performance.now(); }
   }
-  TOL.sens = { B, rows, c, n: items.length }; TOL.running = false; renderTolRes(); tolMsg(`Sensibilité terminée — ${rows.length} tolérances`);
+  TOL.running = false; renderTolRes(); tolMsg(`Sensibilité terminée — ${rows.length} tolérances`);
+}
+/** dégradation admissible par tolérance pour le calcul inverse */
+function tolDmax(c, nominal, n) {
+  const v = +c.invVal; if (!isFinite(v) || v <= 0) return NaN;
+  if (c.invMode === 'item') return v;
+  const room = OE.tolWorse(c.crit, v, nominal); return room > 0 ? room / Math.sqrt(Math.max(1, n)) : NaN;
+}
+async function runInv() {
+  if (TOL.running) return; const c = structuredClone(tolCfg()); TOL.tabR = 'inv'; renderTolRes();
+  if (!(+c.invVal > 0)) { tolMsg('Indiquez d\'abord la cible du calcul inverse (onglet « Tolérances inverses »).'); return; }
+  TOL.running = true; TOL.stale = false;
+  const { B, items } = await tolPrep(c), o = tolOpts(c), dmax = tolDmax(c, B.nominal, items.length);
+  if (!(dmax > 0)) { TOL.running = false; tolMsg(`Cible inatteignable : le nominal (${fx(B.nominal, 4)} ${tolUnit(c.crit)}) est déjà ${OE.TOLC[c.crit].up ? 'sous' : 'au-dessus de'} la cible.`); return; }
+  const S = TOL.sens && !TOL.stale && TOL.sens.c.crit === c.crit && TOL.sens.c.comp === c.comp ? TOL.sens : null, rows = [];
+  TOL.inv = { B, rows, c, dmax, n: items.length };
+  let tl = performance.now(), t0 = performance.now();
+  for (let i = 0; i < items.length && TOL.running; i++) {
+    const it = items[i], sr = S && S.rows.find(r => r.it.type === it.type && r.it.j === it.j && r.it.tol === it.tol);
+    const d0 = sr && sr.lo && sr.hi && Math.abs(it.min + it.max) < 1e-12 ? Math.max(sr.lo.d, sr.hi.d) : undefined;
+    const r = OE.tolInverse(B, it, c.crit, c.comp, dmax, { ...o, d0 });
+    rows.push({ it, t: r.t, tr: c.invRound ? OE.niceDown(r.t) : r.t, d: r.d, capped: r.capped });
+    if (performance.now() - tl > 80) { renderTolRes(); const el = (performance.now() - t0) / 1000; tolMsg(`Calcul inverse : ${i + 1} / ${items.length} · reste ≈ ${Math.ceil(el / (i + 1) * (items.length - i - 1))} s`); await tick(); tl = performance.now(); }
+  }
+  TOL.running = false; renderTolRes(); tolMsg(`Calcul inverse terminé — Δ admissible ${fx(dmax, 4)} ${tolUnit(c.crit)} par tolérance`);
 }
 async function runMC() {
-  if (TOL.running) return; const c = structuredClone(tolCfg()); TOL.running = true; TOL.stale = false; tolMsg('Préparation…'); await tick();
-  const B = OE.tolBase(App.sys, c.crit, c.comp), items = OE.tolItems(B.base, c), n = Math.max(5, Math.min(5000, +c.trials || 100));
-  const vals = [], foc = []; TOL.mc = { B, vals, foc, c, n };
-  let tl = performance.now();
+  if (TOL.running) return; const c = structuredClone(tolCfg()); TOL.running = true; TOL.stale = false; TOL.tabR = 'mc';
+  const { B, items } = await tolPrep(c), n = Math.max(5, Math.min(5000, +c.trials || 200)), o = tolOpts(c);
+  const sd = String(c.seed ?? '').trim(), rnd = sd !== '' ? OE.rng(parseInt(sd, 10) || [...sd].reduce((a, ch) => a * 31 + ch.charCodeAt(0) >>> 0, 7)) : Math.random;
+  const vals = [], foc = [], bore = [], draws = []; TOL.mc = { B, vals, foc, bore, draws, c, n, items };
+  let tl = performance.now(), t0 = performance.now();
   for (let k = 0; k < n && TOL.running; k++) {
-    const s = structuredClone(B.base); for (const it of items) OE.tolApply(s, it, it.tol * OE.tolDraw(c.dist, Math.random));
-    const r = OE.tolEval(s, c.crit, c.comp, B.h0); if (isFinite(r.c)) { vals.push(r.c); foc.push(r.dt); }
-    if (performance.now() - tl > 90) { renderTolRes(); tolMsg(`Monte-Carlo : ${k + 1} / ${n}`); await tick(); tl = performance.now(); }
+    const r = OE.tolTrial(B, items, c.crit, c.comp, c.dist, rnd, o);
+    if (isFinite(r.c)) { vals.push(r.c); foc.push(r.dt); bore.push(r.bore); draws.push(r.draws); }
+    if (performance.now() - tl > 120) { renderTolRes(); const el = (performance.now() - t0) / 1000; tolMsg(`Monte-Carlo : ${k + 1} / ${n} · reste ≈ ${Math.ceil(el / (k + 1) * (n - k - 1))} s`); await tick(); tl = performance.now(); }
   }
   TOL.running = false; renderTolRes(); tolMsg(`Monte-Carlo terminé — ${vals.length} tirages`);
 }
 const pct = (arr, q) => { if (!arr.length) return NaN; const a = arr.slice().sort((x, y) => x - y), i = Math.min(a.length - 1, Math.max(0, q * (a.length - 1))), lo = Math.floor(i), f = i - lo; return a[lo] * (1 - f) + (a[lo + 1] ?? a[lo]) * f; };
+/** statistiques Monte-Carlo ; « q » = centile dans le sens « pire » (FTM : centiles bas) */
+function mcStats(MC) {
+  const v = MC.vals, up = !!OE.TOLC[MC.c.crit].up, n = v.length || 1, mean = v.reduce((a, b) => a + b, 0) / n, sd = Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, n - 1));
+  const q = p => pct(v, up ? 1 - p : p), spec = MC.c.spec !== '' && MC.c.spec != null && isFinite(+MC.c.spec) ? +MC.c.spec : null;
+  const yieldP = spec == null ? null : v.filter(x => up ? x >= spec : x <= spec).length / n;
+  const order = v.map((x, i) => [x, i]).sort((a, b) => a[0] - b[0]), worst = (up ? order[0] : order[order.length - 1])?.[1], best = (up ? order[order.length - 1] : order[0])?.[1], med = order[Math.floor(order.length / 2)]?.[1];
+  return { mean, sd, q, spec, yieldP, worst, best, med, up, min: Math.min(...v), max: Math.max(...v) };
+}
+/** contributions estimées au Monte-Carlo : R² de la régression du critère sur le carré de la valeur tirée (normalisée) */
+function mcContrib(MC) {
+  const v = MC.vals, n = v.length; if (n < 20) return [];
+  const mv = v.reduce((a, b) => a + b, 0) / n, sv = Math.sqrt(v.reduce((a, b) => a + (b - mv) ** 2, 0)); if (!(sv > 0)) return [];
+  return MC.items.map((it, k) => {
+    const x = MC.draws.map(d => { const u = (d[k] - (it.min + it.max) / 2) / ((it.max - it.min) / 2 || 1); return u * u; }), mx = x.reduce((a, b) => a + b, 0) / n;
+    let sxy = 0, sxx = 0; x.forEach((xi, i) => { sxy += (xi - mx) * (v[i] - mv); sxx += (xi - mx) ** 2; });
+    const r = sxx > 0 ? sxy / Math.sqrt(sxx) / sv : 0; return { it, r2: r * r * Math.sign(r) };
+  }).sort((a, b) => b.r2 - a.r2);
+}
 function renderTolRes() {
   const el = $('#tolres'); if (!el) return;
-  let h = '';
-  const S = TOL.sens, MC = TOL.mc;
-  if (TOL.stale) h += '<div class="hint" style="color:var(--warn)">Le système ou les réglages ont changé depuis le dernier calcul.</div>';
-  if (!S && !MC) h += `<div class="hint" style="padding:30px 0">Lancez une <b>analyse de sensibilité</b> (chaque tolérance seule, à ±) puis un <b>Monte-Carlo</b> (toutes les tolérances tirées au hasard simultanément) pour estimer le rendement de fabrication.</div>`;
-  if (S) {
-    const u = tolUnit(S.c.crit), rows = S.rows.map(r => ({ ...r, dp: r.cp - S.B.nominal, dm: r.cm - S.B.nominal })).map(r => ({ ...r, w: Math.max(r.dp, r.dm) }));
-    const rss = S.B.nominal + Math.sqrt(rows.reduce((a, r) => a + Math.max(0, r.w) ** 2, 0));
-    const top = rows.slice().sort((a, b) => b.w - a.w), mx = Math.max(1e-12, ...top.map(r => Math.abs(r.w)));
-    h += `<div style="display:flex;gap:24px;margin-bottom:8px"><div><div class="hint">Nominal${S.c.comp ? ' (compensé)' : ''}</div><div class="big">${fx(S.B.nominal, 4)} ${u}</div></div><div><div class="hint">Estimation RSS</div><div class="big">${fx(rss, 4)} ${u}</div></div>${S.c.comp ? `<div><div class="hint">Mise au point nominale</div><div class="big">${fx(S.B.focus * 1e3, 1)} µm</div></div>` : ''}</div>
-    <div class="hint">Sensibilités triées (${rows.length}/${S.n}) — Δ = critère perturbé − nominal</div>
-    <div style="max-height:250px;overflow:auto;border:1px solid var(--line);border-radius:8px"><table class="mt" style="font-size:12px"><tr><th>Tolérance</th><th>Valeur</th><th>Δ (+)</th><th>Δ (−)</th><th style="width:110px"></th>${S.c.comp ? '<th>Foyer (µm)</th>' : ''}</tr>
-    ${top.map(r => `<tr><td>${esc(r.it.label)}</td><td style="font-family:var(--mono)">±${r.it.tol}</td><td style="font-family:var(--mono)">${fx(r.dp, 4)}</td><td style="font-family:var(--mono)">${fx(r.dm, 4)}</td><td><div style="height:7px;border-radius:3px;background:${r.w > 0 ? '#ea580c' : '#16a34a'};width:${Math.max(2, Math.abs(r.w) / mx * 100)}px"></div></td>${S.c.comp ? `<td style="font-family:var(--mono)">${fx(r.fp * 1e3, 0)} / ${fx(r.fm * 1e3, 0)}</td>` : ''}</tr>`).join('')}</table></div>`;
-  }
-  if (MC) {
-    const u = tolUnit(MC.c.crit), v = MC.vals, mean = v.reduce((a, b) => a + b, 0) / (v.length || 1), sd = Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, v.length - 1));
-    h += `<div class="hint" style="margin-top:12px;font-weight:600;color:var(--fg)">Monte-Carlo — ${v.length} / ${MC.n} tirages · nominal ${fx(MC.B.nominal, 4)} ${u}</div>
-    <div style="display:flex;gap:14px;align-items:stretch;margin-top:4px"><div style="flex:1;min-width:0;height:180px;position:relative"><canvas id="mcchart"></canvas></div>
-    <table class="mt" style="width:auto;font-family:var(--mono);font-size:12px"><tr><th>Statistique</th><th>${u}</th></tr>
-    <tr><td>Moyenne</td><td>${fx(mean, 4)}</td></tr><tr><td>Écart-type</td><td>${fx(sd, 4)}</td></tr>
-    ${[0.5, 0.8, 0.9, 0.98].map(q => `<tr><td>${q * 100} % &lt;</td><td>${fx(pct(v, q), 4)}</td></tr>`).join('')}
-    <tr><td>Max</td><td>${fx(Math.max(...v), 4)}</td></tr>${MC.c.comp ? `<tr><td>Compensateur</td><td>${fx(Math.min(...MC.foc) * 1e3, 0)}…${fx(Math.max(...MC.foc) * 1e3, 0)} µm</td></tr>` : ''}</table></div>`;
+  $$('#dlg [data-tr]').forEach(b => b.classList.toggle('on', b.dataset.tr === TOL.tabR));
+  let h = TOL.stale ? '<div class="hint" style="color:var(--warn);margin-bottom:6px">Le système ou les réglages ont changé depuis le dernier calcul.</div>' : '';
+  const cfg = tolCfg(), mono = 'font-family:var(--mono)';
+  if (TOL.tabR === 'sens') {
+    const S = TOL.sens;
+    if (!S) h += `<div class="hint" style="padding:24px 0">L'<b>analyse de sensibilité</b> applique chaque tolérance seule, à sa valeur min puis max, réajuste les compensateurs et mesure la dégradation du critère. Elle identifie les tolérances critiques et donne une estimation RSS de la performance de fabrication.</div>`;
+    else {
+      const u = tolUnit(S.c.crit), rows = S.rows.map(r => ({ ...r, w: Math.max(r.lo ? r.lo.d : -Infinity, r.hi ? r.hi.d : -Infinity), b: Math.max(r.lo ? r.lo.bore : 0, r.hi ? r.hi.bore : 0) }));
+      const rss = Math.sqrt(rows.reduce((a, r) => a + Math.max(0, r.w) ** 2, 0)), est = OE.TOLC[S.c.crit].up ? S.B.nominal - rss : S.B.nominal + rss;
+      const top = rows.slice().sort((a, b) => b.w - a.w), mx = Math.max(1e-12, ...top.map(r => Math.abs(r.w))), cum = []; let acc = 0; top.forEach(r => { acc += Math.max(0, r.w) ** 2; cum.push(rss > 0 ? acc / (rss * rss) : 0); });
+      h += `<div class="tkpi"><div><div class="hint">Nominal${S.c.comp || S.c.compVars ? ' (compensé)' : ''}</div><div class="big">${fx(S.B.nominal, 4)} ${u}</div></div><div><div class="hint">Estimation RSS</div><div class="big">${fx(est, 4)} ${u}</div></div><div><div class="hint">Dégradation RSS</div><div class="big">${fx(rss, 4)} ${u}</div></div>${S.c.comp ? `<div><div class="hint">Mise au point nominale</div><div class="big">${fx(S.B.focus * 1e3, 1)} µm</div></div>` : ''}</div>
+      <div class="hint">Critère : ${tolCritLabel(S.c)} · compensateurs : ${tolCompLabel(S.c)} · ${rows.length}/${S.n} tolérances, triées par dégradation (> 0 = pire) · <b>cumul</b> = part de la dégradation RSS expliquée</div>
+      <div class="tscroll"><table class="mt" style="font-size:12px"><tr><th>Tolérance</th><th>Min</th><th>Max</th><th>Δ (min)</th><th>Δ (max)</th><th style="width:96px"></th><th>Cumul</th><th title="Déplacement du rayon principal du 1er champ sur l'image">Visée (µm)</th>${S.c.comp ? '<th>Foyer (µm)</th>' : ''}</tr>
+      ${top.map((r, i) => `<tr><td>${esc(r.it.label)}</td><td style="${mono}">${fmt(r.it.min, 4)}</td><td style="${mono}">${fmt(r.it.max, 4)}</td><td style="${mono}">${r.lo ? fx(r.lo.d, 4) : '—'}</td><td style="${mono}">${r.hi ? fx(r.hi.d, 4) : '—'}</td><td><div style="height:7px;border-radius:3px;background:${r.w > 0 ? '#ea580c' : '#16a34a'};width:${Math.max(2, Math.abs(r.w) / mx * 92)}px"></div></td><td style="${mono}">${fx(100 * cum[i], 0)} %</td><td style="${mono}">${fx(r.b * 1e3, 1)}</td>${S.c.comp ? `<td style="${mono}">${r.lo ? fx(r.lo.dt * 1e3, 0) : '—'} / ${r.hi ? fx(r.hi.dt * 1e3, 0) : '—'}</td>` : ''}</tr>`).join('')}</table></div>`;
+    }
+  } else if (TOL.tabR === 'inv') {
+    const up = !!OE.TOLC[cfg.crit].up;
+    h += `<div class="row" style="flex-wrap:wrap"><select class="in" data-t="invMode"><option value="budget" ${cfg.invMode !== 'item' ? 'selected' : ''}>Budget : critère visé après fabrication</option><option value="item" ${cfg.invMode === 'item' ? 'selected' : ''}>Dégradation max par tolérance</option></select>
+      <input class="in mini" data-t="invVal" value="${cfg.invVal ?? ''}" placeholder="${cfg.invMode === 'item' ? 'Δ' : up ? 'FTM min' : 'cible'}"><span class="hint">${tolUnit(cfg.crit)}</span>
+      <label class="ck"><input type="checkbox" data-t="invRound" ${cfg.invRound ? 'checked' : ''}> arrondir (1 · 1,5 · 2 · 2,5 · 3 · 4 · 5 · 6 · 8)</label></div>
+      <div class="hint">${cfg.invMode === 'item' ? 'Chaque tolérance est calculée pour dégrader le critère de Δ au plus (pire des deux signes).' : `La marge entre le nominal et la cible est répartie également en RSS : Δ par tolérance = |cible − nominal| / √n.`} Le calcul suppose des tolérances symétriques (±) ; il réutilise l'analyse de sensibilité si elle est à jour.</div>`;
+    const I = TOL.inv;
+    if (I) {
+      const u = tolUnit(I.c.crit), loose = I.rows.filter(r => r.tr < r.it.tol * 0.999).length;
+      h += `<div class="tkpi" style="margin-top:8px"><div><div class="hint">Nominal</div><div class="big">${fx(I.B.nominal, 4)} ${u}</div></div><div><div class="hint">Δ admissible / tolérance</div><div class="big">${fx(I.dmax, 4)} ${u}</div></div><div><div class="hint">Trop larges actuellement</div><div class="big" style="color:${loose ? '#ea580c' : 'inherit'}">${loose} / ${I.rows.length}</div></div></div>
+      <div class="tscroll"><table class="mt" style="font-size:12px"><tr><th>Tolérance</th><th>Actuelle</th><th>Calculée</th><th>Proposée</th><th>Δ obtenu</th><th></th></tr>
+      ${I.rows.map(r => { const tight = r.tr < r.it.tol * 0.999, un = OE.TOLT[r.it.type].unit; return `<tr><td>${esc(r.it.label)}</td><td style="${mono}">±${fmt(r.it.tol, 4)} ${un}</td><td style="${mono}">${r.capped ? '> ' : ''}±${fmt(r.t, 4)}</td><td style="${mono};font-weight:600;color:${tight ? '#ea580c' : '#16a34a'}">±${fmt(r.tr, 3)}</td><td style="${mono}">${fx(r.d, 4)}</td><td class="hint">${r.capped ? 'peu sensible' : tight ? 'à resserrer' : 'peut être élargie'}</td></tr>`; }).join('')}</table></div>
+      <div class="row" style="margin-top:6px"><button class="bt" data-d="tinvApply">Appliquer les valeurs proposées à la liste détaillée</button><label class="ck"><input type="checkbox" id="tinvTight"> seulement celles à resserrer</label></div>`;
+    } else h += `<div class="hint" style="padding:18px 0">Le <b>calcul inverse</b> détermine, pour chaque tolérance, la valeur maximale compatible avec une dégradation donnée (Zemax « Inverse Limit »). Indiquez la cible puis cliquez sur « Calcul inverse ».</div>`;
+  } else {
+    const MC = TOL.mc;
+    if (!MC) h += `<div class="hint" style="padding:24px 0">Le <b>Monte-Carlo</b> fabrique virtuellement des centaines de systèmes en tirant au hasard toutes les tolérances à la fois, puis réajuste les compensateurs. On obtient la distribution réelle de la performance et, avec une spécification, le <b>rendement</b> de fabrication.</div>`;
+    else if (MC.vals.length) {
+      const u = tolUnit(MC.c.crit), st = mcStats(MC), up = st.up, ctb = mcContrib(MC).slice(0, 8), bmean = MC.bore.reduce((a, b) => a + b, 0) / MC.bore.length;
+      h += `<div class="tkpi"><div><div class="hint">Tirages</div><div class="big">${MC.vals.length} / ${MC.n}</div></div><div><div class="hint">Nominal</div><div class="big">${fx(MC.B.nominal, 4)} ${u}</div></div><div><div class="hint">Moyenne ± σ</div><div class="big">${fx(st.mean, 4)} ± ${fx(st.sd, 3)}</div></div>${st.yieldP != null ? `<div><div class="hint">Rendement (${up ? '≥' : '≤'} ${fmt(st.spec, 4)} ${u})</div><div class="big" style="color:${st.yieldP >= 0.9 ? '#16a34a' : st.yieldP >= 0.7 ? '#d97706' : '#dc2626'}">${fx(100 * st.yieldP, 1)} %</div></div>` : ''}</div>
+      <div style="display:flex;gap:14px;align-items:stretch;margin-top:6px;flex-wrap:wrap"><div style="flex:1 1 380px;min-width:0;height:230px;position:relative"><canvas id="mcchart"></canvas></div>
+      <table class="mt" style="width:auto;${mono};font-size:12px"><tr><th>${up ? 'Au moins' : 'Au plus'}…</th><th>${u}</th></tr>
+      ${[0.5, 0.8, 0.9, 0.95, 0.98].map(p => `<tr><td>${p * 100} % des systèmes</td><td>${fx(st.q(p), 4)}</td></tr>`).join('')}
+      <tr><td>Meilleur / pire</td><td>${fx(up ? st.max : st.min, 4)} / ${fx(up ? st.min : st.max, 4)}</td></tr>${MC.c.comp ? `<tr><td>Course de mise au point</td><td>${fx(Math.min(...MC.foc) * 1e3, 0)} … ${fx(Math.max(...MC.foc) * 1e3, 0)} µm</td></tr>` : ''}
+      <tr><td>Dérive de visée</td><td>moy. ${fx(bmean * 1e3, 1)} · max ${fx(Math.max(...MC.bore) * 1e3, 1)} µm</td></tr></table></div>
+      <div class="row" style="margin-top:6px;flex-wrap:wrap"><span class="hint">Charger dans l'éditeur (Ctrl+Z pour revenir) :</span><button class="bt" data-d="tload" data-k="worst">Pire tirage</button><button class="bt" data-d="tload" data-k="med">Tirage médian</button><button class="bt" data-d="tload" data-k="best">Meilleur tirage</button></div>
+      ${ctb.length ? `<div class="hint" style="margin-top:8px">Principaux contributeurs (corrélation du critère avec l'écart tiré, R² signé ; indicatif, il faut assez de tirages)</div><table class="mt" style="font-size:12px">${ctb.map(o => `<tr><td>${esc(o.it.label)}</td><td style="width:130px"><div style="height:7px;border-radius:3px;background:#ea580c;width:${Math.max(2, Math.max(0, o.r2) / Math.max(1e-9, ctb[0].r2) * 120)}px"></div></td><td style="${mono};width:60px">${fx(o.r2, 2)}</td></tr>`).join('')}</table>` : ''}`;
+    }
   }
   el.innerHTML = h;
-  if (MC && MC.vals.length) drawMC();
+  if (TOL.tabR === 'mc' && TOL.mc && TOL.mc.vals.length) drawMC();
 }
+/** histogramme + fonction de répartition (%) + nominal + spécification */
 function drawMC(tgt) {
-  const cv = $('#mcchart'); if (!cv && !tgt) return; readTheme(); const { c, w, h } = tgt || prepCanvas(cv), MC = TOL.mc, v = MC.vals.slice().sort((a, b) => a - b);
-  const lo = Math.min(MC.B.nominal, v[0]), hi = v[v.length - 1], nb = Math.max(8, Math.min(30, Math.round(Math.sqrt(v.length) * 1.5))), bw = (hi - lo) / nb || 1;
-  const bins = new Array(nb).fill(0); for (const x of v) bins[Math.min(nb - 1, Math.floor((x - lo) / bw))]++;
-  const A = axes(c, { x: 0, y: 0, w, h }, [lo, hi + 1e-12], [0, Math.max(...bins) * 1.1], { xl: tolUnit(MC.c.crit) + ' RMS', ml: 36, mb: 30 });
-  c.fillStyle = TH.acc; c.globalAlpha = 0.55; bins.forEach((b, i) => { const x0 = A.X(lo + i * bw), x1 = A.X(lo + (i + 1) * bw); c.fillRect(x0 + 0.5, A.Y(b), x1 - x0 - 1, A.Y(0) - A.Y(b)); }); c.globalAlpha = 1;
-  const yc = A.Y, mxb = Math.max(...bins) * 1.1; c.strokeStyle = '#ea580c'; c.lineWidth = 1.8; c.beginPath(); v.forEach((x, i) => { const px = A.X(x), py = yc((i + 1) / v.length * mxb); i ? c.lineTo(px, py) : c.moveTo(px, py); }); c.stroke();
+  const cv = $('#mcchart'); if (!cv && !tgt) return; readTheme(); const { c, w, h } = tgt || prepCanvas(cv), MC = TOL.mc, v = MC.vals.slice().sort((a, b) => a - b), st = mcStats(MC);
+  let lo = Math.min(MC.B.nominal, v[0], st.spec ?? Infinity), hi = Math.max(v[v.length - 1], MC.B.nominal, st.spec ?? -Infinity); const pad = (hi - lo) * 0.04 || 1e-6; lo -= pad; hi += pad;
+  const nb = Math.max(8, Math.min(40, Math.round(Math.sqrt(v.length) * 1.5))), bw = (hi - lo) / nb;
+  const bins = new Array(nb).fill(0); for (const x of v) bins[Math.min(nb - 1, Math.max(0, Math.floor((x - lo) / bw)))]++;
+  const mb = Math.max(...bins) * 1.1;
+  const A = axes(c, { x: 0, y: 0, w: w - 34, h }, [lo, hi], [0, mb], { xl: `${OE.TOLC[MC.c.crit].label}${tolUnit(MC.c.crit) ? ' (' + tolUnit(MC.c.crit) + ')' : ''}`, yl: 'tirages', ml: 40, mb: 30, title: ' ' });
+  c.fillStyle = TH.acc; c.globalAlpha = 0.5; bins.forEach((b, i) => { const x0 = A.X(lo + i * bw), x1 = A.X(lo + (i + 1) * bw); c.fillRect(x0 + 0.5, A.Y(b), x1 - x0 - 1, A.Y(0) - A.Y(b)); }); c.globalAlpha = 1;
+  // fonction de répartition (axe de droite, %)
+  const Yp = p => A.P.y + A.P.h * (1 - p);
+  c.strokeStyle = '#ea580c'; c.lineWidth = 1.8; c.beginPath(); v.forEach((x, i) => { const px = A.X(x), py = Yp((i + 1) / v.length); i ? c.lineTo(px, py) : c.moveTo(px, py); }); c.stroke();
+  for (const p of [0, 0.5, 1]) text(c, `${p * 100} %`, A.P.x + A.P.w + 4, Yp(p) - 5, { col: '#ea580c', size: 9.5 });
   c.strokeStyle = TH.fg; c.setLineDash([3, 3]); c.beginPath(); c.moveTo(A.X(MC.B.nominal), A.P.y); c.lineTo(A.X(MC.B.nominal), A.P.y + A.P.h); c.stroke(); c.setLineDash([]);
-  text(c, 'histogramme · cumul (orange) · nominal (pointillé)', A.P.x + 4, A.P.y + 2, { col: TH.mut, size: 10 });
+  if (st.spec != null) { c.strokeStyle = '#dc2626'; c.lineWidth = 2; c.beginPath(); c.moveTo(A.X(st.spec), A.P.y); c.lineTo(A.X(st.spec), A.P.y + A.P.h); c.stroke(); }
+  legend(c, A.P.x, A.P.y - 11, [{ col: TH.acc, l: 'histogramme' }, { col: '#ea580c', l: 'cumul (%)' }, { col: TH.fg, dash: [3, 3], l: 'nominal' }, ...(st.spec != null ? [{ col: '#dc2626', l: 'spécification' }] : [])]);
 }
 function tolReport() {
-  const L = [`Focale — rapport de tolérancement — ${App.sys.title || ''}`];
-  if (TOL.sens) { const S = TOL.sens, u = tolUnit(S.c.crit); L.push('', `Critère : ${S.c.crit} (${u}), compensateur : ${S.c.comp ? 'mise au point' : 'aucun'}`, `Nominal : ${S.B.nominal.toFixed(5)}`, '', 'Tolérance;Valeur;Δ+;Δ-');
-    S.rows.forEach(r => L.push(`${r.it.label};±${r.it.tol};${(r.cp - S.B.nominal).toFixed(5)};${(r.cm - S.B.nominal).toFixed(5)}`)); }
-  if (TOL.mc) { const M = TOL.mc; L.push('', `Monte-Carlo : ${M.vals.length} tirages, distribution ${M.c.dist}`); [0.5, 0.8, 0.9, 0.98].forEach(q => L.push(`${q * 100}% < ${pct(M.vals, q).toFixed(5)}`)); }
+  const L = [`Focale — rapport de tolérancement — ${App.sys.title || ''}`], f = v => isFinite(v) ? (+v).toPrecision(6) : '';
+  if (TOL.sens) { const S = TOL.sens; L.push('', `Critère;${tolCritLabel(S.c)}`, `Compensateurs;${tolCompLabel(S.c)}`, `Nominal;${f(S.B.nominal)}`, '', 'Sensibilité', 'Tolérance;Type;Surface;Min;Max;Unité;Δ(min);Δ(max);Visée max (µm);Foyer min (µm);Foyer max (µm)');
+    S.rows.forEach(r => L.push([r.it.label, r.it.type, r.it.j, r.it.min, r.it.max, OE.TOLT[r.it.type].unit, f(r.lo?.d), f(r.hi?.d), f(1e3 * Math.max(r.lo?.bore || 0, r.hi?.bore || 0)), f(1e3 * r.lo?.dt), f(1e3 * r.hi?.dt)].join(';'))); }
+  if (TOL.inv) { const I = TOL.inv; L.push('', `Tolérances inverses;Δ admissible ${f(I.dmax)}`, 'Tolérance;Actuelle;Calculée;Proposée;Δ obtenu'); I.rows.forEach(r => L.push([r.it.label, r.it.tol, f(r.t), r.tr, f(r.d)].join(';'))); }
+  if (TOL.mc && TOL.mc.vals.length) { const M = TOL.mc, st = mcStats(M); L.push('', `Monte-Carlo;${M.vals.length} tirages;distribution ${M.c.dist}${M.c.seed !== '' ? `;graine ${M.c.seed}` : ''}`, `Moyenne;${f(st.mean)}`, `Écart-type;${f(st.sd)}`);
+    [0.5, 0.8, 0.9, 0.95, 0.98].forEach(p => L.push(`${p * 100} %;${f(st.q(p))}`)); if (st.yieldP != null) L.push(`Rendement (spéc. ${st.spec});${(100 * st.yieldP).toFixed(1)} %`);
+    L.push('', 'Tirages', ['#', 'Critère', 'Foyer (µm)', ...M.items.map(i => i.label)].join(';')); M.vals.forEach((v, k) => L.push([k + 1, f(v), f(1e3 * M.foc[k]), ...Array.from(M.draws[k], x => f(x))].join(';'))); }
   return L.join('\n');
+}
+/** charge un tirage Monte-Carlo (pire / médian / meilleur) dans l'éditeur */
+function tolLoad(k) {
+  const MC = TOL.mc; if (!MC) return; const st = mcStats(MC), i = st[k]; if (i == null) return;
+  const s = OE.tolRebuild(MC.B, MC.items, MC.draws[i], MC.c.crit, MC.c.comp, tolOpts(MC.c)); s.title = `${App.sys.title || 'Système'} — tirage ${k === 'worst' ? 'le pire' : k === 'best' ? 'le meilleur' : 'médian'} (${fx(MC.vals[i], 4)} ${tolUnit(MC.c.crit)})`;
+  s.tol = structuredClone(App.sys.tol); loadSystem(s, 'Tirage chargé (indices et constringences perturbés inclus) — Ctrl+Z pour revenir');
 }
 
 /* ---------------- Import / export (JSON, CODE V .seq) ---------------- */

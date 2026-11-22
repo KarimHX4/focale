@@ -165,13 +165,26 @@ const HELP = [
 <p>« Restaurer l'état initial » annule l'optimisation ; Ctrl+Z fonctionne aussi. Raccourci : Ctrl+Maj+O.</p>` },
 
   { id: 'tolerancement', t: 'Tolérancement', h: `
-<p>Estime la dégradation due aux défauts de fabrication et d'alignement.</p>
-<ul><li><b>Tolérances</b> : rayon (%), épaisseur, indice, décentrement et bascule de surface, décentrement et bascule d'élément (pivot au sommet de sa 1ʳᵉ surface).</li>
-<li><b>Critère</b> : front d'onde RMS (piston et tilt retirés) ou spot RMS.</li>
-<li><b>Compensateur</b> : la mise au point (épaisseur avant l'image) est réoptimisée pour chaque cas.</li>
-<li><b>Sensibilité</b> : chaque tolérance seule à ±, triée par impact ; estimation RSS du total.</li>
-<li><b>Monte-Carlo</b> : toutes les tolérances tirées au hasard (gaussienne tronquée, uniforme ou extrêmes) ; histogramme, courbe cumulée, percentiles 50/80/90/98 % (rendement), plage du compensateur.</li></ul>
-<p>« Copier le rapport » exporte les résultats au format CSV.</p>` },
+<p>Estime la dégradation due aux défauts de fabrication et d'alignement, à la manière du tolérancement de Zemax ou du module TOR de CODE V. Bouton <b>Tolérancer</b> ; la fenêtre a trois onglets de réglages à gauche et trois onglets de résultats à droite. La configuration est enregistrée avec le système.</p>
+<h4>Tolérances disponibles</h4>
+<table class="ht"><tr><th>Code</th><th>Tolérance</th><th>Unité</th></tr>
+<tr><td>TFRN</td><td><b>Puissance</b> : écart de rayon exprimé en franges de Newton (λ = 632,8 nm) sur l'ouverture utile ; la conversion est exacte (écart de flèche F·λ/2 au bord, conique comprise). S'applique aussi aux faces planes.</td><td>franges</td></tr>
+<tr><td>TRAD</td><td>Rayon en pourcentage (désactivé par défaut, la puissance en franges étant la spécification usuelle).</td><td>%</td></tr>
+<tr><td>TIRR</td><td><b>Irrégularité</b> : défaut de forme de PV F·λ/2, moitié sphérique (ρ⁴) et moitié astigmatisme (ρ²cos²θ). La surface devient un polynôme XY (ou ses termes de Zernike sont modifiés).</td><td>franges</td></tr>
+<tr><td>TCON</td><td>Constante de conicité (surfaces coniques ou asphériques).</td><td>Δk</td></tr>
+<tr><td>TTHI</td><td>Épaisseur ou espace d'air (la dernière épaisseur est exclue si elle sert de compensateur).</td><td>mm</td></tr>
+<tr><td>TIND · TABB</td><td>Indice (décalage à toutes les λ) et <b>constringence</b> νd (dispersion autour de nd mise à l'échelle).</td><td>Δn · %</td></tr>
+<tr><td>TSDX/Y · TSTX/Y</td><td>Décentrement et bascule d'une surface.</td><td>mm · °</td></tr>
+<tr><td>TEDX/Y · TETX/Y</td><td>Décentrement et bascule d'un élément (lentille), pivot au sommet de sa première surface.</td><td>mm · °</td></tr></table>
+<h4>Réglages</h4>
+<ul><li><b>Critère</b> : front d'onde RMS (λ, piston et tilt retirés), spot RMS (µm) ou <b>FTM</b> moyenne T/S à une fréquence donnée (plus grand = meilleur). Moyenne pondérée sur les champs et les longueurs d'onde.</li>
+<li><b>Compensateurs</b> : mise au point (épaisseur avant l'image) et, au choix, les <b>variables de l'optimiseur</b> (paramètres marqués V), réajustées par quelques itérations de moindres carrés pour chaque système. Le nominal passe par la même compensation. Avec le critère FTM, les compensateurs minimisent le front d'onde (plus robuste) : un système dont le nominal n'est pas optimisé pour la FTM peut donc ponctuellement s'améliorer.</li>
+<li><b>Valeurs par défaut</b> par type ; la <b>liste détaillée</b> en découle automatiquement. Dès qu'on la modifie (bornes <b>min/max asymétriques</b> possibles, ajout ou suppression d'une tolérance sur une surface précise), elle devient personnalisée ; « Régénérer » la recrée depuis les valeurs par défaut.</li></ul>
+<h4>Analyses</h4>
+<ul><li><b>Sensibilité</b> : chaque tolérance seule, à sa borne min puis max ; dégradation (Δ &gt; 0 = pire), part cumulée de la dégradation RSS, dérive de visée (déplacement du rayon principal du 1ᵉʳ champ) et mouvement du compensateur. Estimation RSS de la performance : nominal ± √ΣΔ².</li>
+<li><b>Tolérances inverses</b> (Zemax « Inverse Limit ») : pour chaque tolérance, la valeur ± qui produit une dégradation donnée. Soit une Δ max par tolérance, soit un <b>budget</b> : critère visé après fabrication, la marge étant répartie en RSS (Δ = |cible − nominal|/√n). Valeurs arrondies vers le bas (1 · 1,5 · 2 · 2,5 · 3 · 4 · 5 · 6 · 8 × 10ⁿ), signalées « à resserrer » ou « peut être élargie », et applicables d'un clic à la liste détaillée.</li>
+<li><b>Monte-Carlo</b> : toutes les tolérances tirées simultanément entre leurs bornes (gaussienne tronquée, uniforme, parabolique — extrêmes favorisés — ou extrêmes seulement), avec une <b>graine</b> pour des tirages reproductibles. Résultats : moyenne, écart-type, centiles (50 à 98 %), meilleur et pire, <b>rendement</b> par rapport à une spécification, course du compensateur, dérive de visée, histogramme et fonction de répartition, principaux contributeurs (corrélation). Les tirages pire, médian et meilleur se <b>chargent dans l'éditeur</b> pour être analysés (Ctrl+Z pour revenir).</li></ul>
+<p>« Exporter CSV » copie tous les résultats (y compris chaque tirage Monte-Carlo et ses valeurs) ; le rapport PDF reprend les trois analyses.</p>` },
 
   { id: 'fichiers', t: 'Fichiers, Zemax et CODE V', h: `
 <ul><li><b>Ctrl+O</b> ouvrir, <b>Ctrl+S</b> enregistrer (.json, format natif complet), <i>Enregistrer sous…</i></li>

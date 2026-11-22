@@ -16,7 +16,7 @@ const P = []; OE.ray(M, 1, 20, 0, 1, { pts: P }); near('Visée réelle sur diaph
 { const par = S['Miroir parabolique f/4 (Newton)'](); par.fields = [{ x: 0, y: 0, w: 1 }]; const B = OE.tolBase(par, 'WFE', true);
   near('Tolérancement : parabole nominale au foyer', B.focus, 0, 1e-4);
   const c = S['Triplet de Cooke f=50 F/5'](), T = OE.tolBase(c, 'WFE', true), items = OE.tolItems(T.base, OE.tolDefaults());
-  near('Tolérancement : nombre de tolérances (Cooke)', items.length, 50, 0);
+  near('Tolérancement : nombre de tolérances (Cooke)', items.length, 59, 0);
   near('Tolérancement : perturbation nulle = nominal', OE.tolEval(OE.tolApply(structuredClone(T.base), items[0], 0), 'WFE', true, T.h0).c, T.nominal, 1e-6); }
 { let bad = 0; for (const g of OE.catalog()) { const r = OE.glassRecord(g.name); if (r.nd && Math.abs(g.nd - r.nd) > 2e-4) bad++; }
   near('Catalogues : nd recalculé = nd fabricant (écarts)', bad, 0, 0); near('Catalogues : nombre de verres > 1000', Math.min(1, OE.catalog().length / 1000), 1, 0);
@@ -73,4 +73,24 @@ const P = []; OE.ray(M, 1, 20, 0, 1, { pts: P }); near('Visée réelle sur diaph
   const o = S['Miroir parabolique f/4 (Newton)'](); o.fields = [{ y: 0 }]; o.aperture.obscuration = 0.4; const O = OE.prepare(o), m = OE.mtf(O, 0, { fmax: 1 / (0.5875618e-3 * 4) });
   near('FTM obstruée : courbe limite = FTM sans aberration (ν = 0,5 fc)', m.DL[40], m.T[40], 0.01);
   const e = OE.encircled(O, 0); near('Énergie encerclée croissante et ≤ 1', e.D.every((v, i) => v <= 1 + 1e-9 && (!i || v >= e.D[i - 1] - 1e-12)) ? 1 : 0, 1, 0); }
+// Tolérancement : nouvelles tolérances, FTM, inverse, Monte-Carlo
+{ const c = S['Triplet de Cooke f=50 F/5'](), B = OE.tolBase(c, 'WFE', true), base = B.base, items = OE.tolItems(base, OE.tolDefaults());
+  const find = (t, j) => items.find(i => i.type === t && i.j === j);
+  const fr = find('TFRN', 1), s1 = OE.tolApply(structuredClone(base), fr, 2).surfaces[1], h = fr.h, sag = r => (r2 => r2 / (s1.r + Math.sqrt(s1.r * s1.r - r2)))(h * h);
+  const sag0 = (r => h * h / (r + Math.sqrt(r * r - h * h)))(base.surfaces[1].r);
+  near('Puissance : 2 franges = écart de flèche λ (mm) au bord', sag() - sag0, 0.6328e-3, 2e-6);
+  const ir = find('TIRR', 2), s2 = OE.tolApply(structuredClone(base), ir, 1), M2 = OE.prepare(s2), M0 = OE.prepare(base);
+  const dz = (x, y) => OE.sag(M2.ctxs[0].s[2], x, y) - OE.sag(M0.ctxs[0].s[2], x, y);
+  near('Irrégularité : 1 frange = λ/2 PV (bord, axe Y)', dz(0, ir.h), 0.6328e-3 / 2, 1e-9); near('Irrégularité : moitié sur l\'axe X', dz(ir.h, 0), 0.6328e-3 / 4, 1e-9);
+  const ab = find('TABB', 1), sa = OE.tolApply(structuredClone(base), ab, 1), g = sa.surfaces[1].glass;
+  const V = sys => { const M = OE.prepare(sys), n = l => OE.prepare({ ...sys, wavelengths: [{ um: l }], primary: 0 }).nW[0][1]; return (n(0.5875618) - 1) / (n(0.4861327) - n(0.6562725)); };
+  near('Constringence : +1 % sur νd', V(sa) / V(base), 1.01, 1e-6);
+  const ip = find('TSDY', 3), inv = OE.tolInverse(B, ip, 'WFE', true, 0.01);
+  const chk = Math.max(...[inv.t, -inv.t].map(v => OE.tolWorse('WFE', OE.tolEval(OE.tolApply(structuredClone(base), ip, v), 'WFE', true, B.h0).c, B.nominal)));
+  near('Tolérance inverse : Δ obtenu = Δ visé (0,01 λ)', chk, 0.01, 0.0008);
+  const r1 = OE.rng(42), r2 = OE.rng(42); near('Monte-Carlo : graine reproductible', OE.tolTrial(B, items, 'WFE', true, 'normal', r1).c - OE.tolTrial(B, items, 'WFE', true, 'normal', r2).c, 0, 0);
+  const r = OE.rng(7); let ext = 0; for (let k = 0; k < 4000; k++) if (Math.abs(OE.tolDraw('para', r)) > 0.5) ext++; near('Distribution parabolique : P(|x| > ½) = 7/8', ext / 4000, 0.875, 0.02);
+  near('Arrondi fabricant', OE.niceDown(0.0347), 0.03, 1e-12);
+  const o = S['Miroir parabolique f/4 (Newton)'](); o.fields = [{ y: 0 }]; const O = OE.prepare(o), nu = 0.5 / (0.5875618e-3 * 4);
+  near('Critère FTM : parabole = limite de diffraction (ν = fc/2)', OE.criterion(O, 'MTF', { mtfF: nu }), OE.mtfDL(0.5), 0.015); }
 console.log(fail ? `${fail} échec(s)` : 'Tous les tests passent'); process.exit(fail ? 1 : 0);

@@ -194,6 +194,17 @@ table.ht{border-collapse:collapse;width:100%;font-size:12.5px}table.ht td,table.
 .vars span{background:var(--acc2);color:var(--acc);border-radius:20px;padding:2px 9px;font-size:11.5px;font-family:var(--mono)}
 #mchart{position:absolute;inset:0;border:1px solid var(--line);border-radius:8px;display:block}
 .big{font-family:var(--mono);font-size:18px;font-weight:600;white-space:nowrap}
+.tolg{display:grid;grid-template-columns:minmax(330px,380px) minmax(0,1fr);gap:18px;flex:1;min-height:0}
+.tolL,.tolR{display:flex;flex-direction:column;min-height:0;min-width:0}
+.tolL>#tolL,.tolR>#tolres{flex:1;min-height:0;overflow:auto;padding-top:8px}
+.tseg{align-self:flex-start;flex:none}
+.th4{margin:12px 0 4px;font-size:12.5px}
+.ck{display:flex;align-items:center;gap:6px;margin:3px 0;font-size:12.5px;cursor:pointer}
+.tkpi{display:flex;gap:22px;flex-wrap:wrap;margin-bottom:6px}
+.tscroll{max-height:none;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:4px}
+table.tlist input.in{width:76px}
+table.tlist tr.off td{opacity:.45}
+#dlg .db:has(.tolg){display:flex;flex-direction:column}
 .toast{position:fixed;bottom:38px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:8px 14px;border-radius:8px;font-size:12.5px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:200}
 .toast.on{opacity:.95}
 kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;background:var(--panel2)}
