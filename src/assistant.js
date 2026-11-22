@@ -5,7 +5,7 @@
   'use strict';
   if (window.ASST) return;
   const LS = 'focale.asst';
-  const DEF = { backend: 'auto', ollamaUrl: 'http://localhost:11434', ollamaModel: '', webllmModel: 'Qwen2.5-3B-Instruct-q4f16_1-MLC', confirm: true, history: 4 };
+  const DEF = { backend: 'auto', ollamaUrl: 'http://localhost:11434', ollamaModel: '', webllmModel: 'Qwen2.5-3B-Instruct-q4f16_1-MLC', confirm: true, history: 2, rulesFirst: true, nativeTools: true };
   const A = window.ASST = { cfg: { ...DEF }, log: [], busy: false, engine: null, engineId: null, abort: null, active: null, ollamaModels: [] };
   try { Object.assign(A.cfg, JSON.parse(localStorage.getItem(LS) || '{}')); } catch (e) { }
   const saveCfg = () => { try { localStorage.setItem(LS, JSON.stringify(A.cfg)); } catch (e) { } };
@@ -49,7 +49,7 @@
     L.push(Ls.length ? `Lentilles (numérotées de l'objet vers l'image) : ${Ls.map(l => `L${l.n} = S${l.a}–S${l.b} (${l.glass}, ${shape(s, l)}${l.cem ? ', collée à la précédente' : ''})`).join(' ; ')}.` : 'Aucune lentille.');
     if (Mi.length) L.push(`Miroirs : ${Mi.map((j, i) => `M${i + 1} = S${j}`).join(', ')}.`);
     const mf = s.merit; L.push(`Fonction de mérite : critère ${mf.image}${mf.wl && mf.wl !== 'all' ? ` (λ ${mf.wl})` : ''} ; opérandes : ${mf.ops.length ? mf.ops.map(o => `${o.type} ${({ eq: '=', ge: '≥', le: '≤' })[o.cmp || (OE.OPS[o.type] || {}).kind] || '='} ${r2(o.target)}`).join(', ') : 'aucun'}.`);
-    if (M && M.ok) { try { L.push(`Qualité : spot RMS (µm) par champ ${s.fields.map((_, i) => r2(OE.spot(M, i, 15).rms * 1e3, 3)).join(' / ')} ; front d'onde RMS (λ) ${s.fields.map((_, i) => r2(OE.wavefront(M, i, M.pw, 24, true).rms, 3)).join(' / ')}.`); } catch (e) { } }
+    if (M && M.ok) { try { L.push(`Qualité : spot RMS (µm) par champ ${s.fields.map((_, i) => r2(OE.spot(M, i, 15).rms * 1e3, 3)).join(' / ')}.`); } catch (e) { } }
     return L.join('\n');
   }
 
@@ -165,6 +165,32 @@
     set_title: { d: 'Renomme le système', a: '{title}', m: 1, run(a) { S().title = String(a.title || ''); return `titre « ${S().title} »`; } },
     undo: { d: 'Annule la dernière modification', a: '{}', m: 0, run() { undo(); return 'dernière modification annulée'; } },
   };
+  /* paramètres typés (appel d'outils natif d'Ollama) */
+  const N_ = (d) => ({ type: 'number', description: d }), I_ = (d) => ({ type: 'integer', description: d }), T_ = (d, e) => ({ type: 'string', description: d, ...(e ? { enum: e } : {}) }), B_ = d => ({ type: 'boolean', description: d });
+  const PARAMS = {
+    set_surface: [{ s: I_('numéro de surface (S1, S2…)'), radius: T_('rayon de courbure en mm, ou "inf" pour une face plane'), thickness: N_('épaisseur après la surface, mm'), glass: T_('nom du verre (ex. N-BK7) ou "air"'), conic: N_('constante de conicité'), comment: T_('commentaire') }, ['s']],
+    set_lens_glass: [{ lens: I_('numéro de lentille L1, L2… (voir la description)'), glass: T_('nom du verre réel, ex. N-SF11') }, ['lens', 'glass']],
+    insert_surface: [{ after: I_('insérer après cette surface'), radius: T_('rayon mm ou "inf"'), thickness: N_('épaisseur mm'), glass: T_('verre ou "air"') }, ['after']],
+    delete_surface: [{ s: I_('numéro de surface') }, ['s']], delete_lens: [{ lens: I_('numéro de lentille') }, ['lens']],
+    add_lens: [{ after: I_('surface après laquelle insérer'), f: N_('focale de la lentille, mm'), glass: T_('verre'), thickness: N_('épaisseur centre, mm') }, []],
+    set_aperture: [{ type: T_('EPD = diamètre de pupille en mm, FNO = nombre d\'ouverture F/#, NA = ouverture numérique objet', ['EPD', 'FNO', 'NA']), value: N_('valeur') }, ['type', 'value']],
+    set_object: [{ infinite: B_('objet à l\'infini'), distance: N_('distance objet en mm si fini') }, ['infinite']],
+    set_fields: [{ values: { type: 'array', items: { type: 'number' }, description: 'liste des champs (degrés si objet à l\'infini)' }, max: N_('champ maximal ; crée 0, 0,7·max, max') }, []],
+    set_wavelengths: [{ preset: T_('jeu prédéfini', ['FdC', 'visible', 'HeNe', 'NIR', 'd', 'e']), values_nm: { type: 'array', items: { type: 'number' }, description: 'longueurs d\'onde en nm' }, primary: I_('numéro de la λ primaire (1…)') }, []],
+    set_stop: [{ s: I_('surface du diaphragme') }, ['s']],
+    set_variables: [{ targets: { type: 'array', items: { type: 'string' }, description: 'mots-clés radii | thicknesses | air | glasses | all, ou paramètres précis "R1", "T2", "K3", "G2" (G = verre)' }, clear: B_('retirer d\'abord toutes les variables') }, ['targets']],
+    set_merit: [{ criterion: T_('critère image', ['SPOT', 'WFE', 'NONE']), wavelength: T_('longueurs d\'onde du critère : all, central, primary ou un numéro'), operands: { type: 'array', description: 'contraintes', items: { type: 'object', properties: { type: T_('code', Object.keys(OE.OPS)), target: N_('cible'), weight: N_('poids'), cmp: T_('eq (=), ge (≥), le (≤)', ['eq', 'ge', 'le']), p: N_('paramètre (fréquence pour MTFA)') }, required: ['type', 'target'] } }, replace: B_('remplacer les opérandes existants') }, []],
+    optimize: [{ iterations: I_('itérations maximum') }, []],
+    substitute_glasses: [{ catalogs: { type: 'array', items: { type: 'string' }, description: 'catalogues : SCHOTT, OHARA, CDGM, HOYA' }, preferred: B_('verres préférentiels seulement') }, []],
+    quick_focus: [{ criterion: T_('critère', ['SPOT', 'WFE']), wavelength: T_('central, primary, all ou un numéro') }, []],
+    design_doublet: [{ f: N_('focale mm'), fno: N_('nombre d\'ouverture F/#'), field: N_('champ maximal en degrés'), crown: T_('verre couronne (défaut N-BK7)'), flint: T_('verre flint (défaut N-SF5)'), cemented: B_('collé (défaut oui)') }, ['f']],
+    design_singlet: [{ f: N_('focale mm'), fno: N_('F/#'), field: N_('champ max en degrés'), glass: T_('verre (défaut N-BK7)'), form: T_('forme', ['plan-convexe', 'biconvexe']) }, ['f']],
+    find_glass: [{ nd: N_('indice nd'), vd: N_('constringence νd'), name: T_('nom ou partie du nom'), k: I_('nombre de résultats') }, []],
+    show_analysis: [{ type: T_('analyse', ['spot', 'mtf', 'wfe', 'psf', 'rayfan', 'opdfan', 'field', 'seidel', 'chrom', 'ee', 'footprint', 'zern', 'glass']), field: I_('numéro de champ') }, ['type']],
+    report_metrics: [{}, []], set_title: [{ title: T_('titre') }, ['title']], undo: [{}, []],
+  };
+  const OLLAMA_TOOLS = [...Object.entries(TOOLS).map(([k, v]) => ({ type: 'function', function: { name: k, description: v.d, parameters: { type: 'object', properties: (PARAMS[k] || [{}])[0], required: (PARAMS[k] || [{}, []])[1] } } })),
+    { type: 'function', function: { name: 'ask_question', description: 'Pose UNE question courte à l\'utilisateur quand la demande est ambiguë ou incomplète (aucune autre action alors)', parameters: { type: 'object', properties: { question: T_('la question') }, required: ['question'] } } }];
   const DESC = { set_surface: a => `S${a.s} : ${[a.radius != null && `rayon ${a.radius}`, a.thickness != null && `épaisseur ${a.thickness}`, a.glass != null && `verre ${a.glass || 'air'}`, a.conic != null && `conique ${a.conic}`, a.comment != null && `commentaire « ${a.comment} »`].filter(Boolean).join(', ')}`,
     set_lens_glass: a => `verre de la lentille ${a.lens} → ${a.glass}`, insert_surface: a => `insérer une surface après S${a.after}`, delete_surface: a => `supprimer S${a.s}`, delete_lens: a => `supprimer la lentille ${a.lens}`,
     add_lens: a => `ajouter une lentille${a.f ? ` f=${a.f}` : ''}${a.glass ? ` en ${a.glass}` : ''}${a.after != null ? ` après S${a.after}` : ''}`, set_aperture: a => `ouverture ${a.type} = ${a.value}`, set_object: a => a.infinite ? 'objet à l\'infini' : `objet à ${a.distance} mm`,
@@ -212,10 +238,17 @@ Demande : « fais-moi un doublet achromatique de 150 mm ouvert à f/4 avec 3° d
 Demande : « optimise pour le front d'onde à la longueur d'onde centrale » → {"message":"Rayons en variables, critère front d'onde sur la λ centrale, puis optimisation.","actions":[{"tool":"set_variables","args":{"targets":"radii"}},{"tool":"set_merit","args":{"criterion":"WFE","wavelength":"central"}},{"tool":"optimize","args":{}}],"question":""}
 Demande : « change le verre » (plusieurs lentilles) → {"message":"","actions":[],"question":"Quelle lentille (L1 à L3) et quel verre souhaitez-vous ?"}
 Demande : « garde une focale de 100 mm et une longueur totale inférieure à 120 mm puis optimise » → {"message":"J'ajoute les contraintes EFL = 100 et TTL ≤ 120, puis j'optimise.","actions":[{"tool":"set_merit","args":{"operands":[{"type":"EFL","target":100},{"type":"TTL","target":120,"cmp":"le"}]}},{"tool":"set_variables","args":{"targets":"radii"}},{"tool":"optimize","args":{}}],"question":""}`;
+  const SYSTEM_TOOLS = `Tu pilotes Focale, un logiciel de conception optique, en appelant ses outils. Réponds en français, en une phrase courte.
+Appelle les outils nécessaires, dans l'ordre, avec des valeurs numériques. Tu ne calcules rien : le logiciel calcule.
+- S0 = objet, S1, S2… surfaces, la dernière = image. Les lentilles L1, L2… et leurs surfaces sont listées dans la description du système : « la deuxième lentille » = L2.
+- Unités : mm ; champs en degrés si l'objet est à l'infini ; longueurs d'onde en nm ; face plane = "inf".
+- « optimise » : set_variables (si aucune variable) puis éventuellement set_merit, puis optimize.
+- « focale de X mm » sur le système existant = set_merit avec l'opérande EFL ; « crée/fais un doublet » = design_doublet ; « une lentille simple » = design_singlet.
+- Si la demande est ambiguë ou qu'il manque une valeur indispensable, appelle seulement ask_question.`;
   const SCHEMA = { type: 'object', properties: { message: { type: 'string' }, actions: { type: 'array', items: { type: 'object', properties: { tool: { type: 'string', enum: Object.keys(TOOLS) }, args: { type: 'object' } }, required: ['tool', 'args'] } }, question: { type: 'string' } }, required: ['message', 'actions', 'question'] };
-  function buildMessages(text) {
-    const hist = A.log.filter(m => m.role === 'user' || m.role === 'assistant').slice(-2 * A.cfg.history).map(m => ({ role: m.role, content: m.role === 'user' ? m.text : JSON.stringify({ message: m.text || '', actions: m.actions || [], question: m.question || '' }) }));
-    return [{ role: 'system', content: SYSTEM }, ...hist, { role: 'user', content: `Système actuel :\n${summary()}\n\nDemande : ${text}` }];
+  function buildMessages(text, tools) {
+    const hist = A.log.filter(m => (m.role === 'user' || m.role === 'assistant') && m.by !== '').slice(-2 * A.cfg.history).map(m => ({ role: m.role, content: m.role === 'user' ? m.text : tools ? [m.text, m.question, (m.actions || []).map(describe).join(' ; ')].filter(Boolean).join(' — ') : JSON.stringify({ message: m.text || '', actions: m.actions || [], question: m.question || '' }) }));
+    return [{ role: 'system', content: tools ? SYSTEM_TOOLS : SYSTEM }, ...hist, { role: 'user', content: `Description du système :\n${summary()}\n\nDemande : ${text}` }];
   }
   /** extrait l'objet JSON d'une réponse (tolère du texte ou des balises <think> autour) */
   function parseReply(t) {
@@ -231,10 +264,30 @@ Demande : « garde une focale de 100 mm et une longueur totale inférieure à 12
     try { const r = await fetch(url.replace(/\/$/, '') + '/api/tags', { signal: c.signal }); if (!r.ok) throw new Error('HTTP ' + r.status); const j = await r.json(); return (j.models || []).map(m => m.name); } finally { clearTimeout(t); }
   }
   const pickOllama = names => { for (const p of OLLAMA_REC) { const h = names.find(n => n === p || n.startsWith(p + ':') || n.startsWith(p + '-') || n === p + ':latest'); if (h) return h; } return names[0] || ''; };
+  /** appel d'outils natif : le modèle renvoie message.tool_calls ; ask_question devient la question */
+  async function askOllamaTools(text) {
+    const url = A.cfg.ollamaUrl.replace(/\/$/, ''), model = A.cfg.ollamaModel || pickOllama(A.ollamaModels);
+    if (!model) throw new Error('aucun modèle Ollama installé (ex. : ollama pull qwen3:4b-instruct)');
+    const body = { model, messages: buildMessages(text, true), tools: OLLAMA_TOOLS, stream: false, options: { temperature: 0, num_ctx: 8192 } };
+    if (/qwen3|deepseek-r1|magistral|gpt-oss/i.test(model) && !/instruct/i.test(model)) body.think = false;
+    A.abort = new AbortController();
+    let res = await fetch(url + '/api/chat', { method: 'POST', body: JSON.stringify(body), signal: A.abort.signal });
+    if (res.status === 400 && body.think === false) { delete body.think; res = await fetch(url + '/api/chat', { method: 'POST', body: JSON.stringify(body), signal: A.abort.signal }); }
+    if (!res.ok) { const t = await res.text(); const e = new Error(`Ollama : HTTP ${res.status} ${t.slice(0, 200)}`); e.noTools = /does not support tools/i.test(t); throw e; }
+    const j = await res.json(), msg = j.message || {}, calls = msg.tool_calls || [];
+    let content = String(msg.content || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+    if (!calls.length && /^\s*\{[\s\S]*"actions"/.test(content)) { try { return { rep: parseReply(content), by: `Ollama · ${model}` }; } catch (e) { } }
+    const rep = { message: content, question: '', actions: [] };
+    for (const c of calls) { const f = c.function || {}; let a = f.arguments || {}; if (typeof a === 'string') { try { a = JSON.parse(a); } catch (e) { a = {}; } }
+      if (f.name === 'ask_question') rep.question = String(a.question || ''); else rep.actions.push({ tool: String(f.name), args: a }); }
+    if (rep.question) rep.actions = [];
+    if (!rep.message && rep.actions.length) rep.message = 'Voici ce que je propose :';
+    return { rep, by: `Ollama · ${model} · outils` };
+  }
   async function askOllama(msgs, onTok) {
     const url = A.cfg.ollamaUrl.replace(/\/$/, ''), model = A.cfg.ollamaModel || pickOllama(A.ollamaModels);
     if (!model) throw new Error('aucun modèle Ollama installé (ex. : ollama pull qwen3:4b-instruct)');
-    const body = { model, messages: msgs, stream: true, format: SCHEMA, options: { temperature: 0.1, num_ctx: 8192 } };
+    const body = { model, messages: msgs, stream: true, format: SCHEMA, options: { temperature: 0, num_ctx: 8192 } };
     if (/qwen3|deepseek-r1|magistral|gpt-oss/i.test(model) && !/instruct/i.test(model)) body.think = false;
     A.abort = new AbortController();
     let res = await fetch(url + '/api/chat', { method: 'POST', body: JSON.stringify(body), signal: A.abort.signal });
@@ -321,6 +374,29 @@ Demande : « garde une focale de 100 mm et une longueur totale inférieure à 12
     return { message: 'D\'accord.', actions: acts, question: '' };
   }
 
+  /** demande simple reconnue sans ambiguïté par les règles : exécutée sans modèle (instantané) */
+  function simpleRule(text) {
+    const t = norm(text);
+    if (t.length > 90 || /\b(puis|ensuite|apres|avant de|pour que|afin|tout en|sans|mais|pourquoi|comment|quel|quelle|est-ce|peux-tu|explique)\b/.test(t) || /[?]/.test(text)) return null;
+    const r = rules(text); if (!r.actions.length || r.question) return null;
+    if (r.actions.some(a => a.tool === 'report_metrics')) return null;
+    return { ...r, message: r.message === 'D\'accord.' ? 'Compris :' : r.message };
+  }
+  /** les petits modèles renvoient parfois des nombres en texte ou des listes en chaîne : on normalise */
+  function fixArgs(tool, a) {
+    const P = (PARAMS[tool] || [{}])[0], o = {};
+    for (const [k, v] of Object.entries(a || {})) {
+      if (v === null || v === '' || v === undefined) continue; const d = P[k];
+      if (!d) { o[k] = v; continue; }
+      if ((d.type === 'number' || d.type === 'integer') && typeof v === 'string') { const x = parseFloat(v.replace(',', '.').replace(/^f\s*\/\s*/i, '')); if (isFinite(x)) o[k] = x; continue; }
+      if (d.type === 'array' && typeof v === 'string') { try { const j = JSON.parse(v); o[k] = Array.isArray(j) ? j : [j]; } catch (e) { o[k] = v.split(/[,;\s]+/).filter(Boolean).map(x => d.items && d.items.type === 'number' ? parseFloat(x.replace(',', '.')) : x); } continue; }
+      if (d.type === 'boolean' && typeof v === 'string') { o[k] = /^(true|oui|1|yes)$/i.test(v); continue; }
+      o[k] = v;
+    }
+    if (tool === 'set_variables' && typeof o.targets === 'string') o.targets = [o.targets];
+    return o;
+  }
+
   /* ================= Interface ================= */
   const css = `
 #asst{position:fixed;top:52px;right:10px;bottom:34px;width:min(420px,calc(100vw - 20px));z-index:90;display:none;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.3);overflow:hidden;font-size:13px}
@@ -390,6 +466,8 @@ Demande : « garde une focale de 100 mm et une longueur totale inférieure à 12
       <div class="hint" style="margin-top:4px"><b>Navigateur</b> — modèle téléchargé une seule fois puis gardé en cache (fonctionne hors ligne ensuite).</div>
       <div class="row"><select class="in grow" id="aWM">${WEBLLM_MODELS.map(([k, l]) => `<option value="${k}" ${k === c.webllmModel ? 'selected' : ''}>${l}</option>`).join('')}</select><button class="bt" id="aWL" ${gpu ? '' : 'disabled'}>Charger</button></div>
       <label class="r"><input type="checkbox" id="aCf" ${c.confirm ? 'checked' : ''}> Demander confirmation avant d'appliquer les actions</label>
+      <label class="r"><input type="checkbox" id="aRF" ${c.rulesFirst ? 'checked' : ''}> Demandes simples traitées directement par les règles (instantané)</label>
+      <label class="r"><input type="checkbox" id="aNT" ${c.nativeTools !== false ? 'checked' : ''}> Ollama : appel d'outils natif (recommandé ; décocher pour le mode JSON)</label>
       <div class="hint">Rien n'est envoyé sur Internet : Ollama et le modèle du navigateur tournent sur ce PC. Le module assistant est facultatif : Focale fonctionne sans lui.</div>`;
     $$('#aSet input[name="aBe"]').forEach(r => r.onchange = () => { c.backend = r.value; saveCfg(); detect(); });
     $('#aOU').onchange = e => { c.ollamaUrl = e.target.value.trim() || DEF.ollamaUrl; saveCfg(); };
@@ -398,6 +476,8 @@ Demande : « garde une focale de 100 mm et une longueur totale inférieure à 12
     $('#aWM').onchange = e => { c.webllmModel = e.target.value; saveCfg(); setChip(); };
     $('#aWL').onclick = async () => { c.backend = 'webllm'; saveCfg(); A.active = 'webllm'; setChip(); status('Chargement…', true); try { await webllmLoad(p => status(`Téléchargement / chargement : ${Math.round((p.progress || 0) * 100)} % — ${p.text || ''}`, true)); status('Modèle prêt.'); } catch (e) { status('Échec : ' + e.message); } renderSet(); };
     $('#aCf').onchange = e => { c.confirm = e.target.checked; saveCfg(); };
+    $('#aRF').onchange = e => { c.rulesFirst = e.target.checked; saveCfg(); };
+    $('#aNT').onchange = e => { c.nativeTools = e.target.checked; saveCfg(); };
   }
   function renderLog() {
     const L = $('#aLog'); if (!L) return;
@@ -420,11 +500,18 @@ Demande : « garde une focale de 100 mm et une longueur totale inférieure à 12
     const t0 = performance.now();
     try {
       let rep, by;
-      if (A.active === 'ollama' || A.active === 'webllm') {
+      const simple = A.cfg.rulesFirst && simpleRule(text);
+      if (simple) { rep = simple; by = 'règles (instantané)'; }
+      else if (A.active === 'ollama' || A.active === 'webllm') {
         status(A.active === 'ollama' ? 'Le modèle réfléchit (Ollama)' : 'Le modèle réfléchit (navigateur)', true);
         try {
-          const r = await (A.active === 'ollama' ? askOllama : askWebllm)(buildMessages(text), out => status(`Réponse en cours (${out.length} caractères)`, true));
-          rep = parseReply(r.text); by = `${r.by} · ${((performance.now() - t0) / 1000).toFixed(1)} s`;
+          if (A.active === 'ollama' && A.cfg.nativeTools !== false) {
+            try { const r = await askOllamaTools(text); rep = r.rep; by = `${r.by} · ${((performance.now() - t0) / 1000).toFixed(1)} s`; }
+            catch (e) { if (!e.noTools) throw e; A.cfg.nativeTools = false; saveCfg(); }
+          }
+          if (!rep) { const r = await (A.active === 'ollama' ? askOllama : askWebllm)(buildMessages(text), out => status(`Réponse en cours (${out.length} caractères)`, true));
+            rep = parseReply(r.text); by = `${r.by} · ${((performance.now() - t0) / 1000).toFixed(1)} s`; }
+          rep.actions = rep.actions.map(a => ({ tool: a.tool, args: fixArgs(a.tool, a.args) }));
         } catch (e) {
           if (A.stop) throw new Error('Arrêté.');
           A.log.push({ role: 'error', text: `Moteur ${A.active === 'ollama' ? 'Ollama' : 'navigateur'} indisponible (${e.message}). Je passe aux règles simples pour cette demande.` });
@@ -444,5 +531,5 @@ Demande : « garde une focale de 100 mm et une longueur totale inférieure à 12
   A.close = () => { const e = $('#asst'); if (e) e.classList.remove('open'); };
   A.toggle = () => { const e = $('#asst'); if (e && e.classList.contains('open')) A.close(); else A.open(); };
   // accès pour les tests
-  Object.assign(A, { summary, rules, parseReply, execute, TOOLS, SCHEMA, SYSTEM, lenses, send, detect, makeDoublet, resolveGlass });
+  Object.assign(A, { summary, rules, simpleRule, fixArgs, OLLAMA_TOOLS, buildMessages, parseReply, execute, TOOLS, SCHEMA, SYSTEM, lenses, send, detect, makeDoublet, resolveGlass });
 })();
