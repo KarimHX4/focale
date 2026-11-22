@@ -21,6 +21,11 @@ et tolérancement (sensibilités, RSS, Monte-Carlo avec compensateur).
   met à jour automatiquement à chaque nouvelle version poussée sur `main`.
 - Hors ligne sans installation : ouvrir `index.html` directement dans le navigateur.
 - Fichiers : Ctrl+O / Ctrl+S (.json), export CODE V .seq, glisser-déposer de fichiers .json / .seq / .agf.
+- **Assistant en langage naturel (facultatif)** : `assistant.js`, chargé seulement au clic sur « Assistant ».
+  Il fonctionne avec un modèle **local et gratuit** : [Ollama](https://ollama.com) (`ollama pull qwen3:4b-instruct`,
+  puis variable d'environnement `OLLAMA_ORIGINS=*`), ou un modèle exécuté dans le navigateur (WebGPU), ou sans IA
+  (règles simples). Pour une version **sans assistant**, copiez seulement `index.html` (et les icônes) :
+  Focale est complet sans `assistant.js` ; « Fichier › Masquer le bouton Assistant » retire le bouton.
 
 ## Structure
 - `src/engine.js` — moteur optique (paraxial, tracé réel, diffraction, optimisation), sans dépendance
@@ -28,9 +33,10 @@ et tolérancement (sensibilités, RSS, Monte-Carlo avec compensateur).
 - `src/samples.js` — systèmes d'exemple
 - `src/help.js` — contenu du centre d'aide
 - `src/glasses.js` — catalogues de verres (généré depuis refractiveindex.info, CC0)
+- `src/assistant.js` — assistant en langage naturel (module facultatif, copié tel quel en `assistant.js`)
 - `src/shell.html` — HTML/CSS
 - `src/pwa/` — manifeste, service worker et icône de l'application installable
-- `build.py` — assemble le tout dans `index.html` + `sw.js` versionné (`python3 build.py`)
+- `build.py` — assemble le tout dans `index.html` + `assistant.js` + `sw.js` versionné (`python3 build.py`)
 
 ## Tester le moteur
 `node -e "const OE=require('./src/engine.js'),S=require('./src/samples.js');console.log(OE.prepare(S['Triplet de Cooke f=50 F/5']()).par.efl)"`

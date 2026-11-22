@@ -242,6 +242,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
       <hr>
       <button data-act="report">Rapport PDF…</button>
       <hr>
+      <button data-act="asstShow" id="asstShow">Masquer le bouton Assistant</button>
       <button data-act="about">À propos / version</button>
     </div></div>
   <div class="dd"><button class="tb" data-menu="mSamp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3c-3 4-3 14 0 18M12 3c3 4 3 14 0 18"/></svg>Exemples ▾</button>
@@ -253,6 +254,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
   <button class="tb pri" data-act="optim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20l6-8 4 4 8-11"/><circle cx="21" cy="5" r="1.5" fill="currentColor"/></svg>Optimiser</button>
   <button class="tb" data-act="tol" title="Sensibilités et Monte-Carlo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20h18"/><path d="M6 20V10M10 20V4M14 20V8M18 20v-6"/></svg>Tolérancer</button>
   <button class="tb" data-act="report" title="Composer et générer un rapport PDF"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6"/><path d="M9 13h7M9 17h5"/></svg>Rapport</button>
+  <button class="tb" data-act="assistant" id="asstBtn" title="Assistant en langage naturel (module facultatif, modèle local) — Ctrl+Maj+A"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M9 11h.01M12 11h.01M15 11h.01"/></svg>Assistant</button>
   <div class="grow"></div>
   <span class="hint" style="margin-right:4px">Analyses</span>
   <div class="seg" id="gridSeg"><button data-g="1">1</button><button data-g="2">2</button><button data-g="4">4</button><button data-g="6">6</button></div>
@@ -304,7 +306,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 <div class="toast" id="toast"></div>
 <input type="file" id="fileIn" accept=".json,.zmx,.seq,.txt,.agf" style="display:none">
 <div class="drop" id="drop">Déposez un fichier .zmx, .seq, .json ou .agf</div>
-<script>const FOCALE_VERSION = 'e7499534';</script>
+<script>const FOCALE_VERSION = '6406bfc0';</script>
 <script>
 'use strict';
 /* =====================================================================
@@ -3102,6 +3104,21 @@ const HELP = [
 <li><b>Monte-Carlo</b> : toutes les tolérances tirées simultanément entre leurs bornes (gaussienne tronquée, uniforme, parabolique — extrêmes favorisés — ou extrêmes seulement), avec une <b>graine</b> pour des tirages reproductibles. Résultats : moyenne, écart-type, centiles (50 à 98 %), meilleur et pire, <b>rendement</b> par rapport à une spécification, course du compensateur, dérive de visée, histogramme et fonction de répartition, principaux contributeurs (corrélation). Les tirages pire, médian et meilleur se <b>chargent dans l'éditeur</b> pour être analysés (Ctrl+Z pour revenir).</li></ul>
 <p>« Exporter CSV » copie tous les résultats (y compris chaque tirage Monte-Carlo et ses valeurs) ; le rapport PDF reprend les trois analyses.</p>` },
 
+  { id: 'assistant', t: 'Assistant (langage naturel)', h: `
+<p>Bouton <b>Assistant</b> de l'en-tête (Ctrl+Maj+A) : on décrit en français ce que l'on veut faire, l'assistant le traduit en actions de Focale. Exemples : « fais-moi un doublet achromatique de 150 mm à F/4 avec 3° de champ », « mets le verre de la deuxième lentille en N-SF11 », « optimise le front d'onde à la longueur d'onde centrale », « garde une focale de 100 mm et une longueur totale inférieure à 120 mm puis optimise », « quick focus », « affiche la FTM ».</p>
+<h4>Fonctionnement</h4>
+<ul><li>Le modèle de langage <b>ne calcule rien</b> : il choisit des actions (modifier une surface, changer le verre d'une lentille, ouverture, champs, longueurs d'onde, variables, fonction de mérite, optimisation, substitution des verres, quick focus, conception d'une lentille simple ou d'un doublet achromatique, recherche de verres, affichage d'une analyse…). Les calculs restent ceux du moteur de Focale.</li>
+<li>Il reçoit à chaque demande une description du système : surfaces S0…Sn, <b>lentilles numérotées L1, L2…</b> de l'objet vers l'image (un doublet collé compte pour deux lentilles), ouverture, champs, longueurs d'onde, performances.</li>
+<li>Si la demande est ambiguë (« change le verre » avec plusieurs lentilles), il <b>pose une question</b> au lieu d'agir ; il signale aussi une demande irréaliste dans son message.</li>
+<li>Les actions sont <b>affichées avant d'être appliquées</b> (boutons Appliquer / Ignorer ; réglable dans ⚙). Toute la demande forme <b>une seule étape d'annulation</b> : Ctrl+Z revient à l'état d'avant. Si une action échoue, le système est remis dans son état précédent.</li></ul>
+<h4>Moteurs (⚙) — 100 % locaux et gratuits</h4>
+<ul><li><b>Ollama</b> (recommandé) : programme gratuit (ollama.com) qui fait tourner le modèle sur le PC. Avec 16 Go de RAM : <code>ollama pull qwen3:4b-instruct</code> (2,5 Go, rapide) ou <code>ollama pull qwen3:8b</code> (5,2 Go, plus fiable, plus lent sans carte graphique). Pour que Focale puisse l'appeler depuis le navigateur, définir la variable d'environnement <code>OLLAMA_ORIGINS=*</code> (Windows : <code>setx OLLAMA_ORIGINS "*"</code> dans un terminal, puis quitter et relancer Ollama). Le bouton « Tester » vérifie la connexion et liste les modèles installés.</li>
+<li><b>Dans le navigateur</b> (WebGPU, Chrome ou Edge récents) : aucun programme à installer ; le modèle (2 à 5 Go selon le choix) est téléchargé une seule fois puis gardé en cache, il fonctionne ensuite hors ligne. Nécessite une carte graphique compatible ; les modèles de 3 à 4 milliards de paramètres conviennent à 16 Go de RAM.</li>
+<li><b>Sans IA</b> : des règles reconnaissent les demandes simples (verre d'une surface ou d'une lentille, rayon, épaisseur, F/#, EPD, champ, longueurs d'onde, focale, longueur totale, chromatisme, quick focus, optimisation, doublet ou lentille simple, analyses, annuler). Fonctionne hors ligne, instantanément.</li>
+<li><b>Automatique</b> (par défaut) : Ollama s'il répond, sinon les règles. Aucun téléchargement n'est lancé sans votre accord. Si le moteur choisi ne répond pas, la demande est traitée par les règles.</li></ul>
+<p>Rien n'est envoyé sur Internet. Sur un PC sans carte graphique, une réponse d'Ollama prend de quelques secondes à une minute selon le modèle.</p>
+<h4>Module facultatif</h4>
+<p>L'assistant est un fichier séparé, <code>assistant.js</code>, chargé seulement quand on clique sur le bouton : <code>index.html</code> seul est un Focale complet. Pour une installation sans assistant, il suffit de ne pas copier <code>assistant.js</code> ; <b>Fichier › Masquer le bouton Assistant</b> retire le bouton de l'en-tête.</p>` },
   { id: 'fichiers', t: 'Fichiers, Zemax et CODE V', h: `
 <ul><li><b>Ctrl+O</b> ouvrir, <b>Ctrl+S</b> enregistrer (.json, format natif complet), <i>Enregistrer sous…</i></li>
 <li><b>Glisser-déposer</b> d'un fichier <b>.zmx</b>, <b>.seq</b>, .json ou .agf sur la fenêtre, ou <i>Fichier → Coller un système</i> : le format est reconnu automatiquement. Les .zmx enregistrés en UTF-16 (cas courant) sont décodés.</li>
@@ -3125,7 +3142,7 @@ const HELP = [
 <table class="ht"><tr><th>Touches</th><th>Action</th></tr>
 <tr><td>F1</td><td>Aide</td></tr><tr><td>Ctrl+Z / Ctrl+Y</td><td>Annuler / rétablir</td></tr>
 <tr><td>Ctrl+O / Ctrl+S / Ctrl+Maj+S</td><td>Ouvrir / enregistrer / enregistrer sous</td></tr>
-<tr><td>Ctrl+Maj+O</td><td>Optimisation</td></tr><tr><td>Ctrl+Maj+F</td><td>Quick focus (meilleur foyer)</td></tr><tr><td>Inser / Suppr (ou Ctrl+Suppr)</td><td>Insérer / supprimer une surface</td></tr><tr><td>Clic droit (éditeur)</td><td>Menu de la surface (supprimer, insérer, verre…)</td></tr>
+<tr><td>Ctrl+Maj+O</td><td>Optimisation</td></tr><tr><td>Ctrl+Maj+F</td><td>Quick focus (meilleur foyer)</td></tr><tr><td>Ctrl+Maj+A</td><td>Assistant (langage naturel)</td></tr><tr><td>Inser / Suppr (ou Ctrl+Suppr)</td><td>Insérer / supprimer une surface</td></tr><tr><td>Clic droit (éditeur)</td><td>Menu de la surface (supprimer, insérer, verre…)</td></tr>
 <tr><td>Entrée, Tab, ↑ ↓, Échap</td><td>Navigation dans l'éditeur</td></tr><tr><td>Échap</td><td>Fermer une fenêtre, réduire une analyse agrandie</td></tr></table>` },
 
   { id: 'conventions', t: 'Conventions et unités', h: `
@@ -3796,14 +3813,14 @@ const elemOf = s => s.elem === 'grating' ? (OE.isMirror(s) ? 'rgrating' : 'grati
 const App = {
   sys: null, M: null, sel: 1, hist: [], hi: -1, focus: null,
   panes: [{ type: 'spot' }, { type: 'wfe', fi: 0 }, { type: 'mtf' }, { type: 'psf', fi: 0 }, { type: 'rayfan' }, { type: 'footprint' }],
-  grid: 4, mode: '2d', view: { auto: true, s: 1, ox: 0, oy: 0, yaw: 0.55, pitch: 0.32 }, nRays: 7, showAsph: false, qf: { crit: 'SPOT', wl: 'central' },
+  grid: 4, mode: '2d', view: { auto: true, s: 1, ox: 0, oy: 0, yaw: 0.55, pitch: 0.32 }, nRays: 7, showAsph: false, qf: { crit: 'SPOT', wl: 'central' }, asst: true,
 };
-function save() { try { localStorage.setItem('focale.sys', toJSON(App.sys)); localStorage.setItem('focale.ui', JSON.stringify({ panes: App.panes, grid: App.grid, qf: App.qf, th: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light' })); } catch (e) { } }
+function save() { try { localStorage.setItem('focale.sys', toJSON(App.sys)); localStorage.setItem('focale.ui', JSON.stringify({ panes: App.panes, grid: App.grid, qf: App.qf, asst: App.asst, th: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light' })); } catch (e) { } }
 function load() {
   try {
     const s = localStorage.getItem('focale.sys'); if (s) App.sys = normalize(fromJSON(s));
     const u = JSON.parse(localStorage.getItem('focale.ui') || 'null');
-    if (u) { if (Array.isArray(u.panes) && u.panes.length >= 6) App.panes = u.panes; if (u.grid) App.grid = u.grid; if (u.qf) App.qf = { ...App.qf, ...u.qf }; }
+    if (u) { if (Array.isArray(u.panes) && u.panes.length >= 6) App.panes = u.panes; if (u.grid) App.grid = u.grid; if (u.qf) App.qf = { ...App.qf, ...u.qf }; if (u.asst === false) App.asst = false; }
     // thème : sombre par défaut (premier lancement) ; ensuite le dernier choix de l'utilisateur
     document.documentElement.dataset.theme = u && u.th === 'light' ? '' : 'dark';
   } catch (e) { App.sys = null; }
@@ -3831,6 +3848,19 @@ function commit(mut, opts = {}) { mut(App.sys); pushHist(); refresh(opts); }
 function undo() { if (App.hi > 0) { App.hi--; App.sys = fromJSON(App.hist[App.hi]); refresh(); toast('Annulé'); } }
 function redo() { if (App.hi < App.hist.length - 1) { App.hi++; App.sys = fromJSON(App.hist[App.hi]); refresh(); toast('Rétabli'); } }
 function loadSystem(s, msg) { App.sys = normalize(s); App.sel = 1; App.view.auto = true; pushHist(); refresh(); if (msg) toast(msg); }
+
+/* ---------------- Assistant (module facultatif assistant.js, chargé à la demande) ---------------- */
+function applyAsstPref() { const b = $('#asstBtn'), m = $('#asstShow'); if (b) b.style.display = App.asst ? '' : 'none'; if (m) m.textContent = App.asst ? 'Masquer le bouton Assistant' : 'Afficher le bouton Assistant'; }
+function openAssistant() {
+  if (window.ASST) { window.ASST.toggle(); return; }
+  if (openAssistant.loading) return; openAssistant.loading = true;
+  const sc = document.createElement('script'); sc.src = `assistant.js?v=${typeof FOCALE_VERSION !== 'undefined' ? FOCALE_VERSION : ''}`;
+  sc.onload = () => { openAssistant.loading = false; if (window.ASST) window.ASST.open(); };
+  sc.onerror = () => { openAssistant.loading = false; sc.remove();
+    dlg(`<h2>Assistant indisponible <button class="x" data-d="close">✕</button></h2><div class="db"><p>Le module facultatif <code>assistant.js</code> n'a pas été trouvé à côté de cette page. Focale fonctionne entièrement sans lui.</p>
+      <p>Pour l'ajouter, placez le fichier <code>assistant.js</code> (dépôt GitHub de Focale) dans le même dossier que <code>index.html</code>, ou utilisez la version en ligne. Pour ne plus voir ce bouton : <b>Fichier › Masquer le bouton Assistant</b>.</p></div>`); };
+  document.head.appendChild(sc);
+}
 
 /* ---------------- Rafraîchissement ---------------- */
 let paneTimer = null;
@@ -5733,7 +5763,7 @@ function init() {
   if (!App.sys) App.sys = normalize(SAMPLES['Triplet de Cooke f=50 F/5']());
   App.showAsph = App.sys.surfaces.some(s => s.a4 || s.a6 || s.a8 || s.a10); $('#showAsph').checked = App.showAsph;
   setupLDE(); setupSide(); setupLayout(); setupPanes(); setupDlg();
-  pushHist(); buildPanes(); refresh();
+  pushHist(); buildPanes(); refresh(); applyAsstPref();
   // header
   document.addEventListener('click', e => {
     const mb = e.target.closest('[data-menu]');
@@ -5757,6 +5787,8 @@ function init() {
       case 'optim': openOptim(); break;
       case 'tol': openTol(); break;
       case 'report': openReport(); break;
+      case 'assistant': openAssistant(); break;
+      case 'asstShow': App.asst = !App.asst; applyAsstPref(); save(); toast(App.asst ? 'Bouton Assistant affiché' : 'Bouton Assistant masqué (Fichier pour le réafficher)'); break;
       case 'glasses': openGlasses(); break;
       case 'qfocus': quickFocusUI(); break;
       case 'qfopt': qfMenu(a); break;
@@ -5782,6 +5814,7 @@ function init() {
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveFile(e.shiftKey); }
     else if (e.key === 'F1') { e.preventDefault(); openHelp(); }
     else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); quickFocusUI(); }
+    else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'a') { e.preventDefault(); openAssistant(); }
     else if (e.key === 'Insert') { e.preventDefault(); lde('insA'); }
     else if ((e.ctrlKey || e.metaKey) && e.key === 'Delete') { e.preventDefault(); lde('del'); }
     else if (e.key === 'Delete' && !inInput && !e.target.closest?.('#dlg')) { e.preventDefault(); lde('del'); }

@@ -52,14 +52,14 @@ const elemOf = s => s.elem === 'grating' ? (OE.isMirror(s) ? 'rgrating' : 'grati
 const App = {
   sys: null, M: null, sel: 1, hist: [], hi: -1, focus: null,
   panes: [{ type: 'spot' }, { type: 'wfe', fi: 0 }, { type: 'mtf' }, { type: 'psf', fi: 0 }, { type: 'rayfan' }, { type: 'footprint' }],
-  grid: 4, mode: '2d', view: { auto: true, s: 1, ox: 0, oy: 0, yaw: 0.55, pitch: 0.32 }, nRays: 7, showAsph: false, qf: { crit: 'SPOT', wl: 'central' },
+  grid: 4, mode: '2d', view: { auto: true, s: 1, ox: 0, oy: 0, yaw: 0.55, pitch: 0.32 }, nRays: 7, showAsph: false, qf: { crit: 'SPOT', wl: 'central' }, asst: true,
 };
-function save() { try { localStorage.setItem('focale.sys', toJSON(App.sys)); localStorage.setItem('focale.ui', JSON.stringify({ panes: App.panes, grid: App.grid, qf: App.qf, th: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light' })); } catch (e) { } }
+function save() { try { localStorage.setItem('focale.sys', toJSON(App.sys)); localStorage.setItem('focale.ui', JSON.stringify({ panes: App.panes, grid: App.grid, qf: App.qf, asst: App.asst, th: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light' })); } catch (e) { } }
 function load() {
   try {
     const s = localStorage.getItem('focale.sys'); if (s) App.sys = normalize(fromJSON(s));
     const u = JSON.parse(localStorage.getItem('focale.ui') || 'null');
-    if (u) { if (Array.isArray(u.panes) && u.panes.length >= 6) App.panes = u.panes; if (u.grid) App.grid = u.grid; if (u.qf) App.qf = { ...App.qf, ...u.qf }; }
+    if (u) { if (Array.isArray(u.panes) && u.panes.length >= 6) App.panes = u.panes; if (u.grid) App.grid = u.grid; if (u.qf) App.qf = { ...App.qf, ...u.qf }; if (u.asst === false) App.asst = false; }
     // thème : sombre par défaut (premier lancement) ; ensuite le dernier choix de l'utilisateur
     document.documentElement.dataset.theme = u && u.th === 'light' ? '' : 'dark';
   } catch (e) { App.sys = null; }
@@ -87,6 +87,19 @@ function commit(mut, opts = {}) { mut(App.sys); pushHist(); refresh(opts); }
 function undo() { if (App.hi > 0) { App.hi--; App.sys = fromJSON(App.hist[App.hi]); refresh(); toast('Annulé'); } }
 function redo() { if (App.hi < App.hist.length - 1) { App.hi++; App.sys = fromJSON(App.hist[App.hi]); refresh(); toast('Rétabli'); } }
 function loadSystem(s, msg) { App.sys = normalize(s); App.sel = 1; App.view.auto = true; pushHist(); refresh(); if (msg) toast(msg); }
+
+/* ---------------- Assistant (module facultatif assistant.js, chargé à la demande) ---------------- */
+function applyAsstPref() { const b = $('#asstBtn'), m = $('#asstShow'); if (b) b.style.display = App.asst ? '' : 'none'; if (m) m.textContent = App.asst ? 'Masquer le bouton Assistant' : 'Afficher le bouton Assistant'; }
+function openAssistant() {
+  if (window.ASST) { window.ASST.toggle(); return; }
+  if (openAssistant.loading) return; openAssistant.loading = true;
+  const sc = document.createElement('script'); sc.src = `assistant.js?v=${typeof FOCALE_VERSION !== 'undefined' ? FOCALE_VERSION : ''}`;
+  sc.onload = () => { openAssistant.loading = false; if (window.ASST) window.ASST.open(); };
+  sc.onerror = () => { openAssistant.loading = false; sc.remove();
+    dlg(`<h2>Assistant indisponible <button class="x" data-d="close">✕</button></h2><div class="db"><p>Le module facultatif <code>assistant.js</code> n'a pas été trouvé à côté de cette page. Focale fonctionne entièrement sans lui.</p>
+      <p>Pour l'ajouter, placez le fichier <code>assistant.js</code> (dépôt GitHub de Focale) dans le même dossier que <code>index.html</code>, ou utilisez la version en ligne. Pour ne plus voir ce bouton : <b>Fichier › Masquer le bouton Assistant</b>.</p></div>`); };
+  document.head.appendChild(sc);
+}
 
 /* ---------------- Rafraîchissement ---------------- */
 let paneTimer = null;
@@ -1989,7 +2002,7 @@ function init() {
   if (!App.sys) App.sys = normalize(SAMPLES['Triplet de Cooke f=50 F/5']());
   App.showAsph = App.sys.surfaces.some(s => s.a4 || s.a6 || s.a8 || s.a10); $('#showAsph').checked = App.showAsph;
   setupLDE(); setupSide(); setupLayout(); setupPanes(); setupDlg();
-  pushHist(); buildPanes(); refresh();
+  pushHist(); buildPanes(); refresh(); applyAsstPref();
   // header
   document.addEventListener('click', e => {
     const mb = e.target.closest('[data-menu]');
@@ -2013,6 +2026,8 @@ function init() {
       case 'optim': openOptim(); break;
       case 'tol': openTol(); break;
       case 'report': openReport(); break;
+      case 'assistant': openAssistant(); break;
+      case 'asstShow': App.asst = !App.asst; applyAsstPref(); save(); toast(App.asst ? 'Bouton Assistant affiché' : 'Bouton Assistant masqué (Fichier pour le réafficher)'); break;
       case 'glasses': openGlasses(); break;
       case 'qfocus': quickFocusUI(); break;
       case 'qfopt': qfMenu(a); break;
@@ -2038,6 +2053,7 @@ function init() {
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveFile(e.shiftKey); }
     else if (e.key === 'F1') { e.preventDefault(); openHelp(); }
     else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); quickFocusUI(); }
+    else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'a') { e.preventDefault(); openAssistant(); }
     else if (e.key === 'Insert') { e.preventDefault(); lde('insA'); }
     else if ((e.ctrlKey || e.metaKey) && e.key === 'Delete') { e.preventDefault(); lde('del'); }
     else if (e.key === 'Delete' && !inInput && !e.target.closest?.('#dlg')) { e.preventDefault(); lde('del'); }

@@ -213,6 +213,21 @@ const HELP = [
 <li><b>Monte-Carlo</b> : toutes les tolérances tirées simultanément entre leurs bornes (gaussienne tronquée, uniforme, parabolique — extrêmes favorisés — ou extrêmes seulement), avec une <b>graine</b> pour des tirages reproductibles. Résultats : moyenne, écart-type, centiles (50 à 98 %), meilleur et pire, <b>rendement</b> par rapport à une spécification, course du compensateur, dérive de visée, histogramme et fonction de répartition, principaux contributeurs (corrélation). Les tirages pire, médian et meilleur se <b>chargent dans l'éditeur</b> pour être analysés (Ctrl+Z pour revenir).</li></ul>
 <p>« Exporter CSV » copie tous les résultats (y compris chaque tirage Monte-Carlo et ses valeurs) ; le rapport PDF reprend les trois analyses.</p>` },
 
+  { id: 'assistant', t: 'Assistant (langage naturel)', h: `
+<p>Bouton <b>Assistant</b> de l'en-tête (Ctrl+Maj+A) : on décrit en français ce que l'on veut faire, l'assistant le traduit en actions de Focale. Exemples : « fais-moi un doublet achromatique de 150 mm à F/4 avec 3° de champ », « mets le verre de la deuxième lentille en N-SF11 », « optimise le front d'onde à la longueur d'onde centrale », « garde une focale de 100 mm et une longueur totale inférieure à 120 mm puis optimise », « quick focus », « affiche la FTM ».</p>
+<h4>Fonctionnement</h4>
+<ul><li>Le modèle de langage <b>ne calcule rien</b> : il choisit des actions (modifier une surface, changer le verre d'une lentille, ouverture, champs, longueurs d'onde, variables, fonction de mérite, optimisation, substitution des verres, quick focus, conception d'une lentille simple ou d'un doublet achromatique, recherche de verres, affichage d'une analyse…). Les calculs restent ceux du moteur de Focale.</li>
+<li>Il reçoit à chaque demande une description du système : surfaces S0…Sn, <b>lentilles numérotées L1, L2…</b> de l'objet vers l'image (un doublet collé compte pour deux lentilles), ouverture, champs, longueurs d'onde, performances.</li>
+<li>Si la demande est ambiguë (« change le verre » avec plusieurs lentilles), il <b>pose une question</b> au lieu d'agir ; il signale aussi une demande irréaliste dans son message.</li>
+<li>Les actions sont <b>affichées avant d'être appliquées</b> (boutons Appliquer / Ignorer ; réglable dans ⚙). Toute la demande forme <b>une seule étape d'annulation</b> : Ctrl+Z revient à l'état d'avant. Si une action échoue, le système est remis dans son état précédent.</li></ul>
+<h4>Moteurs (⚙) — 100 % locaux et gratuits</h4>
+<ul><li><b>Ollama</b> (recommandé) : programme gratuit (ollama.com) qui fait tourner le modèle sur le PC. Avec 16 Go de RAM : <code>ollama pull qwen3:4b-instruct</code> (2,5 Go, rapide) ou <code>ollama pull qwen3:8b</code> (5,2 Go, plus fiable, plus lent sans carte graphique). Pour que Focale puisse l'appeler depuis le navigateur, définir la variable d'environnement <code>OLLAMA_ORIGINS=*</code> (Windows : <code>setx OLLAMA_ORIGINS "*"</code> dans un terminal, puis quitter et relancer Ollama). Le bouton « Tester » vérifie la connexion et liste les modèles installés.</li>
+<li><b>Dans le navigateur</b> (WebGPU, Chrome ou Edge récents) : aucun programme à installer ; le modèle (2 à 5 Go selon le choix) est téléchargé une seule fois puis gardé en cache, il fonctionne ensuite hors ligne. Nécessite une carte graphique compatible ; les modèles de 3 à 4 milliards de paramètres conviennent à 16 Go de RAM.</li>
+<li><b>Sans IA</b> : des règles reconnaissent les demandes simples (verre d'une surface ou d'une lentille, rayon, épaisseur, F/#, EPD, champ, longueurs d'onde, focale, longueur totale, chromatisme, quick focus, optimisation, doublet ou lentille simple, analyses, annuler). Fonctionne hors ligne, instantanément.</li>
+<li><b>Automatique</b> (par défaut) : Ollama s'il répond, sinon les règles. Aucun téléchargement n'est lancé sans votre accord. Si le moteur choisi ne répond pas, la demande est traitée par les règles.</li></ul>
+<p>Rien n'est envoyé sur Internet. Sur un PC sans carte graphique, une réponse d'Ollama prend de quelques secondes à une minute selon le modèle.</p>
+<h4>Module facultatif</h4>
+<p>L'assistant est un fichier séparé, <code>assistant.js</code>, chargé seulement quand on clique sur le bouton : <code>index.html</code> seul est un Focale complet. Pour une installation sans assistant, il suffit de ne pas copier <code>assistant.js</code> ; <b>Fichier › Masquer le bouton Assistant</b> retire le bouton de l'en-tête.</p>` },
   { id: 'fichiers', t: 'Fichiers, Zemax et CODE V', h: `
 <ul><li><b>Ctrl+O</b> ouvrir, <b>Ctrl+S</b> enregistrer (.json, format natif complet), <i>Enregistrer sous…</i></li>
 <li><b>Glisser-déposer</b> d'un fichier <b>.zmx</b>, <b>.seq</b>, .json ou .agf sur la fenêtre, ou <i>Fichier → Coller un système</i> : le format est reconnu automatiquement. Les .zmx enregistrés en UTF-16 (cas courant) sont décodés.</li>
@@ -236,7 +251,7 @@ const HELP = [
 <table class="ht"><tr><th>Touches</th><th>Action</th></tr>
 <tr><td>F1</td><td>Aide</td></tr><tr><td>Ctrl+Z / Ctrl+Y</td><td>Annuler / rétablir</td></tr>
 <tr><td>Ctrl+O / Ctrl+S / Ctrl+Maj+S</td><td>Ouvrir / enregistrer / enregistrer sous</td></tr>
-<tr><td>Ctrl+Maj+O</td><td>Optimisation</td></tr><tr><td>Ctrl+Maj+F</td><td>Quick focus (meilleur foyer)</td></tr><tr><td>Inser / Suppr (ou Ctrl+Suppr)</td><td>Insérer / supprimer une surface</td></tr><tr><td>Clic droit (éditeur)</td><td>Menu de la surface (supprimer, insérer, verre…)</td></tr>
+<tr><td>Ctrl+Maj+O</td><td>Optimisation</td></tr><tr><td>Ctrl+Maj+F</td><td>Quick focus (meilleur foyer)</td></tr><tr><td>Ctrl+Maj+A</td><td>Assistant (langage naturel)</td></tr><tr><td>Inser / Suppr (ou Ctrl+Suppr)</td><td>Insérer / supprimer une surface</td></tr><tr><td>Clic droit (éditeur)</td><td>Menu de la surface (supprimer, insérer, verre…)</td></tr>
 <tr><td>Entrée, Tab, ↑ ↓, Échap</td><td>Navigation dans l'éditeur</td></tr><tr><td>Échap</td><td>Fermer une fenêtre, réduire une analyse agrandie</td></tr></table>` },
 
   { id: 'conventions', t: 'Conventions et unités', h: `
