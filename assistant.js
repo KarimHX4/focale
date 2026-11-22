@@ -1,4 +1,4 @@
-/* Focale edefecd7 — module assistant facultatif */
+/* Focale 21eeee19 — module assistant facultatif */
 /* Focale — assistant en langage naturel (module FACULTATIF, chargé à la demande).
    Le logiciel fonctionne sans ce fichier. Moteurs : Ollama (local), WebLLM (dans le navigateur, WebGPU) ou règles (sans IA).
    Le modèle ne calcule rien : il traduit la demande en actions de Focale ; les calculs optiques restent ceux du moteur. */
@@ -421,7 +421,9 @@ Appelle les outils nécessaires, dans l'ordre, avec des valeurs numériques. Tu 
 .aplan li.ok::marker{content:'✓  ';color:#16a34a}.aplan li.ko::marker{content:'✗  ';color:#dc2626}
 .aplan .res{display:block;color:var(--mut);font-size:11.5px}
 .aplan .row{display:flex;gap:6px;justify-content:flex-end}
-#aSet{padding:10px 14px;border-bottom:1px solid var(--line);display:none;flex-direction:column;gap:6px;max-height:55%;overflow:auto}
+#aSet{padding:8px 12px;border-bottom:1px solid var(--line);display:none;flex-direction:column;gap:4px;max-height:30%;overflow:auto;font-size:12px;flex:none}
+#aSet details summary{cursor:pointer;color:var(--mut);font-size:11.5px}
+#aSet .row{margin:0}
 #aSet.open{display:flex}
 #aSet label.r{display:flex;align-items:center;gap:6px}
 #aSet .hint{line-height:1.4}
@@ -440,7 +442,7 @@ Appelle les outils nécessaires, dans l'ordre, avec des valeurs numériques. Tu 
     document.body.appendChild(el);
     $('#aX').onclick = () => A.close(); $('#aCfg').onclick = () => { $('#aSet').classList.toggle('open'); if ($('#aSet').classList.contains('open')) renderSet(); };
     $('#aClr').onclick = () => { A.log = []; renderLog(); };
-    $('#aForm').onsubmit = e => { e.preventDefault(); if (A.busy) { A.stop = true; if (A.abort) A.abort.abort(); return; } const v = $('#aIn').value.trim(); if (v) { $('#aIn').value = ''; send(v); } };
+    $('#aForm').onsubmit = e => { e.preventDefault(); if (A.busy) { A.stop = true; if (A.abort) A.abort.abort(); return; } const v = $('#aIn').value.trim(); if (v) { $('#aIn').value = ''; $('#aSet').classList.remove('open'); send(v); } };
     $('#aIn').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#aForm').requestSubmit(); } e.stopPropagation(); });
     el.addEventListener('click', e => { const b = e.target.closest('[data-ap]'); if (!b) return; const m = A.log[+b.dataset.ap]; if (!m || m.state !== 'pending') return; if (b.dataset.k === 'go') runPlan(m); else { m.state = 'skipped'; renderLog(); } });
     if (!A.log.length) A.log.push({ role: 'assistant', text: 'Bonjour ! Décrivez ce que vous voulez faire : concevoir un système, changer un verre, optimiser, régler l\'ouverture ou les champs… Je vous montre les actions avant de les appliquer, et Ctrl+Z annule toute la demande.', by: '' });
@@ -459,18 +461,16 @@ Appelle les outils nécessaires, dans l'ordre, avec des valeurs numériques. Tu 
   }
   function renderSet() {
     const c = A.cfg, gpu = !!navigator.gpu, origin = location.protocol === 'file:' ? 'null (fichier local)' : location.origin;
-    $('#aSet').innerHTML = `<div class="hint">Moteur</div>
-      ${[['auto', 'Automatique : Ollama s\'il est lancé, sinon règles'], ['ollama', 'Ollama (programme gratuit installé sur ce PC)'], ['webllm', `Dans le navigateur (WebGPU${gpu ? '' : ' — indisponible ici'})`], ['rules', 'Sans IA (commandes simples, hors ligne)']].map(([k, l]) => `<label class="r"><input type="radio" name="aBe" value="${k}" ${c.backend === k ? 'checked' : ''} ${k === 'webllm' && !gpu ? 'disabled' : ''}> ${l}</label>`).join('')}
-      <div class="hint" style="margin-top:4px"><b>Ollama</b> — adresse <input class="in" id="aOU" value="${esc(c.ollamaUrl)}" style="width:170px"> <button class="bt" id="aOT">Tester</button></div>
-      <div class="row"><span class="hint">Modèle</span><select class="in grow" id="aOM">${A.ollamaModels.length ? A.ollamaModels.map(n => `<option ${n === c.ollamaModel ? 'selected' : ''}>${esc(n)}</option>`).join('') : '<option value="">(aucun modèle détecté)</option>'}</select></div>
-      <div class="hint">Installation (16 Go de RAM) : installez Ollama (ollama.com), puis dans un terminal <code>ollama pull qwen3:4b-instruct</code> (≈ 2,5 Go ; <code>qwen3:8b</code> ≈ 5 Go, plus fiable mais plus lent sans carte graphique). Autorisez Focale à l'appeler : variable d'environnement <code>OLLAMA_ORIGINS=*</code> (Windows : <code>setx OLLAMA_ORIGINS "*"</code>, puis relancer Ollama). Origine de cette page : <code>${esc(origin)}</code>.</div>
-      <div class="hint" style="margin-top:4px"><b>Navigateur</b> — modèle téléchargé une seule fois puis gardé en cache (fonctionne hors ligne ensuite).</div>
-      <div class="row"><select class="in grow" id="aWM">${WEBLLM_MODELS.map(([k, l]) => `<option value="${k}" ${k === c.webllmModel ? 'selected' : ''}>${l}</option>`).join('')}</select><button class="bt" id="aWL" ${gpu ? '' : 'disabled'}>Charger</button></div>
-      <label class="r"><input type="checkbox" id="aCf" ${c.confirm ? 'checked' : ''}> Demander confirmation avant d'appliquer les actions</label>
-      <label class="r"><input type="checkbox" id="aRF" ${c.rulesFirst ? 'checked' : ''}> Demandes simples traitées directement par les règles (instantané)</label>
-      <label class="r"><input type="checkbox" id="aNT" ${c.nativeTools !== false ? 'checked' : ''}> Ollama : appel d'outils natif (recommandé ; décocher pour le mode JSON)</label>
-      <div class="hint">Rien n'est envoyé sur Internet : Ollama et le modèle du navigateur tournent sur ce PC. Le module assistant est facultatif : Focale fonctionne sans lui.</div>`;
-    $$('#aSet input[name="aBe"]').forEach(r => r.onchange = () => { c.backend = r.value; saveCfg(); detect(); });
+    $('#aSet').innerHTML = `<div class="row"><span class="hint">Moteur</span><select class="in grow" id="aBe">${[['auto', 'Automatique (Ollama sinon règles)'], ['ollama', 'Ollama'], ['webllm', `Navigateur (WebGPU)${gpu ? '' : ' — indisponible'}`], ['rules', 'Sans IA (règles)']].map(([k, l]) => `<option value="${k}" ${c.backend === k ? 'selected' : ''} ${k === 'webllm' && !gpu ? 'disabled' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="row"><span class="hint">Ollama</span><select class="in grow" id="aOM">${A.ollamaModels.length ? A.ollamaModels.map(n => `<option ${n === c.ollamaModel ? 'selected' : ''}>${esc(n)}</option>`).join('') : '<option value="">(aucun modèle détecté)</option>'}</select><button class="bt" id="aOT">Tester</button></div>
+      <div class="row"><span class="hint">Navigateur</span><select class="in grow" id="aWM">${WEBLLM_MODELS.map(([k, l]) => `<option value="${k}" ${k === c.webllmModel ? 'selected' : ''}>${l}</option>`).join('')}</select><button class="bt" id="aWL" ${gpu ? '' : 'disabled'}>Charger</button></div>
+      <details><summary>Options et installation</summary>
+      <label class="r"><input type="checkbox" id="aCf" ${c.confirm ? 'checked' : ''}> Confirmer avant d'appliquer</label>
+      <label class="r"><input type="checkbox" id="aRF" ${c.rulesFirst ? 'checked' : ''}> Demandes simples par les règles (instantané)</label>
+      <label class="r"><input type="checkbox" id="aNT" ${c.nativeTools !== false ? 'checked' : ''}> Ollama : appel d'outils natif</label>
+      <div class="row"><span class="hint">Adresse Ollama</span><input class="in grow" id="aOU" value="${esc(c.ollamaUrl)}"></div>
+      <div class="hint">Installer Ollama (ollama.com), puis <code>ollama pull qwen3:4b-instruct</code> (ou <code>qwen3:8b</code>, plus fiable, plus lent) et <code>setx OLLAMA_ORIGINS "*"</code>, puis relancer Ollama. Origine de cette page : <code>${esc(origin)}</code>. Tout reste sur ce PC ; Focale fonctionne sans l'assistant.</div></details>`;
+    $('#aBe').onchange = e => { c.backend = e.target.value; saveCfg(); detect(); };
     $('#aOU').onchange = e => { c.ollamaUrl = e.target.value.trim() || DEF.ollamaUrl; saveCfg(); };
     $('#aOT').onclick = async () => { status('Test d\'Ollama…', true); try { A.ollamaModels = await ollamaTags(c.ollamaUrl, 3000); status(A.ollamaModels.length ? `Ollama répond : ${A.ollamaModels.length} modèle(s)` : 'Ollama répond mais aucun modèle n\'est installé (ollama pull qwen3:4b-instruct)'); if (!c.ollamaModel || !A.ollamaModels.includes(c.ollamaModel)) c.ollamaModel = pickOllama(A.ollamaModels); saveCfg(); detect(); } catch (e) { status(`Ollama ne répond pas à ${c.ollamaUrl} : lancé ? OLLAMA_ORIGINS réglé ? (${e.message})`); } };
     $('#aOM').onchange = e => { c.ollamaModel = e.target.value; saveCfg(); setChip(); };
