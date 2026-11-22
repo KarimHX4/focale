@@ -197,7 +197,7 @@ const OE = (() => {
     const efl = Math.abs(nuK) > 1e-15 ? -1 / nuK : Infinity;
     const ap = sys.aperture;
     let epd = ap.value;
-    if (ap.type === 'FNO') epd = objInf ? Math.abs(efl) / ap.value : epd;
+    if (ap.type === 'FNO') epd = Math.abs(efl) / ap.value; // F/# image (Zemax « Image Space F/# ») : EPD = EFL / F#, en conjugué fini aussi
     if (ap.type === 'NA' && !objInf) {
       const um = Math.asin(Math.min(0.9999, ap.value / Math.abs(n[0])));
       epd = 2 * Math.tan(um) * Math.abs(zE + t0);
@@ -284,6 +284,7 @@ const OE = (() => {
     nW.forEach((n, wi) => n.forEach((v, j) => { if (!isFinite(v)) errors.push(`Verre inconnu « ${S[j].glass} » (surface ${j})`); }));
     if (errors.length) return { sys, errors: [...new Set(errors)], ok: false };
     const warnings = [];
+    if (objInf && sys.aperture.type === 'NA') warnings.push('Ouverture « ON objet » impossible avec un objet à l\'infini : la valeur est prise comme diamètre de pupille (choisissez EPD ou F/#)');
     S.forEach((s, j) => { const r = glassRecord(s.glass); if (r && r.lmin && r.lmax) { const out = wls.filter(l => l < r.lmin - 1e-9 || l > r.lmax + 1e-9); if (out.length) warnings.push(`${r.key} (S${j}) : λ hors domaine ${r.lmin}–${r.lmax} µm`); } });
     let par;
     const nSolve = S.filter(s => s.tsolve === 'M').length;
@@ -587,7 +588,8 @@ const OE = (() => {
         const disc = b * b - cc; if (disc < 0) return NaN;
         s = s0 < 0 ? -b - Math.sqrt(disc) : -b + Math.sqrt(disc);
       }
-      return (r.opl + nI * s - ref) / lmm;
+      // convention CODE V / Zemax : OPD > 0 = front d'onde en avance (chemin optique plus court que le rayon principal)
+      return (ref - r.opl - nI * s) / lmm;
     };
     return { chief: c, W, R };
   }
@@ -718,7 +720,7 @@ const OE = (() => {
     for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
       const w = wf.W[i * N + j]; if (!isFinite(w)) continue;
       const A = apod ? apod(-1 + (2 * j + 1) / N, -1 + (2 * i + 1) / N) : 1; if (!(A > 0)) continue;
-      const ph = 2 * Math.PI * w; re[(i + o) * P + j + o] = A * Math.cos(ph); im[(i + o) * P + j + o] = A * Math.sin(ph); sa += A;
+      const ph = -2 * Math.PI * w; re[(i + o) * P + j + o] = A * Math.cos(ph); im[(i + o) * P + j + o] = A * Math.sin(ph); sa += A;
     }
     fft2(re, im, P, false);
     const I = new Float64Array(P * P), h = P >> 1, norm = sa * sa || 1;
@@ -732,12 +734,13 @@ const OE = (() => {
   }
   function mtfOne(M, fi, wi, N = 64, P = 256) {
     const p = psf(M, fi, wi, N, P);
-    const re = Float64Array.from(p.I), im = new Float64Array(P * P);
-    fft2(re, im, P, false);
-    const mag = (x, y) => Math.hypot(re[y * P + x], im[y * P + x]);
-    const m0 = mag(0, 0) || 1, fc = 1 / (M.ctxs[wi].lmm * M.par.wfno), f = [], T = [], Sg = [];
-    for (let k = 0; k <= N; k++) { f.push(k * fc / N); T.push(mag(0, k % P) / m0); Sg.push(mag(k % P, 0) / m0); }
-    return { f, T, S: Sg, fc, strehl: p.strehl };
+    const otf = I => { const re = Float64Array.from(I), im = new Float64Array(P * P); fft2(re, im, P, false); return (x, y) => Math.hypot(re[y * P + x], im[y * P + x]); };
+    const mag = otf(p.I);
+    // limite de diffraction : même pupille (obstruction centrale, vignetage) avec un front d'onde parfait
+    const W0 = Float64Array.from(p.wf.W, v => isFinite(v) ? 0 : NaN), dl = otf(psf(M, fi, wi, N, P, { W: W0 }).I);
+    const m0 = mag(0, 0) || 1, d0 = dl(0, 0) || 1, fc = 1 / (M.ctxs[wi].lmm * M.par.wfno), f = [], T = [], Sg = [], DT = [], DS = [];
+    for (let k = 0; k <= N; k++) { f.push(k * fc / N); T.push(mag(0, k % P) / m0); Sg.push(mag(k % P, 0) / m0); DT.push(dl(0, k % P) / d0); DS.push(dl(k % P, 0) / d0); }
+    return { f, T, S: Sg, DT, DS, fc, strehl: p.strehl };
   }
   function mtfDL(nu) { if (nu >= 1) return 0; return (2 / Math.PI) * (Math.acos(nu) - nu * Math.sqrt(1 - nu * nu)); }
   function interp(xs, ys, x) {
@@ -753,7 +756,7 @@ const OE = (() => {
     for (let i = 0; i <= nf; i++) {
       const fr = fmax * i / nf; f.push(fr);
       let t = 0, s = 0, d = 0;
-      per.forEach((p, wi) => { t += W[wi] * interp(p.f, p.T, fr); s += W[wi] * interp(p.f, p.S, fr); d += W[wi] * mtfDL(fr / p.fc); });
+      per.forEach((p, wi) => { t += W[wi] * interp(p.f, p.T, fr); s += W[wi] * interp(p.f, p.S, fr); d += W[wi] * (interp(p.f, p.DT, fr) + interp(p.f, p.DS, fr)) / 2; });
       T.push(t / Wt); Sg.push(s / Wt); DL.push(d / Wt);
     }
     return { f, T, S: Sg, DL, per };

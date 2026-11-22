@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -45,7 +45,7 @@ header{display:flex;align-items:center;gap:6px;padding:0 10px;background:var(--p
 .seg button{border:0;background:none;padding:4px 9px;cursor:pointer;color:var(--mut)}
 .seg button.on{background:var(--acc2);color:var(--acc);font-weight:600}
 /* workspace */
-#ws{display:grid;grid-template-columns:268px minmax(320px,1fr) 6px var(--anw,47%);min-height:0}
+#ws{display:grid;grid-template-columns:268px minmax(320px,1fr) 6px var(--anw,44%);min-height:0}
 #side{overflow:auto;border-right:1px solid var(--line);background:var(--panel2);padding:8px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:8px;box-shadow:var(--shadow)}
 .card h3{margin:0;padding:8px 10px;font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--mut);display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none}
@@ -67,6 +67,10 @@ table.mt input.in{width:100%}
 .add{border:1px dashed var(--line);background:none;width:100%;border-radius:6px;padding:4px;color:var(--mut);cursor:pointer;margin-top:4px}
 .add:hover{color:var(--acc);border-color:var(--acc)}
 .sw{display:inline-block;width:10px;height:10px;border-radius:3px}
+input.cpk{-webkit-appearance:none;appearance:none;width:18px;height:18px;padding:0;border:1px solid var(--line);border-radius:5px;background:none;cursor:pointer;vertical-align:middle}
+input.cpk::-webkit-color-swatch-wrapper{padding:0}
+input.cpk::-webkit-color-swatch{border:none;border-radius:4px}
+input.cpk::-moz-color-swatch{border:none;border-radius:4px}
 .kv{display:grid;grid-template-columns:1fr auto;gap:3px 8px;font-size:12.5px}
 .kv span:nth-child(odd){color:var(--mut)}
 .kv span:nth-child(even){font-family:var(--mono);font-size:12px;text-align:right}
@@ -104,10 +108,10 @@ table.lde{border-collapse:separate;border-spacing:0;width:max-content;min-width:
 .ty .b.fr{background:#dcfce7;color:#166534}
 .ty .b.mi{background:#374151;color:#e5e7eb}
 .cell{display:flex;align-items:center;gap:2px;padding:0 3px}
-.lde input{border:1px solid transparent;background:transparent;height:23px;padding:0 5px;border-radius:5px;font-family:var(--mono);font-size:12px;width:88px}
-.lde select.el{border:1px solid transparent;background:transparent;height:23px;border-radius:5px;font-size:12px;padding:0 2px;max-width:118px;cursor:pointer}
+.lde input{border:1px solid transparent;background:transparent;height:23px;padding:0 5px;border-radius:5px;font-family:var(--mono);font-size:12px;width:84px}
+.lde select.el{border:1px solid transparent;background:transparent;height:23px;border-radius:5px;font-size:12px;padding:0 2px;max-width:104px;cursor:pointer}
 .lde select.el:hover{border-color:var(--line)}
-.lde input.c{font-family:inherit;width:120px}
+.lde input.c{font-family:inherit;width:96px}
 .lde input.g{width:88px}
 .lde input:hover{border-color:var(--line)}
 .lde input:focus{border-color:var(--acc);background:var(--panel);outline:none}

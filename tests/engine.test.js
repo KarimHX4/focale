@@ -63,4 +63,14 @@ const P = []; OE.ray(M, 1, 20, 0, 1, { pts: P }); near('Visée réelle sur diaph
   near('Zemax UTF-16 : EFL', OE.prepare(IO.parseZMX(IO.decode(b)).sys).par.efl, 50.0214, 1e-3);
   IO.parseSeq("WL 656.3 587.6 486.1\nPRV\nPWL 656.3 587.6 486.1\n'TESTPRV' 1.51432 1.51680 1.52238\nEND\nSO 0 1e18\nSTO 50 4 'TESTPRV'\nS -50 45\nSI 0 0");
   near('CODE V : verre privé PRV (nd)', OE.glassInfo('TESTPRV').nd, 1.5168, 2e-4); }
+// Conventions CODE V / Zemax et diffraction
+{ const s = S['Lentille plan-convexe f=100'](); s.aperture.value = 4; s.fields = [{ y: 0 }]; s.wavelengths = [{ um: 0.5875618, w: 1 }]; s.primary = 0;
+  const M = OE.prepare(s), SI = OE.seidel(M).sum.SI, W = OE.wavefront(M, 0, 0, 64, true);
+  near('OPD : signe CODE V/Zemax, W040 (Z9×6) = SI/8 (λ)', W.zern[8] * 6, SI / 8 / 0.5875618e-3, 2e-4);
+  const r = OE.ray(M, 0, { x: 0, y: 0 }, 0, 1).y, uK = M.par.mar.nu[M.N - 1]; near('Seidel : aberration transverse = SI/(2 n′u′)', r, SI / (2 * uK), 2e-5);
+  const f = S['Système fini 1:1 (relais)'](); f.aperture = { type: 'FNO', value: 8, obscuration: 0 }; const F = OE.prepare(f);
+  near('F/# en conjugué fini : EPD = EFL / F#', F.par.epd, Math.abs(F.par.efl) / 8, 1e-9);
+  const o = S['Miroir parabolique f/4 (Newton)'](); o.fields = [{ y: 0 }]; o.aperture.obscuration = 0.4; const O = OE.prepare(o), m = OE.mtf(O, 0, { fmax: 1 / (0.5875618e-3 * 4) });
+  near('FTM obstruée : courbe limite = FTM sans aberration (ν = 0,5 fc)', m.DL[40], m.T[40], 0.01);
+  const e = OE.encircled(O, 0); near('Énergie encerclée croissante et ≤ 1', e.D.every((v, i) => v <= 1 + 1e-9 && (!i || v >= e.D[i - 1] - 1e-12)) ? 1 : 0, 1, 0); }
 console.log(fail ? `${fail} échec(s)` : 'Tous les tests passent'); process.exit(fail ? 1 : 0);

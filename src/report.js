@@ -143,8 +143,8 @@ async function genReport() {
     // ---------------- performances ----------------
     if (cf.sec.perf) {
       await step('Performances…'); h1('Performances');
-      const rows = sys.fields.map((_, i) => { const sp = OE.spot(M, i, 21), wf = OE.wavefront(M, i, M.pw, 48); return [fl(i), fx(sp.rms * 1e3, 2), fx(sp.geo * 1e3, 2), fx(wf.rms, 4), fx(wf.pv, 3), fx(Math.exp(-((2 * Math.PI * wf.rms) ** 2)), 3), sp.nv ? `${Math.round(100 * sp.nv / sp.ntot)} %` : '0 %']; });
-      const w7 = CW / 7; table(['Champ', 'Spot RMS (µm)', 'Spot GEO (µm)', 'WFE RMS (λ)', 'WFE PV (λ)', 'Strehl (Maréchal)', 'Vignetage'].map((t, k) => ({ t, w: w7, a: k ? 'right' : 'left', mono: k > 0 })), rows);
+      const rows = sys.fields.map((_, i) => { const sp = OE.spot(M, i, 21), wf = OE.wavefront(M, i, M.pw, 48); return [fl(i), fx(sp.rms * 1e3, 2), fx(sp.geo * 1e3, 2), fx(wf.rms, 4), fx(wf.pv, 3), fx(OE.psf(M, i, M.pw, 64, 256).strehl, 3), sp.nv ? `${Math.round(100 * sp.nv / sp.ntot)} %` : '0 %']; });
+      const w7 = CW / 7; table(['Champ', 'Spot RMS (µm)', 'Spot GEO (µm)', 'WFE RMS (λ)', 'WFE PV (λ)', 'Strehl (FFT)', 'Vignetage'].map((t, k) => ({ t, w: w7, a: k ? 'right' : 'left', mono: k > 0 })), rows);
       para(`Front d'onde à λ = ${fmt(M.wls[M.pw] * 1000, 5)} nm, tilt retiré ; spot polychromatique par rapport au barycentre ; rayon d'Airy ${fx(1.22 * M.ctxs[M.pw].lmm * p.wfno * 1e3, 2)} µm.`, { size: 8.5, color: MUT });
     }
     if (cf.sec.seidel) {

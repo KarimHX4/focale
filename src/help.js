@@ -15,7 +15,7 @@ const HELP = [
 
   { id: 'interface', t: 'L\'interface', h: `
 <ul>
-<li><b>Barre du haut</b> : fichiers, exemples, annuler/rétablir, optimisation, tolérancement, nombre de fenêtres d'analyse (1, 2, 4, 6), thème clair/sombre, aide.</li>
+<li><b>Barre du haut</b> : fichiers, exemples, annuler/rétablir, optimisation, tolérancement, nombre de fenêtres d'analyse (1, 2, 4, 6), thème clair/sombre (sombre au premier lancement, puis le dernier choix est retenu), aide.</li>
 <li><b>Panneau de gauche</b> : propriétés de la <b>surface sélectionnée</b> (type d'élément, forme, décentrements), puis ouverture, champs, longueurs d'onde et données paraxiales.</li>
 <li><b>Éditeur de lentilles</b> (centre, en haut) : une ligne par surface.</li>
 <li><b>Layout</b> (centre, en bas) : coupe 2D ou vue 3D. Molette = zoom, glisser = déplacer (3D : rotation ; Maj+glisser = déplacer), clic = sélectionner une surface, double-clic = ajuster.</li>
@@ -68,11 +68,11 @@ const HELP = [
 <p>Le tracé réel se fait en coordonnées globales ; spots, fronts d'onde et footprints sont exprimés dans le repère local de la surface concernée. Les données paraxiales ignorent les décentrements.</p>` },
 
   { id: 'systeme', t: 'Ouverture, champs, longueurs d\'onde', h: `
-<h4>Ouverture</h4><ul><li><b>Diamètre de la pupille d'entrée</b> (EPD), <b>F/# image</b> (objet à l'infini) ou <b>ouverture numérique objet</b> (objet à distance finie).</li>
+<h4>Ouverture</h4><ul><li><b>Diamètre de la pupille d'entrée</b> (EPD), <b>F/# image</b> ou <b>ouverture numérique objet</b> (objet à distance finie seulement). Le F/# image suit la convention Zemax « Image Space F/# » : EPD = EFL / F#, y compris en conjugué fini (le F/# de travail réel est affiché dans les données paraxiales).</li>
 <li><b>Obstruction centrale</b> : fraction du rayon de pupille masquée (télescopes à miroir secondaire).</li>
 <li><b>Visée réelle des rayons</b> : chaque rayon est itéré pour viser exactement le diaphragme (utile pour les grands champs et les pupilles aberrantes) ; sinon visée paraxiale de la pupille d'entrée.</li></ul>
-<h4>Champs</h4><p>Angles X/Y (°) pour un objet à l'infini (direction ∝ (tan X, tan Y, 1)), hauteurs X/Y (mm) sinon. Le poids sert à l'optimisation et au tolérancement.</p>
-<h4>Longueurs d'onde</h4><p>En µm, avec poids et longueur d'onde <b>primaire</b> (pupilles, fronts d'onde par défaut, solves). Préréglages F-d-C, visible, 632,8 nm, NIR.</p>
+<h4>Champs</h4><p>Angles X/Y (°) pour un objet à l'infini (direction ∝ (tan X, tan Y, 1)), hauteurs X/Y (mm) sinon. Le poids sert à l'optimisation et au tolérancement. Le <b>carré de couleur</b> devant chaque champ ouvre un sélecteur : la couleur choisie est utilisée dans le layout, les spots, la FTM, le footprint… et enregistrée avec le système.</p>
+<h4>Longueurs d'onde</h4><p>En µm, avec poids et longueur d'onde <b>primaire</b> (pupilles, fronts d'onde par défaut, solves). Préréglages F-d-C, visible, 632,8 nm, NIR. Par défaut chaque λ prend sa couleur spectrale ; cliquez sur son carré de couleur pour en choisir une autre (utile en infrarouge ou pour distinguer des λ proches).</p>
 <h4>Données paraxiales</h4><p>Focale effective, tirage, F/#, ouvertures numériques, positions et diamètres des pupilles, grandissement, invariant de Lagrange.</p>` },
 
   { id: 'verres', t: 'Verres et catalogues', h: `
@@ -90,10 +90,10 @@ const HELP = [
 <tr><td>Diagramme de spot</td><td>Impacts des rayons dans le plan image (grille de pupille), par champ, couleur = longueur d'onde. RMS et GEO par rapport au barycentre (ou au rayon principal), cercle d'Airy 1,22·λ·F/#.</td></tr>
 <tr><td>Ray fan</td><td>Aberration transverse εy(Py) (tangentiel) et εx(Px) (sagittal) par rapport au rayon principal.</td></tr>
 <tr><td>OPD fan</td><td>Écart de chemin optique (en ondes) le long des deux coupes de pupille.</td></tr>
-<tr><td>Carte WFE</td><td>Front d'onde dans la pupille de sortie : OPD par rapport à une sphère de référence centrée sur l'image du rayon principal. RMS, PV, Strehl (Maréchal). Option : retrait du tilt.</td></tr>
+<tr><td>Carte WFE</td><td>Front d'onde dans la pupille de sortie : OPD par rapport à une sphère de référence centrée sur l'image du rayon principal. RMS, PV, et Strehl approché par Maréchal quand RMS ≤ 0,15 λ (au-delà, voir la PSF). Option : retrait du tilt.</td></tr>
 <tr><td>Zernike</td><td>Décomposition du front d'onde sur 16 polynômes Fringe (moindres carrés).</td></tr>
 <tr><td>PSF</td><td>Réponse impulsionnelle par FFT de la pupille complexe (64×64 dans 256×256), échelle linéaire ou log, rapport de Strehl.</td></tr>
-<tr><td>FTM / MTF</td><td>Module de la fonction de transfert (FFT de la PSF), tangentiel et sagittal, polychromatique pondéré, avec limite de diffraction.</td></tr>
+<tr><td>FTM / MTF</td><td>Module de la fonction de transfert (FFT de la PSF), tangentiel et sagittal, polychromatique pondéré, avec limite de diffraction calculée sur la même pupille (obstruction centrale et vignetage compris).</td></tr>
 <tr><td>Énergie encerclée</td><td>Fraction d'énergie dans un cercle : diffraction (λ primaire) et géométrique (polychromatique), rayon à 80 %.</td></tr>
 <tr><td>Footprint</td><td>Empreinte des faisceaux de chaque champ sur une surface, comparée au demi-diamètre (dimensionnement des optiques et montures).</td></tr>
 <tr><td>Courbure de champ &amp; distorsion</td><td>Foyers tangentiel et sagittal en fonction du champ, distorsion en %.</td></tr>
@@ -205,7 +205,8 @@ const HELP = [
 <li>Après un miroir, épaisseurs négatives ; un second miroir les rend de nouveau positives.</li>
 <li>Champ positif en Y : rayons montants (image en −Y pour un objectif convergent).</li>
 <li>Pupille normalisée (Px, Py) dans [−1, 1], obstruction exclue.</li>
-<li>OPD = chemin du rayon − chemin du rayon principal, sur la sphère de référence.</li></ul>` },
+<li>OPD (convention CODE V / Zemax) = chemin du rayon principal − chemin du rayon, sur la sphère de référence : <b>OPD &gt; 0 = front d'onde en avance</b>. Une sphérique sous-corrigée (lentille simple) donne W040 &gt; 0, de même signe que la somme de Seidel SI (W040 = SI/8).</li>
+<li>Aberrations transverses : ε = SI/(2 n′u′) pour la sphérique (u′ &lt; 0 pour un faisceau convergent) ; mêmes conventions de signe que les coefficients de Seidel de Zemax.</li></ul>` },
 
   { id: 'limites', t: 'Limites connues', h: `
 <ul><li>Tracé séquentiel uniquement (pas de lumière parasite ni de chemins multiples).</li>

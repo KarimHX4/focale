@@ -5,8 +5,15 @@
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const FCOL = ['#2563eb', '#16a34a', '#dc2626', '#9333ea', '#ea580c', '#0891b2', '#ca8a04', '#db2777', '#4b5563', '#65a30d'];
-const fcol = i => FCOL[i % FCOL.length];
+/** couleur d'un champ : choisie par l'utilisateur (f.col) sinon palette par défaut */
+const fcol = (i, sys) => { const f = (sys || (typeof App !== 'undefined' && App.sys) || {}).fields?.[i]; return (f && f.col) || FCOL[i % FCOL.length]; };
+/** couleur d'une longueur d'onde : choisie par l'utilisateur si cette λ est dans le système, sinon couleur spectrale */
 function wlCol(um) {
+  const W = typeof App !== 'undefined' && App.sys && App.sys.wavelengths; if (W) { const w = W.find(x => x.col && Math.abs(x.um - um) < 1e-9); if (w) return w.col; }
+  return wlSpec(um);
+}
+const hexCol = c => { if (/^#[0-9a-f]{6}$/i.test(c)) return c; const m = String(c).match(/\d+/g) || [0, 0, 0]; return '#' + m.slice(0, 3).map(v => (+v).toString(16).padStart(2, '0')).join(''); };
+function wlSpec(um) {
   const l = um * 1000; let r = 0, g = 0, b = 0;
   if (l < 380) return '#6d28d9'; if (l > 780) return '#7f1d1d';
   if (l < 440) { r = -(l - 440) / 60; b = 1; } else if (l < 490) { g = (l - 440) / 50; b = 1; }
@@ -47,17 +54,19 @@ const App = {
   panes: [{ type: 'spot' }, { type: 'wfe', fi: 0 }, { type: 'mtf' }, { type: 'psf', fi: 0 }, { type: 'rayfan' }, { type: 'footprint' }],
   grid: 4, mode: '2d', view: { auto: true, s: 1, ox: 0, oy: 0, yaw: 0.55, pitch: 0.32 }, nRays: 7, showAsph: false,
 };
-function save() { try { localStorage.setItem('focale.sys', toJSON(App.sys)); localStorage.setItem('focale.ui', JSON.stringify({ panes: App.panes, grid: App.grid, theme: document.documentElement.dataset.theme || '' })); } catch (e) { } }
+function save() { try { localStorage.setItem('focale.sys', toJSON(App.sys)); localStorage.setItem('focale.ui', JSON.stringify({ panes: App.panes, grid: App.grid, th: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light' })); } catch (e) { } }
 function load() {
   try {
     const s = localStorage.getItem('focale.sys'); if (s) App.sys = normalize(fromJSON(s));
     const u = JSON.parse(localStorage.getItem('focale.ui') || 'null');
-    if (u) { if (Array.isArray(u.panes) && u.panes.length >= 6) App.panes = u.panes; if (u.grid) App.grid = u.grid; if (u.theme) document.documentElement.dataset.theme = u.theme; }
+    if (u) { if (Array.isArray(u.panes) && u.panes.length >= 6) App.panes = u.panes; if (u.grid) App.grid = u.grid; }
+    // thème : sombre par défaut (premier lancement) ; ensuite le dernier choix de l'utilisateur
+    document.documentElement.dataset.theme = u && u.th === 'light' ? '' : 'dark';
   } catch (e) { App.sys = null; }
 }
 function normalize(s) {
   s.aperture = { type: 'EPD', value: 10, obscuration: 0, ...(s.aperture || {}) };
-  s.fields = ((s.fields && s.fields.length) ? s.fields : [{ y: 0, w: 1 }]).map(f => ({ x: +f.x || 0, y: +f.y || 0, w: f.w ?? 1 }));
+  s.fields = ((s.fields && s.fields.length) ? s.fields : [{ y: 0, w: 1 }]).map(f => ({ x: +f.x || 0, y: +f.y || 0, w: f.w ?? 1, ...(f.col ? { col: f.col } : {}) }));
   s.wavelengths = (s.wavelengths && s.wavelengths.length) ? s.wavelengths : [{ um: 0.5875618, w: 1 }];
   s.primary = Math.min(Math.max(0, s.primary | 0), s.wavelengths.length - 1);
   s.merit = s.merit || { image: 'SPOT', ops: [] }; s.merit.ops = s.merit.ops || [];
@@ -262,7 +271,7 @@ function card(id, title, body) { return `<div class="card ${closedCards.has(id) 
 function renderSide() {
   const s = App.sys, M = App.M, ap = s.aperture;
   const objInf = !isFinite(s.surfaces[0].t) || Math.abs(s.surfaces[0].t) > 1e10;
-  const apOpts = objInf ? [['EPD', 'Diamètre pupille d\'entrée (mm)'], ['FNO', 'F/# image']] : [['EPD', 'Diamètre pupille d\'entrée (mm)'], ['NA', 'Ouverture numérique objet']];
+  const apOpts = objInf ? [['EPD', 'Diamètre pupille d\'entrée (mm)'], ['FNO', 'F/# image']] : [['EPD', 'Diamètre pupille d\'entrée (mm)'], ['NA', 'Ouverture numérique objet'], ['FNO', 'F/# image (EFL / EPD)']];
   if (!apOpts.find(o => o[0] === ap.type)) ap.type = 'EPD';
   const el = document.activeElement; const keep = el && el.closest && el.closest('#side') && el.dataset.f ? `[data-f="${el.dataset.f}"]${el.dataset.k ? `[data-k="${el.dataset.k}"]` : ''}${el.dataset.i != null ? `[data-i="${el.dataset.i}"]` : ''}` : null;
   let h = card('gen', 'Système', `
@@ -275,12 +284,12 @@ function renderSide() {
     <div class="row"><label title="Itère sur chaque rayon pour viser exactement le diaphragme">Visée réelle des rayons (ray aiming)</label><input type="checkbox" data-f="aim" ${s.rayAiming ? 'checked' : ''}></div>`);
   h += card('fi', `Champs — ${objInf ? 'angle (°)' : 'hauteur objet (mm)'}`, `
     <table class="mt"><tr><th></th><th>${objInf ? 'X (°)' : 'X (mm)'}</th><th>${objInf ? 'Y (°)' : 'Y (mm)'}</th><th>Poids</th><th></th></tr>
-    ${s.fields.map((f, i) => `<tr><td><span class="sw" style="background:${fcol(i)}"></span></td><td><input class="in" data-f="fx" data-i="${i}" value="${fmt(f.x || 0, 6)}"></td><td><input class="in" data-f="fy" data-i="${i}" value="${fmt(f.y, 6)}"></td><td><input class="in" data-f="fw" style="width:44px" data-i="${i}" value="${fmt(f.w ?? 1, 4)}"></td><td><button class="x" data-a="fdel" data-i="${i}" title="Supprimer">✕</button></td></tr>`).join('')}
+    ${s.fields.map((f, i) => `<tr><td><input type="color" class="cpk" data-f="fcol" data-i="${i}" value="${hexCol(fcol(i))}" title="Couleur du champ ${i + 1} (clic pour la changer)" aria-label="Couleur du champ ${i + 1}"></td><td><input class="in" data-f="fx" data-i="${i}" value="${fmt(f.x || 0, 6)}"></td><td><input class="in" data-f="fy" data-i="${i}" value="${fmt(f.y, 6)}"></td><td><input class="in" data-f="fw" style="width:44px" data-i="${i}" value="${fmt(f.w ?? 1, 4)}"></td><td><button class="x" data-a="fdel" data-i="${i}" title="Supprimer">✕</button></td></tr>`).join('')}
     </table><button class="add" data-a="fadd">+ Ajouter un champ</button>
     <div class="chips"><button class="chip" data-a="fspread">Répartir 0 · 0.7 · 1</button></div>`);
   h += card('wl', 'Longueurs d\'onde (µm)', `
     <table class="mt"><tr><th></th><th>λ (µm)</th><th>Poids</th><th title="Primaire">Prim.</th><th></th></tr>
-    ${s.wavelengths.map((w, i) => `<tr><td><span class="sw" style="background:${wlCol(w.um)}"></span></td><td><input class="in" data-f="wum" data-i="${i}" value="${fmt(w.um, 7)}"></td><td><input class="in" data-f="ww" style="width:48px" data-i="${i}" value="${fmt(w.w ?? 1, 4)}"></td><td style="text-align:center"><input type="radio" name="prim" data-f="wp" data-i="${i}" ${i === s.primary ? 'checked' : ''}></td><td><button class="x" data-a="wdel" data-i="${i}">✕</button></td></tr>`).join('')}
+    ${s.wavelengths.map((w, i) => `<tr><td><input type="color" class="cpk" data-f="wcol" data-i="${i}" value="${hexCol(wlCol(w.um))}" title="Couleur de λ${i + 1} (clic pour la changer)" aria-label="Couleur de la longueur d'onde ${i + 1}"></td><td><input class="in" data-f="wum" data-i="${i}" value="${fmt(w.um, 7)}"></td><td><input class="in" data-f="ww" style="width:48px" data-i="${i}" value="${fmt(w.w ?? 1, 4)}"></td><td style="text-align:center"><input type="radio" name="prim" data-f="wp" data-i="${i}" ${i === s.primary ? 'checked' : ''}></td><td><button class="x" data-a="wdel" data-i="${i}">✕</button></td></tr>`).join('')}
     </table><button class="add" data-a="wadd">+ Ajouter une longueur d'onde</button>
     <div class="chips"><button class="chip" data-a="wpre" data-v="FdC">F, d, C</button><button class="chip" data-a="wpre" data-v="vis">Visible</button><button class="chip" data-a="wpre" data-v="hene">632,8 nm</button><button class="chip" data-a="wpre" data-v="nir">NIR</button><button class="chip" data-a="wpre" data-v="d">d seule</button></div>`);
   h += srcCard();
@@ -490,7 +499,7 @@ function setupSide() {
     switch (b.dataset.a) {
       case 'fadd': commit(s => { const m = Math.max(...s.fields.map(f => f.y)); s.fields.push({ x: 0, y: +(m * 1.2 || 1).toFixed(4), w: 1 }); }); break;
       case 'fdel': if (App.sys.fields.length > 1) commit(s => s.fields.splice(i, 1)); break;
-      case 'fspread': commit(s => { const m = Math.max(...s.fields.map(f => Math.hypot(f.x || 0, f.y))) || 1; s.fields = [0, 0.7, 1].map(k => ({ x: 0, y: +(m * k).toPrecision(6), w: 1 })); }); break;
+      case 'fspread': commit(s => { const m = Math.max(...s.fields.map(f => Math.hypot(f.x || 0, f.y))) || 1; const old = s.fields; s.fields = [0, 0.7, 1].map((k, i) => ({ x: 0, y: +(m * k).toPrecision(6), w: 1, ...(old[i] && old[i].col ? { col: old[i].col } : {}) })); }); break;
       case 'fold45': commit(s => { const x = s.surfaces[App.sel]; x.glass = 'MIRROR'; x.r = Infinity; x.tx = 45; x.ty = 0; x.tz = 0; x.dx = x.dy = x.dz = 0; x.dmode = 'BEN'; }); toast('Miroir de renvoi à 45° : pensez au signe de l\'épaisseur suivante'); break;
       case 'fibpre': { const q = FIBPRE[b.dataset.v]; commit(s => Object.assign(s.src, { type: 'fiber', lc0: null, dl: null, len: null }, q[1])); toast('Fibre : ' + q[0]); break; }
       case 'detpre': { const q = DETPRE[b.dataset.v]; commit(s => Object.assign(s.det, { on: true, p: q[1], nx: q[2], ny: q[3], fw: q[4], rn: q[5], bits: q[6] })); toast(q[0]); break; }
@@ -538,6 +547,8 @@ function setupSide() {
       case 'wum': if ((v = num(x => x > 0.15 && x < 25)) != null) commit(s => s.wavelengths[i].um = v); break;
       case 'ww': if ((v = num(x => x >= 0)) != null) commit(s => s.wavelengths[i].w = v); break;
       case 'wp': commit(s => s.primary = i); break;
+      case 'fcol': commit(s => s.fields[i].col = t.value); break;
+      case 'wcol': commit(s => s.wavelengths[i].col = t.value); break;
     }
   });
 }
@@ -587,7 +598,7 @@ function axes(c, R, xr, yr, o = {}) {
   for (const v of ty.t) c.fillText(tl(v, ty.s), P.x - 4, Y(v));
   if (o.xl) { c.textAlign = 'center'; c.textBaseline = 'bottom'; c.fillText(o.xl, P.x + P.w / 2, R.y + R.h - 1); }
   if (o.yl) { c.save(); c.translate(R.x + 9, P.y + P.h / 2); c.rotate(-Math.PI / 2); c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(o.yl, 0, 0); c.restore(); }
-  if (o.title) { c.fillStyle = TH.fg; c.font = '600 11px Inter, sans-serif'; c.textAlign = 'left'; c.textBaseline = 'top'; c.fillText(o.title, P.x, R.y + 4); }
+  if (o.title) text(c, o.title, P.x, R.y + 4, { b: true, maxW: R.x + R.w - P.x - 4 });
   c.restore();
   return { X, Y, P, xr, yr };
 }
@@ -597,13 +608,36 @@ function pline(c, A, xs, ys, col, w = 1.6, dash) {
   for (let i = 0; i < xs.length; i++) { if (!isFinite(xs[i]) || !isFinite(ys[i])) { pen = false; continue; } const x = A.X(xs[i]), y = A.Y(ys[i]); pen ? c.lineTo(x, y) : c.moveTo(x, y); pen = true; }
   c.stroke(); c.restore();
 }
+/** largeur utile (px CSS) d'un canvas, y compris les canvas hors écran du rapport */
+const cssW = c => c.canvas.width / (c.getTransform().a || 1);
+/** tronque s avec « … » pour tenir dans maxW avec la police courante */
+function ellip(c, s, maxW) { if (c.measureText(s).width <= maxW) return s; let a = 0, b = s.length; while (a < b) { const m = (a + b + 1) >> 1; if (c.measureText(s.slice(0, m) + '…').width <= maxW) a = m; else b = m - 1; } return a ? s.slice(0, a) + '…' : ''; }
+/** légende sur une ligne : réduit la police puis abrège les libellés si la place manque */
 function legend(c, x, y, items) {
-  c.save(); c.font = '10.5px Inter, sans-serif'; c.textBaseline = 'middle';
-  let cx = x;
-  for (const it of items) { c.strokeStyle = it.col; c.fillStyle = it.col; c.lineWidth = 2; c.setLineDash(it.dash || []); c.beginPath(); c.moveTo(cx, y); c.lineTo(cx + 14, y); c.stroke(); c.setLineDash([]); c.fillStyle = TH.mut; c.fillText(it.l, cx + 18, y); cx += 24 + c.measureText(it.l).width + 6; }
+  c.save(); c.textBaseline = 'middle';
+  const aw = cssW(c) - x - 4, need = sz => { c.font = sz + 'px Inter, sans-serif'; return items.reduce((a, it) => a + 30 + c.measureText(it.l).width, 0) - 6; };
+  let sz = 10.5; while (sz > 9 && need(sz) > aw) sz -= 0.5; need(sz);
+  let cx = x; const fit = need(sz) > aw;
+  items.forEach((it, k) => {
+    const left = items.length - k, room = aw - (cx - x) - 24, lab = fit ? ellip(c, it.l, Math.max(18, room / left * (left > 1 ? 1 : 1))) : it.l;
+    if (!lab || cx + 18 > x + aw) return;
+    c.strokeStyle = it.col; c.fillStyle = it.col; c.lineWidth = 2; c.setLineDash(it.dash || []); c.beginPath(); c.moveTo(cx, y); c.lineTo(cx + 14, y); c.stroke(); c.setLineDash([]);
+    c.fillStyle = TH.mut; c.fillText(lab, cx + 18, y); cx += 24 + c.measureText(lab).width + 6;
+  });
   c.restore();
 }
-function text(c, s, x, y, o = {}) { c.save(); c.font = (o.b ? '600 ' : '') + (o.size || 11) + 'px ' + (o.mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif'); c.fillStyle = o.col || TH.fg; c.textAlign = o.align || 'left'; c.textBaseline = o.base || 'top'; c.fillText(s, x, y); c.restore(); }
+/** texte ; o.maxW : réduit la police (jusqu'à 9 px) puis abrège pour tenir dans la largeur */
+function text(c, s, x, y, o = {}) {
+  c.save(); let sz = o.size || 11; const f = () => (o.b ? '600 ' : '') + sz + 'px ' + (o.mono ? 'JetBrains Mono, monospace' : 'Inter, sans-serif'); c.font = f();
+  if (o.maxW) { while (sz > 9 && c.measureText(s).width > o.maxW) { sz -= 0.5; c.font = f(); } s = ellip(c, s, o.maxW); }
+  c.fillStyle = o.col || TH.fg; c.textAlign = o.align || 'left'; c.textBaseline = o.base || 'top'; c.fillText(s, x, y); c.restore();
+}
+/** paragraphe renvoyé à la ligne dans la largeur w */
+function wrapText(c, s, x, y, w, o = {}) {
+  c.save(); c.font = (o.size || 11) + 'px Inter, sans-serif'; const words = s.split(' '), lines = []; let cur = '';
+  for (const wd of words) { const t = cur ? cur + ' ' + wd : wd; if (c.measureText(t).width > w && cur) { lines.push(cur); cur = wd; } else cur = t; } if (cur) lines.push(cur); c.restore();
+  lines.forEach((l, k) => text(c, l, x, y + k * ((o.size || 11) + 5), o)); return lines.length;
+}
 const CMAPS = {
   div: ['#1d3b8f', '#3f6fc4', '#8fb4e3', '#f5f5f4', '#f0a58d', '#d4553b', '#8c1a1a'],
   inferno: ['#000004', '#1b0c41', '#4a0c6b', '#781c6d', '#a52c60', '#cf4446', '#ed6925', '#fb9b06', '#f7d13d', '#fcffa4'],
@@ -952,12 +986,12 @@ const R = {
   wfe(p, M, c, w, h) {
     const wf = OE.wavefront(M, p.fi || 0, p.wi ?? M.pw, 64, p.tilt !== false);
     let m = 0; for (const v of wf.W) if (isFinite(v)) m = Math.max(m, Math.abs(v)); m = m || 1e-3;
-    const A = axes(c, { x: 0, y: 0, w: w - 70, h: h - 6 }, [-1.05, 1.05], [-1.05, 1.05], { equal: true, title: `WFE  RMS ${fx(wf.rms, 4)} λ · PV ${fx(wf.pv, 4)} λ · Strehl≈${fx(Math.exp(-((2 * Math.PI * wf.rms) ** 2)), 3)}`, ml: 40, mb: 22, zero: false });
+    const A = axes(c, { x: 0, y: 0, w: w - 70, h: h - 6 }, [-1.05, 1.05], [-1.05, 1.05], { equal: true, title: `WFE  RMS ${fx(wf.rms, 4)} λ · PV ${fx(wf.pv, 4)} λ ${wf.rms <= 0.15 ? ` · Strehl (Maréchal) ≈ ${fx(Math.exp(-((2 * Math.PI * wf.rms) ** 2)), 3)}` : ''}`, ml: 40, mb: 22, zero: false });
     A.xr0 = -1; A.xr1 = 1; A.yr0 = -1; A.yr1 = 1;
     heat(c, A, wf.W, wf.N, wf.N, -m, m, 'div', false);
     c.strokeStyle = TH.line; c.beginPath(); c.arc(A.X(0), A.Y(0), A.X(1) - A.X(0), 0, 2 * Math.PI); c.stroke();
     cbar(c, w - 58, 30, 12, Math.max(40, h - 70), -m, m, 'div', 'λ');
-    text(c, `λ = ${fmt(M.wls[p.wi ?? M.pw] * 1000, 5)} nm · champ ${fLabel(M, p.fi || 0)} · réf. sphère centrée sur le rayon principal`, 40, h - 14, { col: TH.mut, size: 10 });
+    text(c, `λ = ${fmt(M.wls[p.wi ?? M.pw] * 1000, 5)} nm · champ ${fLabel(M, p.fi || 0)} · réf. sphère centrée sur le rayon principal`, 40, h - 14, { maxW: w - 48, col: TH.mut, size: 10 });
   },
   zern(p, M) {
     const wf = OE.wavefront(M, p.fi || 0, p.wi ?? M.pw, 64, false);
@@ -1007,11 +1041,12 @@ const R = {
   ee(p, M, c, w, h) {
     const e = OE.encircled(M, p.fi || 0);
     const r = e.r.map(v => v * 1e3);
-    const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, [0, r[r.length - 1]], [0, 1.02], { xl: 'Rayon (µm)', yl: 'Fraction d\'énergie', title: `Énergie encerclée · champ ${fLabel(M, p.fi || 0)}` });
+    // rayon à 80 % d'énergie, interpolé linéairement
+    const r80 = arr => { const k = arr.findIndex(v => v >= 0.8); if (k < 0) return NaN; if (k === 0) return r[0]; const t = (0.8 - arr[k - 1]) / (arr[k] - arr[k - 1] || 1); return r[k - 1] + t * (r[k] - r[k - 1]); };
+    const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, [0, r[r.length - 1]], [0, 1.02], { xl: 'Rayon (µm)', yl: 'Fraction d\'énergie', title: `Énergie encerclée · champ ${fLabel(M, p.fi || 0)} — r80 ${fx(r80(e.D), 2)} µm (diffr.) · ${fx(r80(e.G), 2)} µm (géom.)` });
     pline(c, A, r, e.D, '#2563eb', 1.8); pline(c, A, r, e.G, '#ea580c', 1.6, [6, 4]);
     const ra = e.airy * 1e3; c.strokeStyle = TH.mut; c.setLineDash([2, 3]); c.beginPath(); c.moveTo(A.X(ra), A.P.y); c.lineTo(A.X(ra), A.P.y + A.P.h); c.stroke(); c.setLineDash([]);
-    const r80 = (arr) => { const k = arr.findIndex(v => v >= 0.8); return k < 0 ? NaN : r[k]; };
-    legend(c, 8, h - 8, [{ col: '#2563eb', l: `Diffraction (λ prim.) — r80 ${fx(r80(e.D), 2)} µm` }, { col: '#ea580c', dash: [6, 4], l: `Géométrique (poly) — r80 ${fx(r80(e.G), 2)} µm` }, { col: TH.mut, dash: [2, 3], l: 'Airy' }]);
+    legend(c, 8, h - 8, [{ col: '#2563eb', l: 'Diffraction (λ principale)' }, { col: '#ea580c', dash: [6, 4], l: 'Géométrique (polychromatique)' }, { col: TH.mut, dash: [2, 3], l: 'Rayon d\'Airy' }]);
   },
   footprint(p, M, c, w, h) {
     const si = Math.min(p.si ?? App.sel, M.N) || 1;
@@ -1052,7 +1087,7 @@ const R = {
     });
     const lm = sd.lmm;
     legend(c, 8, h - 22, keys.map((k, i) => ({ col: kc[i], l: nm[i] })));
-    text(c, `W040 = ${fx(sd.sum.SI / 8 / lm, 3)} λ · W131 = ${fx(sd.sum.SII / 2 / lm, 3)} λ · W222 = ${fx(sd.sum.SIII / 2 / lm, 3)} λ · W220 = ${fx((sd.sum.SIV) / 4 / lm, 3)} λ · W311 = ${fx(sd.sum.SV / 2 / lm, 3)} λ`, 8, h - 12, { col: TH.mut, size: 10.5, mono: true });
+    text(c, `W040 = ${fx(sd.sum.SI / 8 / lm, 3)} λ · W131 = ${fx(sd.sum.SII / 2 / lm, 3)} λ · W222 = ${fx(sd.sum.SIII / 2 / lm, 3)} λ · W220 = ${fx((sd.sum.SIV) / 4 / lm, 3)} λ · W311 = ${fx(sd.sum.SV / 2 / lm, 3)} λ`, 8, h - 12, { col: TH.mut, size: 10.5, mono: true, maxW: w - 16 });
   },
   chrom(p, M, c, w, h) {
     const cs = OE.chromShift(M, 60);
@@ -1092,7 +1127,7 @@ const R = {
   imgsim(p, M, c, w, h) { simPane(p, M, c, w, h); },
   detector(p, M, c, w, h) {
     const d = det();
-    if (!d.on) { text(c, 'Activez un détecteur dans le panneau de gauche (carte « Détecteur »).', 14, 14, { col: TH.mut }); return; }
+    if (!d.on) { wrapText(c, 'Activez un détecteur dans le panneau de gauche (carte « Détecteur »).', 14, 14, w - 28, { col: TH.mut }); return; }
     const wi = p.wi ?? M.pw, ps = OE.psf(M, p.fi || 0, wi, 64, 256), pm = d.p * 1e-3, nb = 7, b = OE.binPSF(ps.I, ps.P, ps.dx, pm, p.phase || 'centre', nb);
     const sz = Math.min(w * 0.52, h - 40), cell = sz / nb, x0 = 12, y0 = 28, L = lut('vir'), mx = Math.max(...b.G);
     text(c, `PSF intégrée sur les pixels (${d.p} µm) — champ ${fLabel(M, p.fi || 0)}, ${fmt(M.wls[wi] * 1000, 5)} nm`, x0, 8, { b: true });
@@ -1153,8 +1188,8 @@ const R = {
     let h = `<h4 style="margin-top:0">${esc(M.sys.title || 'Système')}</h4><table><tr><th>#</th><th>Rayon</th><th>Épaisseur</th><th>Verre</th><th>nd</th><th>½Ø</th><th>Conique</th><th>Commentaire</th></tr>`;
     S.forEach((s, i) => { const nd = OE.isMirror(s) ? 'miroir' : OE.isAir(s.glass) ? '' : fx(OE.glassN(s.glass, 0.5875618), 5); h += `<tr><td>${i}${s.stop ? '*' : ''}</td><td>${fmt(s.r, 7)}</td><td>${fmt(s.t, 7)}${s.tsolve === 'M' ? ' M' : ''}</td><td style="text-align:left">${esc(s.glass)}</td><td>${nd}</td><td>${i ? fmt(s.sd, 5) : ''}</td><td>${s.k ? fmt(s.k, 6) : ''}</td><td style="text-align:left">${esc(s.comment)}</td></tr>`; });
     h += `</table><p class="hint">* diaphragme · M : solve de mise au point paraxiale</p>`;
-    h += `<h4>Performances par champ (λ prim. ${fmt(M.wls[M.pw] * 1000, 5)} nm pour la WFE)</h4><table><tr><th>Champ</th><th>Spot RMS (µm)</th><th>Spot GEO (µm)</th><th>WFE RMS (λ)</th><th>WFE PV (λ)</th><th>Strehl (Maréchal)</th></tr>`;
-    M.sys.fields.forEach((f, i) => h += `<tr><td>${fLabel(M, i)}</td><td>${fx(sp[i].rms * 1e3, 2)}</td><td>${fx(sp[i].geo * 1e3, 2)}</td><td>${fx(wf[i].rms, 4)}</td><td>${fx(wf[i].pv, 3)}</td><td>${fx(Math.exp(-((2 * Math.PI * wf[i].rms) ** 2)), 3)}</td></tr>`);
+    h += `<h4>Performances par champ (λ prim. ${fmt(M.wls[M.pw] * 1000, 5)} nm pour la WFE)</h4><table><tr><th>Champ</th><th>Spot RMS (µm)</th><th>Spot GEO (µm)</th><th>WFE RMS (λ)</th><th>WFE PV (λ)</th><th>Strehl</th></tr>`;
+    M.sys.fields.forEach((f, i) => h += `<tr><td>${fLabel(M, i)}</td><td>${fx(sp[i].rms * 1e3, 2)}</td><td>${fx(sp[i].geo * 1e3, 2)}</td><td>${fx(wf[i].rms, 4)}</td><td>${fx(wf[i].pv, 3)}</td><td>${fx(OE.psf(M, i, M.pw, 48, 128).strehl, 3)}</td></tr>`);
     h += `</table><h4>Paraxial</h4><table><tr><td style="text-align:left">EFL</td><td>${fx(par.efl, 4)}</td><td style="text-align:left">F/# travail</td><td>${fx(par.wfno, 3)}</td></tr><tr><td style="text-align:left">BFL</td><td>${fx(par.bfl, 4)}</td><td style="text-align:left">TTL</td><td>${fx(par.ttl, 3)}</td></tr><tr><td style="text-align:left">PE Ø / pos.</td><td>${fx(par.epd, 3)} / ${fx(par.zE, 3)}</td><td style="text-align:left">PS Ø / pos.</td><td>${fx(par.xpD, 3)} / ${fx(par.xpZ, 3)}</td></tr></table>`;
     return h;
   },
@@ -1277,11 +1312,16 @@ function simRun() {
 /** liste libellé / valeur : sur une ligne si la largeur le permet, sinon empilée */
 function kvList(c, x, y, w, rows, maxH) {
   c.save(); c.font = '11px Inter, sans-serif'; const lw = Math.max(...rows.map(r => c.measureText(r[0]).width)); c.font = '11px JetBrains Mono, monospace'; const vw = Math.max(...rows.map(r => c.measureText(r[1]).width)); c.restore();
-  const one = lw + vw + 16 <= w, lh = one ? 18 : 30, step = maxH ? Math.min(lh, maxH / rows.length) : lh;
+  // une ligne si tout tient ; sinon libellé au-dessus de la valeur si la hauteur le permet ; sinon une ligne avec libellé abrégé
+  const one = lw + vw + 16 <= w, two = !one && (!maxH || rows.length * 28 <= maxH);
+  const lh = two ? 28 : 17, step = maxH ? Math.min(lh, maxH / rows.length) : lh;
   rows.forEach(([a, v], k) => {
     const yy = y + k * step;
-    if (one) { text(c, a, x, yy, { col: TH.mut, size: 11 }); text(c, v, x + w, yy, { mono: true, size: 11, align: 'right' }); }
-    else { text(c, a, x, yy, { col: TH.mut, size: 10.5 }); text(c, v, x, yy + 13, { mono: true, size: 11 }); }
+    if (two) { text(c, a, x, yy, { col: TH.mut, size: 10.5, maxW: w }); text(c, v, x, yy + 13, { mono: true, size: 11, maxW: w }); }
+    else {
+      c.save(); c.font = '11px JetBrains Mono, monospace'; const vv = Math.min(c.measureText(v).width, w * 0.62); c.restore();
+      text(c, v, x + w, yy, { mono: true, size: 11, align: 'right', maxW: w * 0.62 }); text(c, a, x, yy, { col: TH.mut, size: 11, maxW: Math.max(20, w - vv - 8) });
+    }
   });
 }
 /** grille de pixels du détecteur sur un repère A (unités : µm), centrée sur 0 */

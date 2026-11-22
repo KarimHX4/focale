@@ -16,6 +16,9 @@ Interface et commentaires en français. Unités : mm, longueurs d'onde en µm.
 
 ## Conventions
 - Convention de signes Zemax/CODE V : épaisseurs négatives après un miroir, R > 0 centre à droite.
+- OPD (`opdRef().W`) = chemin du rayon principal − chemin du rayon (> 0 = front d'onde en avance, convention CODE V/Zemax) : W040 = +SI/8 ; la PSF utilise donc la phase −2πW. Test indépendant : `/tmp/phys/check.js` (recréé au besoin) — tracé méridien et ABCD maison.
+- F/# image (`aperture.type = 'FNO'`) : EPD = EFL / F# en conjugué fini comme à l'infini (Zemax « Image Space F/# »). FTM : limite de diffraction calculée sur la même pupille (`mtfOne` → DT/DS).
+- Couleurs : `fields[i].col` et `wavelengths[i].col` optionnels (sélecteurs `input.cpk`) ; `fcol(i)` et `wlCol(um)` les lisent dans `App.sys`, sinon palette / couleur spectrale (`wlSpec`). Thème sombre par défaut (`focale.ui.th`).
 - Surface 0 = objet, dernière = image ; champs {x, y} (angles si objet à l'infini — direction ∝ (tan x, tan y, 1) —, hauteurs sinon).
 - Décentrements par surface (dx, dy, dz, tx, ty, tz en °, dmode DEC | DAR | BEN, rotations X→Y→Z main droite) : `frames()` calcule le repère de chaque surface, le tracé réel se fait en coordonnées globales et `trace()` renvoie le rayon dans le repère local de l'image. Le paraxial ignore décentrements et bascules.
 - `sag(sf, x, y)` / `sGrad(sf, x, y)` : flèche et pente locales (partie de révolution + forme libre éventuelle).
