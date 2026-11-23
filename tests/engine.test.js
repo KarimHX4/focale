@@ -181,4 +181,14 @@ const P = []; OE.ray(M, 1, 20, 0, 1, { pts: P }); near('Visée réelle sur diaph
   const n = l => OE.glassN('1.5168/64.17', l), g = OE.glassN('N-BK7', 0.4358343) - OE.glassN('N-BK7', 0.4861327), m = n(0.4358343) - n(0.4861327);
   near('Verre modèle 517642 : ng − nF ≈ N-BK7 (ligne normale)', m * 1e4, g * 1e4, 0.5); near('Verre modèle : nd et νd exacts', OE.glassInfo('1.5168/64.17').vd, 64.17, 1e-9);
   near('PRE CODE V en mmHg', IO.parseSeq('EPD 10\nWL 587.56\nYAN 0\nTEM 20\nPRE 380\nSO 0 1e20\nSTO 50 5 NBK7_SCHOTT\nS -50 90\nSI 0 0').sys.env.P, 0.5, 1e-12); }
+// Zernike Fringe jusqu'à Z37 : 16 premiers = zernBasis, ajustement exact d'un front d'onde synthétique, résidu
+{
+  const N = 64, W = new Float64Array(N * N).fill(NaN);
+  for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) { const x = -1 + (2 * j + 1) / N, y = -1 + (2 * i + 1) / N, r = Math.hypot(x, y); if (r > 1) continue; const t = Math.atan2(y, x);
+    W[i * N + j] = 0.2 * r * r * Math.cos(2 * t) + 0.3 * (6 * r ** 4 - 6 * r * r + 1) + 0.1 * (70 * r ** 8 - 140 * r ** 6 + 90 * r ** 4 - 20 * r * r + 1) - 0.05 * (924 * r ** 12 - 2772 * r ** 10 + 3150 * r ** 8 - 1680 * r ** 6 + 420 * r ** 4 - 42 * r * r + 1); }
+  const f37 = OE.zernFit({ N, W }, 37), f16 = OE.zernFit({ N, W }, 16);
+  near('Zernike Z37 : coefficients retrouvés', Math.max(Math.abs(f37.c[4] - 0.2), Math.abs(f37.c[8] - 0.3), Math.abs(f37.c[24] - 0.1), Math.abs(f37.c[36] + 0.05)), 0, 1e-9);
+  near('Zernike Z37 : résidu nul', f37.rmsRes, 0, 1e-12); near('Zernike Z16 : résidu = ordres 7 et 11 non ajustés', f16.rmsRes > 0.01 ? 1 : 0, 1, 0);
+  const M = OE.prepare(S['Triplet de Cooke f=50 F/5']()), wf = OE.wavefront(M, 2, M.pw, 64, false), z = OE.zernFit(wf, 16);
+  near('Zernike Z16 ≡ ajustement interne du front d\'onde (hors piston)', Math.max(...z.c.slice(1).map((v, k) => Math.abs(v - wf.zern[k + 1]))), 0, 1e-9); }
 console.log(fail ? `${fail} échec(s)` : 'Tous les tests passent'); process.exit(fail ? 1 : 0);

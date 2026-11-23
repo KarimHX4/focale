@@ -110,7 +110,7 @@ async function genReport() {
     if (cf.sec.system) {
       await step('Données du système…'); if (cf.sec.cover) page(); h1('Données du système');
       const ap = sys.aperture;
-      kv([['Ouverture', `${({ EPD: 'Ø pupille d\'entrée', FNO: 'F/# image', NA: 'ON objet' })[ap.type]} = ${fmt(ap.value, 6)}`], ['Obstruction centrale', fmt(ap.obscuration || 0, 4)],
+      kv([['Ouverture', `${({ EPD: 'Ø pupille d\'entrée', FNO: 'F/# image', NA: 'ON objet', NAI: 'ON image', STOP: 'demi-diamètre du diaphragme' })[ap.type]} = ${fmt(ap.value, 6)}`], ['Obstruction centrale', fmt(ap.obscuration || 0, 4)],
         ['Objet', M.objInf ? 'à l\'infini' : `à ${fx(M.t0, 3)} mm`], ['Visée des rayons', ({ none: 'pupille paraxiale', chief: 'rayon principal au centre du diaphragme', full: 'réelle (tous les rayons)' })[OE.aimMode(sys)]],
         ['Champs', sys.fields.map((_, i) => fl(i)).join(' ; ')], ['Longueurs d\'onde (nm)', sys.wavelengths.map((w, i) => fmt(w.um * 1000, 5) + (i === sys.primary ? '*' : '')).join(' ; ')]]);
       h2('Données paraxiales');
@@ -157,7 +157,9 @@ async function genReport() {
     // ---------------- analyses ----------------
     const renderAn = async (pp, title) => {
       await step(`Analyse : ${title}…`);
-      if (pp.type === 'zern') { const wf = OE.wavefront(M, pp.fi || 0, pp.wi ?? M.pw, 64, false); h2(title, 80); table([{ t: 'Terme', w: 60 }, { t: 'Aberration', w: CW - 160 }, { t: 'Coef. (λ)', w: 100, a: 'right', mono: true }], (wf.zern || []).map((v, i) => [`Z${i + 1}`, OE.ZN[i], (v >= 0 ? '+' : '') + v.toFixed(5)])); return; }
+      if (pp.type === 'zern') { const wf = OE.wavefront(M, pp.fi || 0, pp.wi ?? M.pw, 64, false), z = OE.zernFit(wf, +pp.nz || 16); h2(title, 80);
+        table([{ t: 'Terme', w: 50 }, { t: 'n', w: 30, a: 'right' }, { t: 'Aberration', w: CW - 260 }, { t: 'Coef. (λ)', w: 90, a: 'right', mono: true }, { t: 'RMS (λ)', w: 90, a: 'right', mono: true }], z.c.map((v, i) => [`Z${i + 1}`, z.order[i], z.names[i], (v >= 0 ? '+' : '') + v.toFixed(5), i ? z.rmsTerm[i].toFixed(5) : '—']));
+        kv([['RMS total (piston retiré)', `${fx(z.rmsTot, 5)} λ`], [`Résidu au-delà de Z${z.nz} (RMS / PV)`, `${fx(z.rmsRes, 5)} λ / ${fx(z.pvRes, 4)} λ`]]); return; }
       if (pp.type === 'presc') return;
       if (pp.type === 'imgsim') simSync(pp, M);
       const tall = ['spot', 'rayfan', 'opdfan'].includes(pp.type) && sys.fields.length > 2;

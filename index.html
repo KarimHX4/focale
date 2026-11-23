@@ -121,6 +121,8 @@ table.sdt td.ro,table.sdt th.ro{font-family:var(--mono);font-size:11.5px;color:v
 .fwin .wb:hover{background:var(--acc2);color:var(--fg)}
 body.wdrag .fwin .fwb{pointer-events:none}
 .fwin button[data-fw]{display:none}
+.help .hflash,.help tr.hflash td{background:var(--acc2)!important;transition:background .4s}
+button.x.hb{font-weight:700;font-size:12.5px}
 .nrc{display:inline-flex;align-items:center;gap:2px}
 .nrc>.bt{height:24px;padding:0 6px}
 .nrc .menu{top:28px}
@@ -334,6 +336,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
         <span class="grow"></span>
         <label class="hint"><input type="checkbox" id="showAsph"> Asphères</label>
         <label class="hint" title="Coefficients d'ordre élevé A12 à A20 (r¹² … r²⁰)"><input type="checkbox" id="showHi"> A12–A20</label>
+        <button class="x" data-help="lde" title="Aide sur l'éditeur de lentilles">?</button>
         <button class="x" data-fw="lde" title="Détacher l'éditeur dans une fenêtre flottante (déplaçable, redimensionnable)">⧉</button>
       </div>
       <div id="ldew"><table class="lde" id="lde"></table></div>
@@ -349,6 +352,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
         <button class="bt" data-act="fit" title="Ajuster la vue (double-clic)">Ajuster</button>
         <span class="grow"></span>
         <span class="hint">molette : zoom · glisser : déplacer · clic : sélectionner</span>
+        <button class="x" data-help="interface" data-ha="Layout" title="Aide sur le layout">?</button>
         <button class="x" data-fw="lay" title="Détacher le layout dans une fenêtre flottante (déplaçable, redimensionnable)">⧉</button>
       </div>
       <div id="layw"><canvas id="lay"></canvas><div id="tip"></div><div class="legend" id="legend"></div></div>
@@ -365,7 +369,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 <div class="toast" id="toast"></div>
 <input type="file" id="fileIn" accept=".json,.zmx,.seq,.txt,.agf" style="display:none">
 <div class="drop" id="drop">Déposez un fichier .zmx, .seq, .json ou .agf</div>
-<script>const FOCALE_VERSION = '338e9d9a';</script>
+<script>const FOCALE_VERSION = '1e9398cc';</script>
 <script>
 'use strict';
 /* =====================================================================
@@ -1193,6 +1197,36 @@ const OE = (() => {
     return [1, x, y, 2 * r2 - 1, x2y2, xy2, (3 * r2 - 2) * x, (3 * r2 - 2) * y, 6 * r2 * r2 - 6 * r2 + 1,
       x * x * x - 3 * x * y * y, 3 * x * x * y - y * y * y, (4 * r2 - 3) * x2y2, (4 * r2 - 3) * xy2,
       (10 * r2 * r2 - 12 * r2 + 3) * x, (10 * r2 * r2 - 12 * r2 + 3) * y, 20 * r2 * r2 * r2 - 30 * r2 * r2 + 12 * r2 - 1];
+  }
+  /* Zernike Fringe Z1…Z37 (θ depuis l'axe X) : [n, m, cos|sin, polynôme radial en ρ²] — les 16 premiers sont ceux de zernBasis */
+  const ZF = [[0, 0], [1, 1, 'c'], [1, 1, 's'], [2, 0], [2, 2, 'c'], [2, 2, 's'], [3, 1, 'c'], [3, 1, 's'], [4, 0], [3, 3, 'c'], [3, 3, 's'], [4, 2, 'c'], [4, 2, 's'], [5, 1, 'c'], [5, 1, 's'], [6, 0],
+    [4, 4, 'c'], [4, 4, 's'], [5, 3, 'c'], [5, 3, 's'], [6, 2, 'c'], [6, 2, 's'], [7, 1, 'c'], [7, 1, 's'], [8, 0], [5, 5, 'c'], [5, 5, 's'], [6, 4, 'c'], [6, 4, 's'], [7, 3, 'c'], [7, 3, 's'], [8, 2, 'c'], [8, 2, 's'], [9, 1, 'c'], [9, 1, 's'], [10, 0], [12, 0]];
+  const ZN37 = ['Piston', 'Basculement X', 'Basculement Y', 'Défocalisation', 'Astigmatisme 0°', 'Astigmatisme 45°', 'Coma X', 'Coma Y', 'Sphérique 3e ordre',
+    'Trèfle 0°', 'Trèfle 30°', 'Astig. 5e ordre 0°', 'Astig. 5e ordre 45°', 'Coma 5e ordre X', 'Coma 5e ordre Y', 'Sphérique 5e ordre',
+    'Tétrafoil 0°', 'Tétrafoil 22,5°', 'Trèfle 5e ordre 0°', 'Trèfle 5e ordre 30°', 'Astig. 7e ordre 0°', 'Astig. 7e ordre 45°', 'Coma 7e ordre X', 'Coma 7e ordre Y', 'Sphérique 7e ordre',
+    'Pentafoil 0°', 'Pentafoil 18°', 'Tétrafoil 7e ordre 0°', 'Tétrafoil 7e ordre 22,5°', 'Trèfle 7e ordre 0°', 'Trèfle 7e ordre 30°', 'Astig. 9e ordre 0°', 'Astig. 9e ordre 45°', 'Coma 9e ordre X', 'Coma 9e ordre Y', 'Sphérique 9e ordre', 'Sphérique 11e ordre'];
+  /** polynôme radial de Zernike R_n^m(ρ) */
+  function zRad(n, m, r) { let v = 0; for (let k = 0; k <= (n - m) / 2; k++) { const num = ((k % 2) ? -1 : 1) * fact(n - k), den = fact(k) * fact((n + m) / 2 - k) * fact((n - m) / 2 - k); v += num / den * Math.pow(r, n - 2 * k); } return v; }
+  const FACT = [1]; function fact(n) { while (FACT.length <= n) FACT.push(FACT[FACT.length - 1] * FACT.length); return FACT[n]; }
+  function zernBasis37(x, y, nz = 37) { const r = Math.hypot(x, y), t = Math.atan2(y, x), out = new Array(nz); for (let k = 0; k < nz; k++) { const [n, m, cs] = ZF[k], R = zRad(n, m, r); out[k] = m === 0 ? R : R * (cs === 'c' ? Math.cos(m * t) : Math.sin(m * t)); } return out; }
+  /** RMS sur le disque unité d'un terme Fringe de coefficient 1 : 1/√(n+1) (m = 0) ou 1/√(2(n+1)) */
+  const zRms = k => { const [n, m] = ZF[k]; return 1 / Math.sqrt((n + 1) * (m ? 2 : 1)); };
+  /**
+   * Ajustement de Zernike Fringe sur les nz premiers termes (4 à 37) d'un front d'onde (wavefront()) :
+   * coefficients, RMS de chaque terme, et résidu = front d'onde − ajustement (termes au-delà de Z_nz et ordres non représentés).
+   */
+  function zernFit(wf, nz = 16) {
+    nz = Math.max(1, Math.min(37, nz | 0)); const N = wf.N, S = [];
+    for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) { const w = wf.W[i * N + j]; if (isFinite(w)) S.push([-1 + (2 * j + 1) / N, -1 + (2 * i + 1) / N, w, i * N + j]); }
+    const AtA = Array.from({ length: nz }, () => new Array(nz).fill(0)), Atb = new Array(nz).fill(0), B = [];
+    for (const [x, y, w] of S) { const z = zernBasis37(x, y, nz); B.push(z); for (let a = 0; a < nz; a++) { Atb[a] += z[a] * w; for (let b = 0; b < nz; b++) AtA[a][b] += z[a] * z[b]; } }
+    const c = S.length > nz ? (solveLin(AtA, Atb) || new Array(nz).fill(0)) : new Array(nz).fill(0);
+    const R = new Float64Array(N * N).fill(NaN); let m = 0, s2 = 0, t2 = 0, tm = 0, mn = Infinity, mx = -Infinity;
+    S.forEach(([x, y, w, q], k) => { let f = 0; for (let a = 0; a < nz; a++) f += c[a] * B[k][a]; R[q] = w - f; m += w - f; tm += w; });
+    m /= S.length || 1; tm /= S.length || 1;
+    S.forEach(([x, y, w, q]) => { const v = R[q] - m; R[q] = v; s2 += v * v; t2 += (w - tm) ** 2; mn = Math.min(mn, v); mx = Math.max(mx, v); });
+    const n = S.length || 1;
+    return { c, nz, names: ZN37.slice(0, nz), rmsTerm: c.map((v, k) => Math.abs(v) * zRms(k)), R, N, rmsRes: Math.sqrt(s2 / n), pvRes: S.length ? mx - mn : NaN, rmsTot: Math.sqrt(t2 / n), order: ZF.slice(0, nz).map(z => z[0]) };
   }
   function solveLin(A, b) {
     const n = b.length; const a = A.map((r, i) => [...r, b[i]]);
@@ -2231,7 +2265,7 @@ const OE = (() => {
   }
 
   return { DEG, fiberInfo, binPSF, detMTF, extSource, binImage, imageSim, polPupil, polOut, POLSTATES, TOLT, TOLC, LT, quickFocus, wlSel, opValue, parseModel, fmtModel, glassNearest, glassPool, toModel, subTry, tolBase, tolDefaults, tolFreeze, tolItems, tolGen, tolApplicable, tolLabel, tolApply, tolWorse, tolSens, tolInverse, tolTrial, tolRebuild, tolValue, niceDown, rng, mtfAt, compensate, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
-    wavefront, psf, psfGrid, mtf, mtfGeo, pupilScale, otfAC, mtfOne, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
+    wavefront, zernFit, ZN37, psf, psfGrid, mtf, mtfGeo, pupilScale, otfAC, mtfOne, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
     OPS, getVars, residuals, meritOf, optStep, pupilGrid, indices, paraxial,
     ASPK, FTYPES, vigMap, modelN, aimMode, setVignetting, convertFields, thermalScan, glassTherm, nAir, envN, envCtx, isSolid };
 })();
@@ -3320,6 +3354,7 @@ const HELP = [
 <li><b>Barre d'état</b> : focale, F/#, longueur, nombre de variables, avertissements et temps de calcul.</li>
 </ul>
 <p>Les séparateurs entre zones se déplacent à la souris. Le système et la disposition sont mémorisés automatiquement dans le navigateur.</p>
+<p><b>Aide contextuelle</b> : le bouton <b>?</b> présent dans chaque fenêtre d'analyse, dans la barre de titre des fenêtres (verres, données système, optimisation, tolérancement, rapport, import/export), dans l'éditeur, le layout, le panneau système et l'assistant ouvre directement la bonne rubrique de cette aide (la ligne concernée est surlignée). F1 ou ? de la barre du haut : aide générale.</p>
 <p><b>Zones détachables</b> : le bouton <b>⧉</b> présent sur le panneau de gauche, l'éditeur de lentilles, le layout et chaque fenêtre d'analyse les détache dans une <b>fenêtre flottante</b> que l'on déplace par sa barre de titre et redimensionne par la poignée en bas à droite (– ou double-clic sur la barre : réduire). <b>⇲</b> la ré-ancre à sa place ; la grille d'analyses se réorganise avec les fenêtres restantes. <b>+ Fenêtre</b> (barre du haut) ouvre autant d'analyses supplémentaires que voulu, chacune flottante (✕ pour la fermer). Positions, tailles et fenêtres détachées sont mémorisées d'une session à l'autre.</p>
 <p><b>Fenêtres</b> (verres, données système, optimisation, tolérancement, rapport, aide…) : elles flottent au-dessus de l'interface sans la bloquer — on peut continuer à travailler dans l'éditeur pendant qu'elles sont ouvertes. Glisser la <b>barre de titre</b> pour déplacer ; <b>–</b> (ou double-clic sur le titre) pour réduire à la barre de titre ; <b>□</b> pour agrandir en plein écran ; la <b>poignée en bas à droite</b> pour changer la taille ; ✕ ou Échap pour fermer. Position et taille sont retenues pour chaque fenêtre pendant la session.</p>` },
 
@@ -3411,8 +3446,8 @@ const HELP = [
 <tr><td>Diagramme de spot</td><td>Impacts des rayons dans le plan image (grille de pupille), par champ, couleur = longueur d'onde. RMS et GEO par rapport au barycentre (ou au rayon principal), cercle d'Airy 1,22·λ·F/#.</td></tr>
 <tr><td>Ray fan</td><td>Aberration transverse εy(Py) (tangentiel) et εx(Px) (sagittal) par rapport au rayon principal.</td></tr>
 <tr><td>OPD fan</td><td>Écart de chemin optique (en ondes) le long des deux coupes de pupille.</td></tr>
-<tr><td>Carte WFE</td><td>Front d'onde dans la pupille de sortie : OPD par rapport à une sphère de référence centrée sur l'image du rayon principal. RMS, PV, et Strehl approché par Maréchal quand RMS ≤ 0,15 λ (au-delà, voir la PSF). Option : retrait du tilt.</td></tr>
-<tr><td>Zernike</td><td>Décomposition du front d'onde sur 16 polynômes Fringe (moindres carrés).</td></tr>
+<tr><td>Carte WFE</td><td>Front d'onde dans la pupille de sortie : OPD par rapport à une sphère de référence centrée sur l'image du rayon principal. RMS, PV, et Strehl approché par Maréchal quand RMS ≤ 0,15 λ (au-delà, voir la PSF). Option : retrait du tilt. Menu <b>Front d'onde / Résidu après Z…</b> : affiche le front d'onde moins son ajustement de Zernike jusqu'à Z4, Z9, Z16, Z25, Z36 ou Z37, c'est-à-dire les <b>ordres supérieurs</b> non représentés.</td></tr>
+<tr><td>Zernike</td><td>Décomposition du front d'onde en polynômes de Zernike <b>Fringe</b> (moindres carrés), avec le <b>nombre de termes au choix</b> : Z1…Z4 (défocalisation), Z9 (3ᵉ ordre), Z16 (5ᵉ ordre, par défaut), Z25 (7ᵉ ordre), Z36 (9ᵉ ordre) ou Z37 (avec la sphérique du 11ᵉ ordre), comme dans CODE V. Pour chaque terme : ordre radial n, coefficient (λ) et contribution RMS (λ) — coefficient × 1/√(n+1) pour les termes de révolution, × 1/√(2(n+1)) sinon. En bas : RMS total, RMS des termes Z2…Zk, <b>résidu au-delà de Zk</b> (RMS et PV : ce que les termes retenus n'expliquent pas) et part de la variance expliquée.</td></tr>
 <tr><td>PSF</td><td>Réponse impulsionnelle par FFT de la pupille complexe (64×64 dans 256×256, 512×512 au-delà du zoom ×2,2), échelle linéaire ou log, rapport de Strehl. <b>2D</b> : carte de couleurs avec cercle d'Airy. <b>3D</b> : surface d'intensité en % du pic (comme la « Diffraction Intensity Spread Function » de CODE V), couleurs par hauteur avec éclairage du relief, parois graduées ; <b>glisser</b> pour la faire tourner. En 3D la PSF est calculée directement aux 201 × 201 nœuds du maillage (transformée de Fourier matricielle d'un front d'onde 128 × 128), nœuds resserrés au centre pour détailler le pic ; maillage allégé pendant une rotation ou un zoom, puis pleine résolution au relâchement. <b>Zoom continu</b> de ×0,5 à ×5 par le curseur de l'en-tête ou la <b>molette</b> sur la PSF ; <b>Ajuster</b> (ou double-clic sur la PSF) remet le zoom à ×1 et, en 3D, l'orientation par défaut.</td></tr>
 <tr><td>FTM / MTF</td><td>Deux méthodes au choix dans l'en-tête :
 <b>Diffraction</b> (par défaut) : autocorrélation directe de la pupille complexe (méthode de Hopkins, comme CODE V), calculée exactement à chaque fréquence (décalage fractionnaire de la pupille, donc pas d'interpolation de la courbe) ; échantillonnage du front d'onde 32 à 256 (64 suffit en général : écart < 0,01 avec 256). Fréquences mesurées sur la surface image avec l'ouverture <b>réelle</b> de chaque champ : fc = ΔM/λ (tangentiel) et ΔL/λ (sagittal), ΔM et ΔL étant les écarts de cosinus directeurs des rayons de bord de pupille — l'équivalent des « X and Y F-numbers » de CODE V, affichés en haut du graphe (F/# réels T/S). Polychromatique : somme pondérée des OTF <b>complexes</b>, chacune déphasée de la position de son rayon principal, puis module — le chromatisme latéral réduit donc la FTM (même définition que CODE V et OpticStudio). Limite de diffraction sur la même pupille (obstruction, vignetage, apodisation).
@@ -3428,7 +3463,7 @@ const HELP = [
 <tr><td>Simulation d'image</td><td>Voir la rubrique dédiée.</td></tr>
 <tr><td>Prescription</td><td>Tableau des surfaces, performances par champ, données paraxiales.</td></tr>
 <tr><td>Analyse thermique</td><td>Défocalisation, Δ focale, WFE et spot RMS en fonction de la température (bornes réglables dans l'en-tête). Voir <i>Données système</i>.</td></tr></table>
-<p>Chaque fenêtre d'analyse se détache avec <b>⧉</b> (fenêtre flottante redimensionnable) ; <b>+ Fenêtre</b> en ajoute d'autres.</p>` },
+<p>Le bouton <b>?</b> de chaque fenêtre d'analyse ouvre directement la ligne correspondante de cette aide. Chaque fenêtre d'analyse se détache avec <b>⧉</b> (fenêtre flottante redimensionnable) ; <b>+ Fenêtre</b> en ajoute d'autres.</p>` },
 
   { id: 'polarisation', t: 'Polarisation', h: `
 <p>Focale suit le <b>champ électrique complexe 3D</b> le long de chaque rayon :</p>
@@ -4623,7 +4658,7 @@ function renderSide() {
   if (!apOpts.find(o => o[0] === ap.type)) ap.type = 'EPD';
   const ft = ftypeOf(s), fu = OE.FTYPES[ft].u;
   const el = document.activeElement; const keep = el && el.closest && el.closest('#side') && el.dataset.f ? `[data-f="${el.dataset.f}"]${el.dataset.k ? `[data-k="${el.dataset.k}"]` : ''}${el.dataset.i != null ? `[data-i="${el.dataset.i}"]` : ''}` : null;
-  let h = `<div class="sidebar-h"><button class="bt" data-act="sysdata" title="Données système façon CODE V : pupille, longueurs d'onde, champs et vignetage, température et pression, dn/dT, avancé (Ctrl+Maj+D)">⚙ Données système…</button><span class="grow"></span>${App.fw.side ? '' : '<button class="x" data-fw="side" title="Détacher ce panneau dans une fenêtre flottante">⧉</button>'}</div>`;
+  let h = `<div class="sidebar-h"><button class="bt" data-act="sysdata" title="Données système façon CODE V : pupille, longueurs d'onde, champs et vignetage, température et pression, dn/dT, avancé (Ctrl+Maj+D)">⚙ Données système…</button><span class="grow"></span><button class="x" data-help="systeme" title="Aide : ouverture, champs, longueurs d'onde">?</button>${App.fw.side ? '' : '<button class="x" data-fw="side" title="Détacher ce panneau dans une fenêtre flottante">⧉</button>'}</div>`;
   h += card('gen', 'Système', `
     <div class="row"><input class="in" style="flex:1" data-f="title" value="${esc(s.title)}" placeholder="Titre du système"></div>`);
   h += inspector();
@@ -5234,6 +5269,14 @@ const PT = {
   presc: { l: 'Prescription & synthèse', html: 1 },
   thermal: { l: 'Analyse thermique (focale, foyer, qualité vs T)', f: 1 },
 };
+/** section (et repère) de l'aide pour chaque type d'analyse */
+const HELPAN = { spot: ['analyses', 'Diagramme de spot'], rayfan: ['analyses', 'Ray fan'], opdfan: ['analyses', 'OPD fan'], wfe: ['analyses', 'Carte WFE'], zern: ['analyses', 'Zernike'], psf: ['analyses', 'PSF'],
+  mtf: ['analyses', 'FTM / MTF'], ee: ['analyses', 'Énergie encerclée'], footprint: ['analyses', 'Footprint'], field: ['analyses', 'Courbure de champ'], seidel: ['analyses', 'Seidel'], chrom: ['analyses', 'Décalage focal chromatique'],
+  glass: ['analyses', 'Carte des verres'], polar: ['polarisation'], detector: ['detecteur'], source: ['source'], imgsim: ['imgsim'], presc: ['analyses', 'Prescription'], thermal: ['donnees', 'Analyse thermique'] };
+/** aide des fenêtres (par titre) */
+const HELPDLG = [['Catalogue de verres', 'verres'], ['Optimisation', 'optimisation'], ['Données système', 'donnees'], ['Tolérancement', 'tolerancement'], ['Rapport', 'rapport'], ['Export', 'fichiers'], ['Import', 'fichiers'], ['Assistant', 'assistant'], ['À propos', 'demarrage']];
+/** choix du nombre de termes de Zernike Fringe (ordre radial et azimutal) */
+const ZNOPTS = [[4, 'défocalisation'], [9, '3ᵉ ordre'], [16, '5ᵉ ordre'], [25, '7ᵉ ordre'], [36, '9ᵉ ordre'], [37, '9ᵉ ordre + sphérique 11ᵉ']];
 /** groupes du menu des fenêtres d'analyse */
 const PTG = [
   ['Image et aberrations', ['spot', 'rayfan', 'opdfan', 'wfe', 'zern']],
@@ -5275,12 +5318,13 @@ function paneHeader(pi) {
   if (p.type === 'glass') h += `<select data-p="cat"><option value="">Tous les catalogues</option>${OE.cats().map(k => `<option ${p.cat === k ? 'selected' : ''}>${k}</option>`).join('')}</select>`;
   if (p.type === 'psf' && det().on) h += `<label title="PSF intégrée sur les pixels du détecteur"><input type="checkbox" data-p="pix" ${p.pix ? 'checked' : ''}>pixels</label>`;
   if (p.type === 'psf') h += `<span class="seg sm"><button data-p="view2" class="${p.view === '3d' ? '' : 'on'}" title="Carte 2D">2D</button><button data-p="view3" class="${p.view === '3d' ? 'on' : ''}" title="Surface 3D (glisser pour tourner)">3D</button></span><label><input type="checkbox" data-p="log" ${p.log ? 'checked' : ''}>log</label><label class="zr" title="Zoom continu de ×0,5 à ×5 (ou molette sur la PSF)">zoom <input type="range" data-p="zoom" min="0.5" max="5" step="0.05" value="${psfZoom(p)}"><span class="zv">×${psfZoom(p).toFixed(2)}</span></label><button class="bt" data-p="zfit" style="height:24px" title="Ajuster : zoom ×1${p.view === '3d' ? ' et orientation 3D par défaut' : ''} (ou double-clic sur la PSF)">Ajuster</button>`;
-  if (p.type === 'wfe') h += `<label><input type="checkbox" data-p="tilt" ${p.tilt !== false ? 'checked' : ''}>sans tilt</label>`;
+  if (p.type === 'wfe') h += `<select data-p="zres" title="Afficher le front d'onde complet ou le résidu après ajustement des premiers termes de Zernike (ordres supérieurs)"><option value="0">Front d'onde</option>${ZNOPTS.map(([n, l]) => `<option value="${n}" ${+p.zres === n ? 'selected' : ''}>Résidu après Z${n} (${l})</option>`).join('')}</select>${+p.zres > 0 ? '' : `<label><input type="checkbox" data-p="tilt" ${p.tilt !== false ? 'checked' : ''}>sans tilt</label>`}`;
+  if (p.type === 'zern') h += `<select data-p="nz" title="Nombre de termes de Zernike Fringe ajustés">${ZNOPTS.map(([n, l]) => `<option value="${n}" ${(+p.nz || 16) === n ? 'selected' : ''}>Z1…Z${n} — ${l}</option>`).join('')}</select>`;
   if (p.type === 'mtf') h += `<select data-p="mt" title="Méthode de calcul de la FTM"><option value="diff" ${p.mt !== 'geo' ? 'selected' : ''}>Diffraction</option><option value="geo" ${p.mt === 'geo' ? 'selected' : ''}>Géométrique</option></select>${p.mt === 'geo' ? `<label title="Multiplier par la FTM d'une pupille parfaite (recommandé)"><input type="checkbox" data-p="gdl" ${p.gdl !== false ? 'checked' : ''}>× diffraction</label>` : `<select data-p="ns" title="Échantillonnage de la pupille (front d'onde N×N)">${[32, 64, 128, 256].map(n => `<option value="${n}" ${(+p.ns || 64) === n ? 'selected' : ''}>${n}×${n}</option>`).join('')}</select>`}<label>f max <input class="in" data-p="fmax" style="width:56px;height:22px" value="${p.fmax || ''}" placeholder="auto"></label>`;
   if (p.type === 'spot') h += `<label><input type="checkbox" data-p="chief" ${p.chief ? 'checked' : ''}>réf. principal</label>`;
   if (p.type === 'thermal') h += `<label>de <input class="in" data-p="t1" style="width:46px;height:22px" value="${p.t1 ?? -20}"></label><label>à <input class="in" data-p="t2" style="width:46px;height:22px" value="${p.t2 ?? 60}"> °C</label>`;
   const fl = !!App.fw['p' + pi];
-  h += `<span class="grow"></span>${t.html ? '' : '<button class="x" data-p="png" title="Enregistrer l\'image (PNG)">⤓</button>'}${fl ? '' : `<button class="x" data-fw="p${pi}" title="Détacher dans une fenêtre flottante (déplaçable, redimensionnable)">⧉</button><button class="x" data-p="max" title="Agrandir / réduire">⤢</button>`}`;
+  h += `<span class="grow"></span><button class="x hb" data-help="${(HELPAN[p.type] || ['analyses'])[0]}" data-ha="${esc((HELPAN[p.type] || [])[1] || '')}" title="Aide sur cette analyse">?</button>${t.html ? '' : '<button class="x" data-p="png" title="Enregistrer l\'image (PNG)">⤓</button>'}${fl ? '' : `<button class="x" data-fw="p${pi}" title="Détacher dans une fenêtre flottante (déplaçable, redimensionnable)">⧉</button><button class="x" data-p="max" title="Agrandir / réduire">⤢</button>`}`;
   return h;
 }
 function setupPanes() {
@@ -5438,9 +5482,10 @@ const R = {
   rayfan(p, M, c, w, h) { fans(c, w, h, M, M.sys.fields.map((_, i) => OE.rayFan(M, i, 61)), 1e3, 'µm'); },
   opdfan(p, M, c, w, h) { fans(c, w, h, M, M.sys.fields.map((_, i) => OE.opdFan(M, i, 61)), 1, 'λ'); },
   wfe(p, M, c, w, h) {
-    const wf = OE.wavefront(M, p.fi || 0, p.wi ?? M.pw, 64, p.tilt !== false);
+    let wf = OE.wavefront(M, p.fi || 0, p.wi ?? M.pw, 64, p.tilt !== false), lbl = 'WFE';
+    if (+p.zres > 0 && wf.ok) { const z = OE.zernFit(OE.wavefront(M, p.fi || 0, p.wi ?? M.pw, 64, false), +p.zres); wf = { ...wf, W: z.R, rms: z.rmsRes, pv: z.pvRes }; lbl = `Résidu après Z1…Z${z.nz}`; }
     let m = 0; for (const v of wf.W) if (isFinite(v)) m = Math.max(m, Math.abs(v)); m = m || 1e-3;
-    const A = axes(c, { x: 0, y: 0, w: w - 70, h: h - 6 }, [-1.05, 1.05], [-1.05, 1.05], { equal: true, title: `WFE  RMS ${fx(wf.rms, 4)} λ · PV ${fx(wf.pv, 4)} λ ${wf.rms <= 0.15 ? ` · Strehl (Maréchal) ≈ ${fx(Math.exp(-((2 * Math.PI * wf.rms) ** 2)), 3)}` : ''}`, ml: 40, mb: 22, zero: false });
+    const A = axes(c, { x: 0, y: 0, w: w - 70, h: h - 6 }, [-1.05, 1.05], [-1.05, 1.05], { equal: true, title: `${lbl}  RMS ${fx(wf.rms, 4)} λ · PV ${fx(wf.pv, 4)} λ ${lbl === 'WFE' && wf.rms <= 0.15 ? ` · Strehl (Maréchal) ≈ ${fx(Math.exp(-((2 * Math.PI * wf.rms) ** 2)), 3)}` : ''}`, ml: 40, mb: 22, zero: false });
     A.xr0 = -1; A.xr1 = 1; A.yr0 = -1; A.yr1 = 1;
     heat(c, A, wf.W, wf.N, wf.N, -m, m, 'div', false);
     c.strokeStyle = TH.line; c.beginPath(); c.arc(A.X(0), A.Y(0), A.X(1) - A.X(0), 0, 2 * Math.PI); c.stroke();
@@ -5448,12 +5493,16 @@ const R = {
     text(c, `λ = ${fmt(M.wls[p.wi ?? M.pw] * 1000, 5)} nm · champ ${fLabel(M, p.fi || 0)} · réf. sphère centrée sur le rayon principal`, 40, h - 14, { maxW: w - 48, col: TH.mut, size: 10 });
   },
   zern(p, M) {
-    const wf = OE.wavefront(M, p.fi || 0, p.wi ?? M.pw, 64, false);
-    const z = wf.zern || [];
-    const rows = z.map((v, i) => `<tr><td>Z${i + 1}</td><td style="text-align:left">${OE.ZN[i]}</td><td>${(v >= 0 ? '+' : '') + v.toFixed(5)}</td><td><div style="height:8px;width:${Math.min(160, Math.abs(v) / (Math.max(...z.map(Math.abs)) || 1) * 160)}px;background:${v >= 0 ? '#d4553b' : '#3f6fc4'};border-radius:2px"></div></td></tr>`).join('');
-    return `<div class="hint">Zernike Fringe, unités : ondes (λ = ${fmt(M.wls[p.wi ?? M.pw] * 1000, 5)} nm), champ ${fLabel(M, p.fi || 0)}. Pupille normalisée, θ depuis l'axe X.</div>
-      <table style="margin-top:8px"><tr><th>Terme</th><th style="text-align:left">Aberration</th><th>Coef. (λ)</th><th></th></tr>${rows}</table>
-      <p class="hint">RMS total (piston retiré) : <b>${fx(wf.rms, 5)} λ</b> · PV : <b>${fx(wf.pv, 4)} λ</b></p>`;
+    const nz = ZNOPTS.some(o => o[0] === +p.nz) ? +p.nz : 16, wf = OE.wavefront(M, p.fi || 0, p.wi ?? M.pw, 64, false);
+    if (!wf.ok) return '<p class="hint">Front d\'onde indisponible pour ce champ (rayon principal arrêté).</p>';
+    const z = OE.zernFit(wf, nz), mx = Math.max(...z.rmsTerm.slice(1)) || 1, expl = Math.sqrt(z.rmsTerm.slice(1).reduce((a, v) => a + v * v, 0));
+    const rows = z.c.map((v, i) => `<tr><td>Z${i + 1}</td><td>${z.order[i]}</td><td style="text-align:left">${z.names[i]}</td><td>${(v >= 0 ? '+' : '') + v.toFixed(5)}</td><td>${i ? fx(z.rmsTerm[i], 5) : '—'}</td><td>${i ? `<div style="height:8px;width:${Math.min(140, z.rmsTerm[i] / mx * 140)}px;background:${v >= 0 ? '#d4553b' : '#3f6fc4'};border-radius:2px"></div>` : ''}</td></tr>`).join('');
+    return `<div class="hint">Zernike Fringe Z1…Z${nz} (${ZNOPTS.find(o => o[0] === nz)[1]}), unités : ondes (λ = ${fmt(M.wls[p.wi ?? M.pw] * 1000, 5)} nm), champ ${fLabel(M, p.fi || 0)}. Pupille normalisée, θ depuis l'axe X ; n = ordre radial ; RMS = contribution du terme au front d'onde RMS.</div>
+      <table style="margin-top:8px"><tr><th>Terme</th><th>n</th><th style="text-align:left">Aberration</th><th>Coef. (λ)</th><th>RMS (λ)</th><th></th></tr>${rows}</table>
+      <div class="kv" style="margin-top:8px;max-width:440px"><span>RMS total (piston retiré)</span><span>${fx(z.rmsTot, 5)} λ</span><span>RMS des termes Z2…Z${nz}</span><span>${fx(expl, 5)} λ</span>
+      <span><b>Résidu au-delà de Z${nz}</b> : RMS</span><span><b>${fx(z.rmsRes, 5)} λ</b></span><span>Résidu : PV</span><span>${fx(z.pvRes, 4)} λ</span>
+      <span>Part de la variance expliquée</span><span>${fx(100 * (1 - (z.rmsRes / (z.rmsTot || 1)) ** 2), 3)} %</span></div>
+      <p class="hint">Le résidu (front d'onde moins l'ajustement) contient les ordres supérieurs à ceux retenus ; sa carte s'affiche dans « Carte de front d'onde » (option « résidu après Z… »).</p>`;
   },
   psf(p, M, c, w, h) {
     const zoom = psfZoom(p), fi = p.fi || 0, wi = p.wi ?? M.pw, ra = 1.22 * M.ctxs[wi].lmm * M.par.wfno * 1e3;
@@ -6248,7 +6297,8 @@ function dlg(html, wide, o = {}) {
   const h2 = d.querySelector(':scope > h2');
   if (h2) {
     const x = h2.querySelector('.x'), c = document.createElement('span'); c.className = 'wctl';
-    c.innerHTML = '<button class="wb" data-w="min" title="Réduire / restaurer (double-clic sur la barre de titre)" aria-label="Réduire">–</button><button class="wb" data-w="max" title="Agrandir / restaurer" aria-label="Agrandir">□</button>';
+    const hs = key.startsWith('Aide') ? null : (HELPDLG.find(([t]) => key.startsWith(t)) || [])[1];
+    c.innerHTML = (hs ? `<button class="wb" data-help="${hs}" title="Aide sur cette fenêtre" aria-label="Aide">?</button>` : '') + '<button class="wb" data-w="min" title="Réduire / restaurer (double-clic sur la barre de titre)" aria-label="Réduire">–</button><button class="wb" data-w="max" title="Agrandir / restaurer" aria-label="Agrandir">□</button>';
     if (x) { x.title = 'Fermer (Échap)'; x.setAttribute('aria-label', 'Fermer'); c.appendChild(x); } h2.appendChild(c);
   }
   const g = document.createElement('div'); g.className = 'grip'; g.title = 'Redimensionner'; d.appendChild(g);
@@ -6680,7 +6730,7 @@ function openImport() {
   <textarea id="imTxt" spellcheck="false" placeholder="VERS …&#10;MODE SEQ&#10;SURF 0 …   (Zemax)&#10;&#10;RDM;LEN&#10;EPD 10 …&#10;SO 0 1e18&#10;S 22.01 3.26 NSK16_SCHOTT …   (CODE V)"></textarea></div>
   <div class="df"><button class="bt" data-d="pick">Choisir un fichier…</button><button class="tb pri" data-d="load">Importer</button></div>`);
 }
-function openHelp(id) {
+function openHelp(id, anchor) {
   const nav = HELP.map(x => `<button class="hn" data-h="${x.id}">${x.t}</button>`).join('');
   dlg(`<h2>Aide de Focale <span class="hint" style="font-weight:400;margin-left:10px">version ${FOCALE_VERSION}</span><button class="x" data-d="close">✕</button></h2>
   <div class="db" style="display:grid;grid-template-columns:220px 1fr;gap:16px;height:min(72vh,760px);padding-bottom:0">
@@ -6695,8 +6745,13 @@ function openHelp(id) {
   };
   $('#hnav').addEventListener('click', e => { const b = e.target.closest('[data-h]'); if (b) { $('#hq').value = ''; show(b.dataset.h); } });
   $('#hq').addEventListener('input', () => show());
-  show(id); $('#hq').focus();
+  show(id);
+  if (anchor) { const a = anchor.toLowerCase(), el = [...$$('#hbody td:first-child, #hbody h4, #hbody b')].find(e => e.textContent.trim().toLowerCase().startsWith(a));
+    if (el) { const row = el.closest('tr, li') || el; row.scrollIntoView({ block: 'center' }); row.classList.add('hflash'); setTimeout(() => row.classList.remove('hflash'), 2200); } }
+  else $('#hq').focus();
 }
+// bouton d'aide contextuel (fenêtres d'analyse, dialogues, éditeur, layout, panneau système) : section (et repère) de l'aide générale
+document.addEventListener('click', e => { const b = e.target.closest('[data-help]'); if (!b) return; e.preventDefault(); e.stopPropagation(); openHelp(b.dataset.help, b.dataset.ha || ''); }, true);
 /* ---------------- Fichiers (ouvrir / enregistrer / glisser-déposer) ---------------- */
 const FS = { handle: null };
 const TOP = (() => { try { return window.top === window; } catch (e) { return false; } })();
@@ -6946,7 +7001,7 @@ async function genReport() {
     if (cf.sec.system) {
       await step('Données du système…'); if (cf.sec.cover) page(); h1('Données du système');
       const ap = sys.aperture;
-      kv([['Ouverture', `${({ EPD: 'Ø pupille d\'entrée', FNO: 'F/# image', NA: 'ON objet' })[ap.type]} = ${fmt(ap.value, 6)}`], ['Obstruction centrale', fmt(ap.obscuration || 0, 4)],
+      kv([['Ouverture', `${({ EPD: 'Ø pupille d\'entrée', FNO: 'F/# image', NA: 'ON objet', NAI: 'ON image', STOP: 'demi-diamètre du diaphragme' })[ap.type]} = ${fmt(ap.value, 6)}`], ['Obstruction centrale', fmt(ap.obscuration || 0, 4)],
         ['Objet', M.objInf ? 'à l\'infini' : `à ${fx(M.t0, 3)} mm`], ['Visée des rayons', ({ none: 'pupille paraxiale', chief: 'rayon principal au centre du diaphragme', full: 'réelle (tous les rayons)' })[OE.aimMode(sys)]],
         ['Champs', sys.fields.map((_, i) => fl(i)).join(' ; ')], ['Longueurs d\'onde (nm)', sys.wavelengths.map((w, i) => fmt(w.um * 1000, 5) + (i === sys.primary ? '*' : '')).join(' ; ')]]);
       h2('Données paraxiales');
@@ -6993,7 +7048,9 @@ async function genReport() {
     // ---------------- analyses ----------------
     const renderAn = async (pp, title) => {
       await step(`Analyse : ${title}…`);
-      if (pp.type === 'zern') { const wf = OE.wavefront(M, pp.fi || 0, pp.wi ?? M.pw, 64, false); h2(title, 80); table([{ t: 'Terme', w: 60 }, { t: 'Aberration', w: CW - 160 }, { t: 'Coef. (λ)', w: 100, a: 'right', mono: true }], (wf.zern || []).map((v, i) => [`Z${i + 1}`, OE.ZN[i], (v >= 0 ? '+' : '') + v.toFixed(5)])); return; }
+      if (pp.type === 'zern') { const wf = OE.wavefront(M, pp.fi || 0, pp.wi ?? M.pw, 64, false), z = OE.zernFit(wf, +pp.nz || 16); h2(title, 80);
+        table([{ t: 'Terme', w: 50 }, { t: 'n', w: 30, a: 'right' }, { t: 'Aberration', w: CW - 260 }, { t: 'Coef. (λ)', w: 90, a: 'right', mono: true }, { t: 'RMS (λ)', w: 90, a: 'right', mono: true }], z.c.map((v, i) => [`Z${i + 1}`, z.order[i], z.names[i], (v >= 0 ? '+' : '') + v.toFixed(5), i ? z.rmsTerm[i].toFixed(5) : '—']));
+        kv([['RMS total (piston retiré)', `${fx(z.rmsTot, 5)} λ`], [`Résidu au-delà de Z${z.nz} (RMS / PV)`, `${fx(z.rmsRes, 5)} λ / ${fx(z.pvRes, 4)} λ`]]); return; }
       if (pp.type === 'presc') return;
       if (pp.type === 'imgsim') simSync(pp, M);
       const tall = ['spot', 'rayfan', 'opdfan'].includes(pp.type) && sys.fields.length > 2;

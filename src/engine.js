@@ -825,6 +825,36 @@ const OE = (() => {
       x * x * x - 3 * x * y * y, 3 * x * x * y - y * y * y, (4 * r2 - 3) * x2y2, (4 * r2 - 3) * xy2,
       (10 * r2 * r2 - 12 * r2 + 3) * x, (10 * r2 * r2 - 12 * r2 + 3) * y, 20 * r2 * r2 * r2 - 30 * r2 * r2 + 12 * r2 - 1];
   }
+  /* Zernike Fringe Z1…Z37 (θ depuis l'axe X) : [n, m, cos|sin, polynôme radial en ρ²] — les 16 premiers sont ceux de zernBasis */
+  const ZF = [[0, 0], [1, 1, 'c'], [1, 1, 's'], [2, 0], [2, 2, 'c'], [2, 2, 's'], [3, 1, 'c'], [3, 1, 's'], [4, 0], [3, 3, 'c'], [3, 3, 's'], [4, 2, 'c'], [4, 2, 's'], [5, 1, 'c'], [5, 1, 's'], [6, 0],
+    [4, 4, 'c'], [4, 4, 's'], [5, 3, 'c'], [5, 3, 's'], [6, 2, 'c'], [6, 2, 's'], [7, 1, 'c'], [7, 1, 's'], [8, 0], [5, 5, 'c'], [5, 5, 's'], [6, 4, 'c'], [6, 4, 's'], [7, 3, 'c'], [7, 3, 's'], [8, 2, 'c'], [8, 2, 's'], [9, 1, 'c'], [9, 1, 's'], [10, 0], [12, 0]];
+  const ZN37 = ['Piston', 'Basculement X', 'Basculement Y', 'Défocalisation', 'Astigmatisme 0°', 'Astigmatisme 45°', 'Coma X', 'Coma Y', 'Sphérique 3e ordre',
+    'Trèfle 0°', 'Trèfle 30°', 'Astig. 5e ordre 0°', 'Astig. 5e ordre 45°', 'Coma 5e ordre X', 'Coma 5e ordre Y', 'Sphérique 5e ordre',
+    'Tétrafoil 0°', 'Tétrafoil 22,5°', 'Trèfle 5e ordre 0°', 'Trèfle 5e ordre 30°', 'Astig. 7e ordre 0°', 'Astig. 7e ordre 45°', 'Coma 7e ordre X', 'Coma 7e ordre Y', 'Sphérique 7e ordre',
+    'Pentafoil 0°', 'Pentafoil 18°', 'Tétrafoil 7e ordre 0°', 'Tétrafoil 7e ordre 22,5°', 'Trèfle 7e ordre 0°', 'Trèfle 7e ordre 30°', 'Astig. 9e ordre 0°', 'Astig. 9e ordre 45°', 'Coma 9e ordre X', 'Coma 9e ordre Y', 'Sphérique 9e ordre', 'Sphérique 11e ordre'];
+  /** polynôme radial de Zernike R_n^m(ρ) */
+  function zRad(n, m, r) { let v = 0; for (let k = 0; k <= (n - m) / 2; k++) { const num = ((k % 2) ? -1 : 1) * fact(n - k), den = fact(k) * fact((n + m) / 2 - k) * fact((n - m) / 2 - k); v += num / den * Math.pow(r, n - 2 * k); } return v; }
+  const FACT = [1]; function fact(n) { while (FACT.length <= n) FACT.push(FACT[FACT.length - 1] * FACT.length); return FACT[n]; }
+  function zernBasis37(x, y, nz = 37) { const r = Math.hypot(x, y), t = Math.atan2(y, x), out = new Array(nz); for (let k = 0; k < nz; k++) { const [n, m, cs] = ZF[k], R = zRad(n, m, r); out[k] = m === 0 ? R : R * (cs === 'c' ? Math.cos(m * t) : Math.sin(m * t)); } return out; }
+  /** RMS sur le disque unité d'un terme Fringe de coefficient 1 : 1/√(n+1) (m = 0) ou 1/√(2(n+1)) */
+  const zRms = k => { const [n, m] = ZF[k]; return 1 / Math.sqrt((n + 1) * (m ? 2 : 1)); };
+  /**
+   * Ajustement de Zernike Fringe sur les nz premiers termes (4 à 37) d'un front d'onde (wavefront()) :
+   * coefficients, RMS de chaque terme, et résidu = front d'onde − ajustement (termes au-delà de Z_nz et ordres non représentés).
+   */
+  function zernFit(wf, nz = 16) {
+    nz = Math.max(1, Math.min(37, nz | 0)); const N = wf.N, S = [];
+    for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) { const w = wf.W[i * N + j]; if (isFinite(w)) S.push([-1 + (2 * j + 1) / N, -1 + (2 * i + 1) / N, w, i * N + j]); }
+    const AtA = Array.from({ length: nz }, () => new Array(nz).fill(0)), Atb = new Array(nz).fill(0), B = [];
+    for (const [x, y, w] of S) { const z = zernBasis37(x, y, nz); B.push(z); for (let a = 0; a < nz; a++) { Atb[a] += z[a] * w; for (let b = 0; b < nz; b++) AtA[a][b] += z[a] * z[b]; } }
+    const c = S.length > nz ? (solveLin(AtA, Atb) || new Array(nz).fill(0)) : new Array(nz).fill(0);
+    const R = new Float64Array(N * N).fill(NaN); let m = 0, s2 = 0, t2 = 0, tm = 0, mn = Infinity, mx = -Infinity;
+    S.forEach(([x, y, w, q], k) => { let f = 0; for (let a = 0; a < nz; a++) f += c[a] * B[k][a]; R[q] = w - f; m += w - f; tm += w; });
+    m /= S.length || 1; tm /= S.length || 1;
+    S.forEach(([x, y, w, q]) => { const v = R[q] - m; R[q] = v; s2 += v * v; t2 += (w - tm) ** 2; mn = Math.min(mn, v); mx = Math.max(mx, v); });
+    const n = S.length || 1;
+    return { c, nz, names: ZN37.slice(0, nz), rmsTerm: c.map((v, k) => Math.abs(v) * zRms(k)), R, N, rmsRes: Math.sqrt(s2 / n), pvRes: S.length ? mx - mn : NaN, rmsTot: Math.sqrt(t2 / n), order: ZF.slice(0, nz).map(z => z[0]) };
+  }
   function solveLin(A, b) {
     const n = b.length; const a = A.map((r, i) => [...r, b[i]]);
     for (let i = 0; i < n; i++) {
@@ -1862,7 +1892,7 @@ const OE = (() => {
   }
 
   return { DEG, fiberInfo, binPSF, detMTF, extSource, binImage, imageSim, polPupil, polOut, POLSTATES, TOLT, TOLC, LT, quickFocus, wlSel, opValue, parseModel, fmtModel, glassNearest, glassPool, toModel, subTry, tolBase, tolDefaults, tolFreeze, tolItems, tolGen, tolApplicable, tolLabel, tolApply, tolWorse, tolSens, tolInverse, tolTrial, tolRebuild, tolValue, niceDown, rng, mtfAt, compensate, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
-    wavefront, psf, psfGrid, mtf, mtfGeo, pupilScale, otfAC, mtfOne, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
+    wavefront, zernFit, ZN37, psf, psfGrid, mtf, mtfGeo, pupilScale, otfAC, mtfOne, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
     OPS, getVars, residuals, meritOf, optStep, pupilGrid, indices, paraxial,
     ASPK, FTYPES, vigMap, modelN, aimMode, setVignetting, convertFields, thermalScan, glassTherm, nAir, envN, envCtx, isSolid };
 })();

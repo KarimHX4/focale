@@ -1,4 +1,4 @@
-/* Focale 338e9d9a — module assistant facultatif */
+/* Focale 1e9398cc — module assistant facultatif */
 /* Focale — assistant en langage naturel (module FACULTATIF, chargé à la demande).
    Le logiciel fonctionne sans ce fichier. Moteurs : Ollama (local), WebLLM (dans le navigateur, WebGPU) ou règles (sans IA).
    Le modèle ne calcule rien : il traduit la demande en actions de Focale ; les calculs optiques restent ceux du moteur. */
@@ -497,7 +497,7 @@ body.adrag,body.adrag *{user-select:none!important}
     if ($('#asst')) return;
     const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
     const el = document.createElement('aside'); el.id = 'asst'; el.setAttribute('aria-label', 'Assistant');
-    el.innerHTML = `<header><b>Assistant</b><span class="chip" id="aBk">…</span><span style="flex:1"></span><button class="wb" id="aDock" title="Détacher / ancrer à droite (ou glisser la barre de titre ; double-clic pour basculer)" aria-label="Détacher ou ancrer">⧉</button><button class="wb" id="aCfg" title="Réglages du moteur" aria-label="Réglages">⚙</button><button class="wb" id="aClr" title="Effacer la conversation" aria-label="Effacer">⌫</button><button class="wb" id="aX" title="Fermer" aria-label="Fermer">✕</button></header>
+    el.innerHTML = `<header><b>Assistant</b><span class="chip" id="aBk">…</span><span style="flex:1"></span><button class="wb" data-help="assistant" title="Aide sur l'assistant" aria-label="Aide">?</button><button class="wb" id="aDock" title="Détacher / ancrer à droite (ou glisser la barre de titre ; double-clic pour basculer)" aria-label="Détacher ou ancrer">⧉</button><button class="wb" id="aCfg" title="Réglages du moteur" aria-label="Réglages">⚙</button><button class="wb" id="aClr" title="Effacer la conversation" aria-label="Effacer">⌫</button><button class="wb" id="aX" title="Fermer" aria-label="Fermer">✕</button></header>
       <div id="aSet"></div><div id="aLog"></div><div id="aSt"></div>
       <div class="aedge" title="Glisser pour changer la largeur"></div><div class="agrip" title="Redimensionner"></div>
       <form id="aForm"><textarea id="aIn" rows="2" placeholder="Ex. : fais-moi un doublet achromatique f = 100 mm à F/4, champ 3° — Entrée pour envoyer"></textarea><button class="tb pri" id="aGo" type="submit">Envoyer</button></form>`;
