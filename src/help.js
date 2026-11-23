@@ -264,7 +264,7 @@ const HELP = [
 <p>L'assistant est un fichier séparé, <code>assistant.js</code>, chargé seulement quand on clique sur le bouton : <code>index.html</code> seul est un Focale complet. Pour une installation sans assistant, il suffit de ne pas copier <code>assistant.js</code> ; <b>Fichier › Masquer le bouton Assistant</b> retire le bouton de l'en-tête.</p>` },
   { id: 'fichiers', t: 'Fichiers, Zemax et CODE V', h: `
 <ul><li><b>Ctrl+O</b> ouvrir, <b>Ctrl+S</b> enregistrer (.json, format natif complet), <i>Enregistrer sous…</i></li>
-<li><b>Glisser-déposer</b> d'un fichier <b>.zmx</b>, <b>.seq</b>, .json ou .agf sur la fenêtre, ou <i>Fichier → Coller un système</i> : le format est reconnu automatiquement. Les .zmx enregistrés en UTF-16 (cas courant) sont décodés.</li>
+<li><b>Glisser-déposer</b> d'un fichier <b>.zmx</b>, <b>.seq</b>, .json ou .agf sur la fenêtre, ou <i>Fichier → Importer un système</i> : le format est reconnu automatiquement. Les .zmx enregistrés en UTF-16 (cas courant) sont décodés.</li>
 <li><i>Fichier → Exporter Zemax (.zmx)</i> et <i>Exporter CODE V (.seq)</i> téléchargent le fichier ; <i>Afficher / copier le texte</i> montre les trois formats.</li>
 <li>Après un import ou un export, un <b>rapport</b> liste ce qui a été converti ou ignoré.</li></ul>
 <h4>Zemax OpticStudio (.zmx, séquentiel)</h4>
