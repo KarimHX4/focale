@@ -111,7 +111,7 @@ async function genReport() {
       await step('Données du système…'); if (cf.sec.cover) page(); h1('Données du système');
       const ap = sys.aperture;
       kv([['Ouverture', `${({ EPD: 'Ø pupille d\'entrée', FNO: 'F/# image', NA: 'ON objet' })[ap.type]} = ${fmt(ap.value, 6)}`], ['Obstruction centrale', fmt(ap.obscuration || 0, 4)],
-        ['Objet', M.objInf ? 'à l\'infini' : `à ${fx(M.t0, 3)} mm`], ['Visée réelle des rayons', sys.rayAiming ? 'oui' : 'non'],
+        ['Objet', M.objInf ? 'à l\'infini' : `à ${fx(M.t0, 3)} mm`], ['Visée des rayons', ({ none: 'pupille paraxiale', chief: 'rayon principal au centre du diaphragme', full: 'réelle (tous les rayons)' })[OE.aimMode(sys)]],
         ['Champs', sys.fields.map((_, i) => fl(i)).join(' ; ')], ['Longueurs d\'onde (nm)', sys.wavelengths.map((w, i) => fmt(w.um * 1000, 5) + (i === sys.primary ? '*' : '')).join(' ; ')]]);
       h2('Données paraxiales');
       kv([['Focale effective (EFL)', `${fx(p.efl, 4)} mm`], ['Tirage (BFL)', `${fx(p.bfl, 4)} mm`], ['Distance image paraxiale', `${fx(p.imgDist, 4)} mm`], ['F/# (EFL/EPD)', fx(p.fno, 3)], ['F/# de travail', fx(p.wfno, 3)],

@@ -57,7 +57,7 @@ const P = []; OE.ray(M, 1, 20, 0, 1, { pts: P }); near('Visée réelle sur diaph
   for (const k of ['Triplet de Cooke f=50 F/5', 'Newton replié (miroir plan à 45°)', 'Spectrographe à réseau 600 traits/mm', 'Télescope Cassegrain F/7.5', 'Système fini 1:1 (relais)']) {
     const s = S[k](); s.surfaces.forEach(x => { for (const q of ['dx', 'dy', 'dz', 'tx', 'ty', 'tz']) x[q] = x[q] || 0; x.dmode = x.dmode || 'DEC'; }); s.fields = s.fields.map(f => ({ x: 0, ...f }));
     near(`Aller-retour Zemax : ${k}`, diff(sig(s), sig(IO.parseZMX(IO.toZMX(s).text).sys)), 0, 1e-6);
-    if (!k.startsWith('Spectro')) near(`Aller-retour CODE V : ${k}`, diff(sig(s), sig(IO.parseSeq(IO.toSeq(s).text).sys)), 0, 1e-6);
+    if (!k.startsWith('Spectro')) { const b = IO.parseSeq(IO.toSeq(s).text).sys; near(`Import CODE V : visée du rayon principal (défaut CODE V)`, b.aimMode === 'chief' ? 1 : 0, 1, 0); delete b.aimMode; near(`Aller-retour CODE V : ${k}`, diff(sig(s), sig(b)), 0, 1e-6); }
   }
   const txt = IO.toZMX(S['Triplet de Cooke f=50 F/5']()).text, b = Buffer.concat([Buffer.from([0xFF, 0xFE]), Buffer.from(txt, 'utf16le')]);
   near('Zemax UTF-16 : EFL', OE.prepare(IO.parseZMX(IO.decode(b)).sys).par.efl, 50.0214, 1e-3);
@@ -175,4 +175,10 @@ const P = []; OE.ray(M, 1, 20, 0, 1, { pts: P }); near('Visée réelle sur diaph
   near('FTM géométrique ≈ diffraction pour un système parfait', g.T[0], d.T[0], 0.01);
   const L = OE.prepare(S['Lentille plan-convexe f=100']()), m64 = OE.mtf(L, 0, { freqs: [5, 20], N: 64 }), m256 = OE.mtf(L, 0, { freqs: [5, 20], N: 256 });
   near('FTM convergée en échantillonnage (64 vs 256, singulet)', Math.max(Math.abs(m64.T[0] - m256.T[0]), Math.abs(m64.T[1] - m256.T[1])), 0, 0.01); }
+// Visée du rayon principal (CODE V) et verre modèle sur la ligne normale
+{ const c = S['Triplet de Cooke f=50 F/5'](); c.aimMode = 'chief'; const M = OE.prepare(c), P = [];
+  OE.ray(M, M.pw, M.sys.fields[2], 0, 0, { pts: P }); near('Visée CODE V : rayon principal au centre du diaphragme', Math.hypot(P[M.stopIdx - 1][3], P[M.stopIdx - 1][4]), 0, 1e-9);
+  const n = l => OE.glassN('1.5168/64.17', l), g = OE.glassN('N-BK7', 0.4358343) - OE.glassN('N-BK7', 0.4861327), m = n(0.4358343) - n(0.4861327);
+  near('Verre modèle 517642 : ng − nF ≈ N-BK7 (ligne normale)', m * 1e4, g * 1e4, 0.5); near('Verre modèle : nd et νd exacts', OE.glassInfo('1.5168/64.17').vd, 64.17, 1e-9);
+  near('PRE CODE V en mmHg', IO.parseSeq('EPD 10\nWL 587.56\nYAN 0\nTEM 20\nPRE 380\nSO 0 1e20\nSTO 50 5 NBK7_SCHOTT\nS -50 90\nSI 0 0').sys.env.P, 0.5, 1e-12); }
 console.log(fail ? `${fail} échec(s)` : 'Tous les tests passent'); process.exit(fail ? 1 : 0);

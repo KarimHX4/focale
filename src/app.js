@@ -290,6 +290,8 @@ function lde(act) {
 }
 
 /* ---------------- Panneau système ---------------- */
+const AIMOPTS = [['none', 'Pupille paraxiale'], ['chief', 'Rayon principal au diaphragme (CODE V)'], ['full', 'Réelle : tous les rayons (ray aiming)']];
+function setAim(v) { commit(s => { s.rayAiming = v === 'full'; if (v === 'chief') s.aimMode = 'chief'; else delete s.aimMode; }); }
 const APTYPES = [['EPD', 'Diamètre pupille d\'entrée (mm)'], ['FNO', 'F/# image (EFL / EPD)'], ['NA', 'Ouverture numérique objet'], ['NAI', 'Ouverture numérique image'], ['STOP', 'Demi-diamètre du diaphragme (mm)']];
 /** change le type de champ ; convert : recalcule les valeurs pour garder les mêmes points de champ (CODE V « Convert Fields ») */
 function setFieldType(to, convert) {
@@ -317,7 +319,7 @@ function renderSide() {
     <div class="row"><select class="in" style="flex:1" data-f="apType">${apOpts.map(o => `<option value="${o[0]}" ${o[0] === ap.type ? 'selected' : ''}>${o[1]}</option>`).join('')}</select></div>
     <div class="row"><label>Valeur</label><input class="in mini" data-f="apVal" value="${fmt(ap.value, 6)}"></div>
     <div class="row"><label>Obstruction centrale (rayon rel.)</label><input class="in mini" data-f="obs" value="${fmt(ap.obscuration || 0, 4)}"></div>
-    <div class="row"><label title="Itère sur chaque rayon pour viser exactement le diaphragme">Visée réelle des rayons (ray aiming)</label><input type="checkbox" data-f="aim" ${s.rayAiming ? 'checked' : ''}></div>`);
+    <div class="row"><label title="Visée des rayons : pupille d'entrée paraxiale, rayon principal itéré au centre du diaphragme (défaut de CODE V), ou chaque rayon itéré sur le diaphragme">Visée</label><select class="in" data-f="aimSel" style="flex:1">${AIMOPTS.map(([k, l]) => `<option value="${k}" ${OE.aimMode(s) === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`);
   h += card('fi', `Champs — ${OE.FTYPES[ft].l.toLowerCase()} (${fu})`, `
     <div class="row"><select class="in" style="flex:1" data-f="ftype" title="Type de champ (CODE V : YAN, YOB, YIM, YRI). Les valeurs sont converties pour garder les mêmes points de champ.">${Object.entries(OE.FTYPES).filter(([k]) => !(objInf && k === 'obj')).map(([k, v]) => `<option value="${k}" ${k === ft ? 'selected' : ''}>${v.l} (${v.cv})</option>`).join('')}</select></div>
     <table class="mt"><tr><th></th><th>X (${fu})</th><th>Y (${fu})</th><th>Poids</th><th></th></tr>
@@ -570,6 +572,7 @@ function setupSide() {
       case 'apVal': if ((v = num(x => x > 0)) != null) commit(s => s.aperture.value = v); break;
       case 'obs': if ((v = num(x => x >= 0 && x < 0.95)) != null) commit(s => s.aperture.obscuration = v); break;
       case 'aim': commit(s => s.rayAiming = t.checked); break;
+      case 'aimSel': setAim(t.value); break;
       case 'ftype': setFieldType(t.value, true); break;
       case 'fy': if ((v = num()) != null) commit(s => s.fields[i].y = v); break;
       case 'fx': if ((v = num()) != null) commit(s => s.fields[i].x = v); break;
@@ -1845,8 +1848,8 @@ const SDTAB = {
   },
   adv() {
     const s = App.sys, ap = s.apod || { type: 'none' };
-    return `<h3>Visée des rayons</h3><div class="row"><label><input type="checkbox" data-sd="aim" ${s.rayAiming ? 'checked' : ''}> Visée réelle des rayons (ray aiming) : chaque rayon est itéré pour viser le diaphragme</label></div>
-      <div class="hint">Indispensable en grand angle ou avec une pupille d'entrée très aberrante (CODE V « Wide Angle Mode »).</div>
+    return `<h3>Visée des rayons</h3><div class="row"><select class="in" data-sd="aimSel">${AIMOPTS.map(([k, l]) => `<option value="${k}" ${OE.aimMode(s) === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="hint"><b>Pupille paraxiale</b> : rayons visés sur la pupille d'entrée paraxiale (Zemax sans « Ray Aiming »). <b>Rayon principal au diaphragme</b> : le rayon principal de chaque champ est itéré pour passer au centre du diaphragme, la pupille paraxiale étant translatée d'autant — comportement par défaut de CODE V (activé à l'import d'un .seq) ; à utiliser pour comparer avec CODE V, le vignetage VUY…VLX corrigeant le reste. <b>Réelle</b> : chaque rayon est itéré pour remplir exactement le diaphragme (grand angle, pupille très aberrante).</div>
       <h3>Apodisation de la pupille</h3><div class="row" style="gap:6px"><select class="in" data-sd="apodT"><option value="none" ${ap.type !== 'gauss' ? 'selected' : ''}>Uniforme</option><option value="gauss" ${ap.type === 'gauss' ? 'selected' : ''}>Gaussienne</option></select>
         ${ap.type === 'gauss' ? `<label>Intensité relative au bord de la pupille</label>${sdIn('apodI', fmt(ap.I ?? 0.135, 4), { w: 60 })}<span class="hint">0,135 = 1/e² (CODE V PUI)</span>` : ''}</div>
       <div class="hint">S'applique aux calculs de diffraction (PSF, FTM, énergie encerclée, Strehl).</div>
@@ -1885,6 +1888,7 @@ function sdChange(t) {
       if (t.value.trim() === '') { commit(s => { const m = s.env && s.env.mat && s.env.mat[g]; if (m) { delete m[kk]; if (!Object.keys(m).length) delete s.env.mat[g]; } }); break; }
       if ((v = num()) != null) commit(s => { s.env = { ...(s.env || {}) }; s.env.mat = { ...(s.env.mat || {}) }; s.env.mat[g] = { ...(s.env.mat[g] || {}), [kk]: v }; }); break; }
     case 'aim': commit(s => s.rayAiming = t.checked); break;
+    case 'aimSel': setAim(t.value); break;
     case 'apodT': commit(s => s.apod = t.value === 'gauss' ? { type: 'gauss', I: (s.apod && s.apod.I) || 0.135 } : { type: 'none' }); break;
     case 'apodI': if ((v = num(x => x > 0 && x < 1)) != null) commit(s => s.apod = { type: 'gauss', I: v }); break;
   }

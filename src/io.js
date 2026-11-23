@@ -157,7 +157,7 @@ const IO = (() => {
         case 'WTF': wtf = setList(wtf, a); break;
         case 'VUY': case 'VLY': case 'VUX': case 'VLX': vig[cmd.toLowerCase()] = setList(vig[cmd.toLowerCase()], a); break;
         case 'TEM': if (tgt && tgt !== cur) { note('Températures par surface (TEM Sk) : seule la température du système est prise en compte'); break; } sys.env = { ...(sys.env || {}), T: n(0) }; break;
-        case 'PRE': sys.env = { ...(sys.env || {}), P: n(0) }; break;
+        case 'PRE': sys.env = { ...(sys.env || {}), P: n(0) / 760 }; break; // CODE V : pression en mmHg (760 par défaut)
         case 'PUI': if (n(0) > 0 && n(0) < 1) sys.apod = { type: 'gauss', I: n(0) }; break;
         case 'SO': { const t = n(1); sys.surfaces.push(S0({ t: !isFinite(t) || Math.abs(t) > 1e10 ? Infinity : t, comment: 'Objet', glass: a[2] ? mapGlass(a[2], NaN, NaN, W, 'Objet') : '' })); cur = null; break; }
         case 'S': case 'STO': case 'SI': {
@@ -233,7 +233,8 @@ const IO = (() => {
     if (sc !== 1) { scaleSys(sys, sc, ftype); W.push(`Unités converties en mm (×${sc})`); }
     sys.ftype = ftype;
     fixFields(sys, ftype, W);
-    if (sys.env && (sys.env.T != null || sys.env.P != null)) note(`Environnement importé : ${sys.env.T ?? 20} °C, ${sys.env.P ?? 1} atm (prescription à 20 °C)`);
+    if (sys.env && (sys.env.T != null || sys.env.P != null)) { if (Math.abs((sys.env.T ?? 20) - 20) < 1e-9 && Math.abs((sys.env.P ?? 1) - 1) < 1e-9) delete sys.env; else note(`Environnement importé : ${sys.env.T ?? 20} °C, ${+(sys.env.P ?? 1).toFixed(5)} atm (prescription à 20 °C)`); }
+    if (!sys.rayAiming) { sys.aimMode = 'chief'; note('Visée : rayon principal itéré au centre du diaphragme, comme CODE V par défaut (Données système → Avancé)'); }
     return { sys, warnings: W };
   }
 
@@ -300,7 +301,7 @@ const IO = (() => {
     L.push('INI \'FOC\'', 'X' + cv.slice(1) + ' ' + s.fields.map(f => f.x || 0).join(' '));
     L.push(cv + ' ' + s.fields.map(f => f.y).join(' '), 'WTF ' + s.fields.map(f => f.w ?? 1).join(' '));
     for (const k of ['vuy', 'vly', 'vux', 'vlx']) if (s.fields.some(f => +f[k])) L.push(k.toUpperCase() + ' ' + s.fields.map(f => fmtN(+f[k] || 0)).join(' '));
-    if (s.env && ((+s.env.T ?? 20) !== 20 || (+s.env.P ?? 1) !== 1)) { L.push(`TEM ${fmtN(s.env.T ?? 20)}`, `PRE ${fmtN(s.env.P ?? 1)}`); if (s.env.Tref != null && +s.env.Tref !== 20) W.push('Température de référence de la prescription ≠ 20 °C : non exportée'); }
+    if (s.env && ((+s.env.T ?? 20) !== 20 || (+s.env.P ?? 1) !== 1)) { L.push(`TEM ${fmtN(s.env.T ?? 20)}`, `PRE ${fmtN((s.env.P ?? 1) * 760)}`); if (s.env.Tref != null && +s.env.Tref !== 20) W.push('Température de référence de la prescription ≠ 20 °C : non exportée'); }
     if (s.apod && s.apod.type === 'gauss') L.push(`PUI ${fmtN(s.apod.I ?? 0.135)}`);
     if (priv.size) { L.push('PRV', 'PWL ' + wls.map(l => (l * 1000).toFixed(4)).join(' ')); for (const [nm, ns] of priv) L.push(`'${nm}' ${ns.map(v => v.toFixed(6)).join(' ')}`); L.push('END'); W.push(`${priv.size} verre(s) fictif(s) ou importé(s) exporté(s) en verres privés PRV`); }
     if ((ap.obscuration || 0) > 0) W.push('Obstruction centrale non exportée');

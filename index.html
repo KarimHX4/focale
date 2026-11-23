@@ -360,7 +360,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 <div class="toast" id="toast"></div>
 <input type="file" id="fileIn" accept=".json,.zmx,.seq,.txt,.agf" style="display:none">
 <div class="drop" id="drop">Déposez un fichier .zmx, .seq, .json ou .agf</div>
-<script>const FOCALE_VERSION = 'b429b326';</script>
+<script>const FOCALE_VERSION = '2bce1baa';</script>
 <script>
 'use strict';
 /* =====================================================================
@@ -443,16 +443,28 @@ const OE = (() => {
     if (isAir(name)) return 1;
     const r = glassRecord(name);
     if (r) return dispN(r, l);
-    const m = String(name).match(/^\s*([0-9.]+)\s*[,\/;:]\s*([0-9.]+)\s*$/); // modèle nd/vd
-    if (m) {
-      const nd = +m[1], vd = +m[2];
-      const lF = 0.4861327, lC = 0.6562725, ld = 0.5875618;
-      const B = ((nd - 1) / vd) / (1 / (lF * lF) - 1 / (lC * lC));
-      return nd - B / (ld * ld) + B / (l * l);
-    }
+    const m = String(name).match(/^\s*([0-9.]+)\s*[,\/;:]\s*([0-9.]+)\s*(?:[,\/;:]\s*(-?[0-9.]+)\s*)?$/); // modèle nd/νd[/ΔPgF]
+    if (m) return modelN(+m[1], +m[2], m[3] != null ? +m[3] : 0, l);
     const v = parseFloat(name);
     if (isFinite(v) && v >= 1 && /^\s*[0-9.]+\s*$/.test(name)) return v;
     return NaN;
+  }
+  /**
+   * Verre modèle (nd, νd, ΔPg,F) : n = A + B/λ² + C/λ⁴ ajusté sur nd, nF − nC = (nd − 1)/νd et la dispersion partielle
+   * Pg,F = 0,6438 − 0,001682 νd + ΔPg,F (« ligne normale » de Schott, comme le verre modèle d'OpticStudio) :
+   * la dispersion dans le bleu et le violet suit celle des verres réels.
+   */
+  const MODC = new Map();
+  function modelN(nd, vd, dP, l) {
+    const key = nd + '|' + vd + '|' + dP; let c = MODC.get(key);
+    if (!c) {
+      const xd = 1 / 0.5875618 ** 2, xF = 1 / 0.4861327 ** 2, xC = 1 / 0.6562725 ** 2, xg = 1 / 0.4358343 ** 2;
+      const D = vd > 0 ? (nd - 1) / vd : 0, P = 0.6438 - 0.001682 * vd + dP;
+      const a11 = xF - xC, a12 = xF * xF - xC * xC, a21 = xg - xF, a22 = xg * xg - xF * xF, det = a11 * a22 - a12 * a21;
+      const B = (D * a22 - P * D * a12) / det, C = (a11 * P * D - a21 * D) / det;
+      c = [nd - B * xd - C * xd * xd, B, C]; if (MODC.size > 500) MODC.clear(); MODC.set(key, c);
+    }
+    const x = 1 / (l * l); return c[0] + c[1] * x + c[2] * x * x;
   }
   function recInfo(r) {
     if (!r.ndv) { const nd = dispN(r, 0.5875618), nF = dispN(r, 0.4861327), nC = dispN(r, 0.6562725); r.ndv = { nd, vd: (nd - 1) / (nF - nC) }; }
@@ -1004,9 +1016,13 @@ const OE = (() => {
     const dn = Math.hypot(dx, dy, dz) * Math.sign(dz || 1);
     return { p: [ox, oy, oz], d: [dx / dn, dy / dn, dz / dn] };
   }
+  /** mode de visée : 'none' (pupille d'entrée paraxiale), 'chief' (rayon principal itéré au centre du diaphragme, pupille paraxiale translatée — défaut de CODE V), 'full' (chaque rayon itéré sur le diaphragme) */
+  const aimMode = sys => sys.rayAiming ? 'full' : sys.aimMode === 'chief' ? 'chief' : 'none';
   function aimRay(M, ctx, f, px, py) {
     let ax = px * M.epr, ay = py * M.epr;
-    if (!M.sys.rayAiming) return [ax, ay];
+    const mode = aimMode(M.sys);
+    if (mode === 'none') return [ax, ay];
+    if (mode === 'chief' && (px || py)) { const c = chiefAim(M, ctx, f); return [ax + c[0], ay + c[1]]; }
     const tx = px * M.par.stopR, ty = py * M.par.stopR;
     const h = 1e-6 * Math.max(1, M.epr);
     const ev = (a, b) => { const s = startAt(M, ctx, f, a, b); const r = trace(M, ctx, s.p, s.d, 0, { upto: M.stopIdx, noClip: true }); return r.vig ? null : [r.x - tx, r.y - ty]; };
@@ -1026,7 +1042,7 @@ const OE = (() => {
   }
   function chiefAim(M, ctx, f) {
     const key = (f.x || 0) + '|' + (f.y || 0) + '|' + ctx.wi;
-    if (!M.sys.rayAiming) return [0, 0];
+    if (aimMode(M.sys) === 'none') return [0, 0];
     if (M.aimCache.has(key)) return M.aimCache.get(key);
     const a = aimRay(M, ctx, f, 0, 0); M.aimCache.set(key, a); return a;
   }
@@ -2212,7 +2228,7 @@ const OE = (() => {
   return { DEG, fiberInfo, binPSF, detMTF, extSource, binImage, imageSim, polPupil, polOut, POLSTATES, TOLT, TOLC, LT, quickFocus, wlSel, opValue, parseModel, fmtModel, glassNearest, glassPool, toModel, subTry, tolBase, tolDefaults, tolFreeze, tolItems, tolGen, tolApplicable, tolLabel, tolApply, tolWorse, tolSens, tolInverse, tolTrial, tolRebuild, tolValue, niceDown, rng, mtfAt, compensate, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
     wavefront, psf, psfGrid, mtf, mtfGeo, pupilScale, otfAC, mtfOne, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
     OPS, getVars, residuals, meritOf, optStep, pupilGrid, indices, paraxial,
-    ASPK, FTYPES, vigMap, setVignetting, convertFields, thermalScan, glassTherm, nAir, envN, envCtx, isSolid };
+    ASPK, FTYPES, vigMap, modelN, aimMode, setVignetting, convertFields, thermalScan, glassTherm, nAir, envN, envCtx, isSolid };
 })();
 if (typeof module !== 'undefined') module.exports = OE;
 
@@ -3349,7 +3365,7 @@ const HELP = [
 <p>Ces réglages sont aussi regroupés, avec le vignetage, l'environnement et les matériaux, dans la fenêtre <b>Données système</b> (voir cette rubrique).</p>
 <h4>Ouverture</h4><ul><li><b>Diamètre de la pupille d'entrée</b> (EPD), <b>F/# image</b>, <b>ouverture numérique objet</b> (objet à distance finie seulement), <b>ouverture numérique image</b> (CODE V NA) ou <b>demi-diamètre du diaphragme</b> (l'ouverture est fixée par le diaphragme, Zemax « Float by stop size »). Le F/# image suit la convention Zemax « Image Space F/# » : EPD = EFL / F#, y compris en conjugué fini (le F/# de travail réel est affiché dans les données paraxiales).</li>
 <li><b>Obstruction centrale</b> : fraction du rayon de pupille masquée (télescopes à miroir secondaire).</li>
-<li><b>Visée réelle des rayons</b> : chaque rayon est itéré pour viser exactement le diaphragme (utile pour les grands champs et les pupilles aberrantes) ; sinon visée paraxiale de la pupille d'entrée.</li></ul>
+<li><b>Visée des rayons</b> : <i>pupille paraxiale</i> (rayons visés sur la pupille d'entrée paraxiale) ; <i>rayon principal au diaphragme</i> (le rayon principal de chaque champ est itéré pour passer au centre du diaphragme et la pupille paraxiale est translatée d'autant : comportement par défaut de CODE V, activé à l'import d'un .seq) ; <i>réelle</i> (chaque rayon est itéré pour remplir exactement le diaphragme : grands champs, pupilles très aberrantes).</li></ul>
 <h4>Champs</h4><p>Quatre <b>types de champ</b>, comme dans CODE V : <b>angle objet</b> (YAN, en °, direction ∝ (tan X, tan Y, 1) ; en conjugué fini l'angle est mesuré depuis la pupille d'entrée), <b>hauteur objet</b> (YOB, mm, objet à distance finie), <b>hauteur image paraxiale</b> (YIM, mm) et <b>hauteur image réelle</b> (YRI, mm : le point de champ est ajusté pour que le rayon principal réel arrive à cette hauteur — idéal pour couvrir exactement un capteur malgré la distorsion). Changer le type dans la liste <b>convertit</b> les valeurs pour garder les mêmes points de champ. Sans type choisi : angles pour un objet à l'infini, hauteurs objet sinon. Le poids sert à l'optimisation et au tolérancement. Le bouton <b>Vignetage…</b> ouvre l'onglet Champs des Données système (facteurs VUY, VLY, VUX, VLX, génération de champs). Le <b>carré de couleur</b> devant chaque champ ouvre un sélecteur : palette, couleur libre (« Autre ») ou code hexadécimal, aperçu avant / après ; la couleur n'est appliquée qu'avec <b>OK</b> (ou Entrée, ou double-clic sur une pastille) ; <b>Annuler</b> (ou Échap, ou clic à côté) l'abandonne, <b>Par défaut</b> revient à la couleur automatique. Elle est utilisée dans le layout, les spots, la FTM, le footprint… et enregistrée avec le système.</p>
 <h4>Longueurs d'onde</h4><p>En µm, avec poids et longueur d'onde <b>primaire</b> (pupilles, fronts d'onde par défaut, solves). Préréglages F-d-C, visible, 632,8 nm, NIR. Par défaut chaque λ prend sa couleur spectrale ; cliquez sur son carré de couleur pour en choisir une autre, validée par <b>OK</b> (utile en infrarouge ou pour distinguer des λ proches).</p>
 <h4>Données paraxiales</h4><p>Focale effective, tirage, F/#, ouvertures numériques, positions et diamètres des pupilles, grandissement, invariant de Lagrange.</p>` },
@@ -3362,7 +3378,7 @@ const HELP = [
 <tr><td>Champs / vignetage</td><td>Type de champ (YAN, YOB, YIM, YRI) avec case « convertir les valeurs » (CODE V « Convert Fields »), table X, Y, poids, couleur et <b>facteurs de vignetage</b> VUY, VLY, VUX, VLX ; colonnes calculées : angle ou hauteur objet équivalente, hauteur image paraxiale et réelle. <b>Générer</b> : n champs de 0 au maximum, répartition linéaire ou à aires égales (√). <b>Calculer le vignetage (SET VIG)</b> : pour chaque champ, les rayons limites ±Y et ±X qui passent juste toutes les ouvertures fixées 🔒. <b>Effacer le vignetage</b>.</td></tr>
 <tr><td>Température et pression</td><td>Température du système (°C), pression (atm), température de la prescription, dilatation on/off, matériau du barillet (aluminium, inox, titane, invar, plastiques… ou CTE saisi), CTE de chaque entretoise ; effet sur la focale et la mise au point ; bouton « Analyse thermique dans un panneau ».</td></tr>
 <tr><td>Matériaux (dn/dT, CTE)</td><td>Pour chaque verre du système : coefficients de Schott D0, D1, D2, E0, E1, λTK, température T0, CTE et dn/dT absolu calculé. Cases vides = catalogue ; une valeur saisie remplace celle du catalogue (↺ pour revenir).</td></tr>
-<tr><td>Avancé</td><td>Visée réelle des rayons, apodisation gaussienne de la pupille (intensité relative au bord, CODE V PUI).</td></tr></table>
+<tr><td>Avancé</td><td>Visée des rayons (pupille paraxiale, rayon principal au diaphragme comme CODE V, ou réelle), apodisation gaussienne de la pupille (intensité relative au bord, CODE V PUI).</td></tr></table>
 <h4>Vignetage (convention CODE V)</h4><p>VUY et VLY sont les fractions du rayon de pupille coupées côtés +Y et −Y, VUX et VLX côtés +X et −X : la pupille utile va de −1 + VLY à 1 − VUY. Les coordonnées pupillaires relatives (spots, ray fans, OPD fans, optimisation) et les demi-diamètres automatiques suivent ce faisceau vignetté (le rayon principal passe au centre de l'ellipse) ; front d'onde, PSF, FTM et énergie encerclée découpent la pupille réelle par cette ellipse. Valeurs négatives : pupille agrandie. Import/export : VUY…VLX en CODE V, VDX/VDY/VCX/VCY en Zemax (VCY = (VUY + VLY)/2, VDY = (VLY − VUY)/2).</p>
 <h4>Température, pression, dn/dT et dilatation</h4>
 <ul><li><b>Indices</b> : les catalogues donnent l'indice relatif à l'air à 20 °C et 1 atm. Focale calcule l'indice absolu, lui ajoute Δn_abs par la formule de Schott Δn = (n² − 1)/(2n) · [D0 ΔT + D1 ΔT² + D2 ΔT³ + (E0 ΔT + E1 ΔT²)/(λ² − λTK²)] (ΔT = T − T0), puis le ramène à l'air du système à T et P (indice de l'air d'Edlén) ; la longueur d'onde est ramenée à l'air du catalogue. Coefficients fournis pour ~970 verres Schott, Ohara, CDGM et Hoya (refractiveindex.info), lus dans les fichiers AGF importés (lignes TD et ED), valeurs approchées pour la silice et le CaF₂. Vérification : N-BK7 à 546 nm donne dn/dT absolu 1,65·10⁻⁶/K et relatif 2,97·10⁻⁶/K (catalogue Schott : 1,6 et 3,0).</li>
@@ -3378,7 +3394,7 @@ const HELP = [
 <ul>
 <li>Saisie libre avec auto-complétion ; tirets et casse ignorés (<code>nbk7</code> = N-BK7).</li>
 <li>Homonymes : suffixe fabricant, ex. <code>F2_CDGM</code>. Les noms CODE V (<code>NBK7_SCHOTT</code>) sont reconnus.</li>
-<li>Verre fictif : <code>nd/νd</code> (dispersion de Cauchy ajustée sur F, d, C) ou indice fixe. Un verre peut être rendu <b>variable</b> (bouton V de la colonne Verre) puis remplacé par le meilleur verre réel : voir <i>Optimisation</i>.</li>
+<li>Verre fictif : <code>nd/νd</code> ou <code>nd/νd/ΔPgF</code> — dispersion n = A + B/λ² + C/λ⁴ ajustée sur nd, νd et la dispersion partielle Pg,F de la « ligne normale » (0,6438 − 0,001682 νd, + ΔPgF), comme le verre modèle d'OpticStudio : le bleu et le violet (g, 430 nm…) suivent les verres réels. Ou indice fixe. Un verre peut être rendu <b>variable</b> (bouton V de la colonne Verre) puis remplacé par le meilleur verre réel : voir <i>Optimisation</i>.</li>
 <li><b>Import AGF</b> (catalogue Zemax, formules 1 à 13) : glisser-déposer le fichier ou bouton « Importer un AGF… ». Les verres importés sont gardés dans le navigateur et embarqués dans les fichiers .json qui les utilisent.</li>
 <li>Un avertissement s'affiche si une longueur d'onde sort du domaine de validité d'un verre.</li>
 <li><b>Données thermiques</b> (dn/dT de Schott et CTE) : incluses pour la plupart des verres des catalogues et lues dans les AGF importés ; modifiables par verre dans Données système → Matériaux.</li>
@@ -3551,7 +3567,7 @@ const HELP = [
 <tr><td>Export</td><td>Décentrements → paires de COORDBRK (DEC : un CB ; DAR : CB + retour en ordre inverse ; pliage BEN : CB + CB de même bascule). Verres fictifs → ___BLANK. Solves → épaisseurs fixes.</td></tr></table>
 <h4>CODE V (.seq)</h4>
 <table class="ht"><tr><th>Élément</th><th>Correspondance</th></tr>
-<tr><td>Système</td><td>TITLE, DIM / DDM (M, C, I → mm), EPD / FNO / NAO / NA (ON image), WL, REF, WTW, XAN/YAN, XOB/YOB, XIM/YIM, XRI/YRI (type de champ conservé), WTF, <b>VUY / VLY / VUX / VLX</b> (vignetage), <b>TEM / PRE</b> (température °C, pression atm), PUI (apodisation gaussienne). Les listes acceptent aussi la forme indexée : <code>WTW W2 2</code>, <code>VUY F3 0.2</code>, <code>YAN F2 14</code>.</td></tr>
+<tr><td>Système</td><td>TITLE, DIM / DDM (M, C, I → mm), EPD / FNO / NAO / NA (ON image), WL, REF, WTW, XAN/YAN, XOB/YOB, XIM/YIM, XRI/YRI (type de champ conservé), WTF, <b>VUY / VLY / VUX / VLX</b> (vignetage), <b>TEM / PRE</b> (température °C, pression en mmHg comme CODE V : 760 = 1 atm), PUI (apodisation gaussienne). Les listes acceptent aussi la forme indexée : <code>WTW W2 2</code>, <code>VUY F3 0.2</code>, <code>YAN F2 14</code>.</td></tr>
 <tr><td>Surfaces</td><td>SO, S, STO, SI, RDM/RDN, RDY/CUY/THI/GLA/GL1, K, <b>A…J</b> (A4 à A20), CIR (CIR EDG ignoré : bord mécanique), REFL et RMD REFL, PIM, XDE…CDE, DAR, BEN (REV → DAR), GRT/GRO/GRS/GRX/GRY (réseau), <b>SLB</b> (étiquette → commentaire), SPS XYP + SCO (polynôme XY, à vérifier), CCY/THC/KC/AC…DC 0 (variables), GLC 0 (verre fictif variable), TCE.</td></tr>
 <tr><td>Qualificatifs</td><td>Les commandes qui désignent une surface explicitement sont appliquées à cette surface : <code>THI S7 4</code>, <code>CIR S2 10</code>, <code>SLB S4 'L2'</code>, <code>STO S3</code>, <code>CCY S1 0</code>…</td></tr>
 <tr><td>Ignorées sans remarque</td><td>UID, DER, DOR, GCH, GLB, CAT, INI, GO, CUM, THM, VIE, PLO, WRL, EVA… (identifiants, incréments de dérivée, préférences, affichage : sans effet sur l'optique).</td></tr>
@@ -3573,7 +3589,7 @@ const HELP = [
 <li>Axe optique z, lumière vers +z au départ. R &gt; 0 : centre de courbure à droite du sommet.</li>
 <li>Après un miroir, épaisseurs négatives ; un second miroir les rend de nouveau positives.</li>
 <li>Champ angulaire positif en Y : rayons montants ; pour un objet à l'infini l'image est en +Y (y ≈ f·tan θ). Hauteur objet positive : image en −Y pour un objectif convergent. Hauteurs image (YIM, YRI) : coordonnée de l'image elle-même.</li>
-<li>Température en °C, pression en atmosphères, CTE en 10⁻⁶/K.</li>
+<li>Température en °C, pression en atmosphères (CODE V PRE en mmHg, converti), CTE en 10⁻⁶/K.</li>
 <li>Pupille normalisée (Px, Py) dans [−1, 1], obstruction exclue ; avec des facteurs de vignetage, relative au faisceau vignetté.</li>
 <li>OPD (convention CODE V / Zemax) = chemin du rayon principal − chemin du rayon, sur la sphère de référence : <b>OPD &gt; 0 = front d'onde en avance</b>. Une sphérique sous-corrigée (lentille simple) donne W040 &gt; 0, de même signe que la somme de Seidel SI (W040 = SI/8).</li>
 <li>Aberrations transverses : ε = SI/(2 n′u′) pour la sphérique (u′ &lt; 0 pour un faisceau convergent) ; mêmes conventions de signe que les coefficients de Seidel de Zemax.</li></ul>` },
@@ -3749,7 +3765,7 @@ const IO = (() => {
         case 'WTF': wtf = setList(wtf, a); break;
         case 'VUY': case 'VLY': case 'VUX': case 'VLX': vig[cmd.toLowerCase()] = setList(vig[cmd.toLowerCase()], a); break;
         case 'TEM': if (tgt && tgt !== cur) { note('Températures par surface (TEM Sk) : seule la température du système est prise en compte'); break; } sys.env = { ...(sys.env || {}), T: n(0) }; break;
-        case 'PRE': sys.env = { ...(sys.env || {}), P: n(0) }; break;
+        case 'PRE': sys.env = { ...(sys.env || {}), P: n(0) / 760 }; break; // CODE V : pression en mmHg (760 par défaut)
         case 'PUI': if (n(0) > 0 && n(0) < 1) sys.apod = { type: 'gauss', I: n(0) }; break;
         case 'SO': { const t = n(1); sys.surfaces.push(S0({ t: !isFinite(t) || Math.abs(t) > 1e10 ? Infinity : t, comment: 'Objet', glass: a[2] ? mapGlass(a[2], NaN, NaN, W, 'Objet') : '' })); cur = null; break; }
         case 'S': case 'STO': case 'SI': {
@@ -3825,7 +3841,8 @@ const IO = (() => {
     if (sc !== 1) { scaleSys(sys, sc, ftype); W.push(`Unités converties en mm (×${sc})`); }
     sys.ftype = ftype;
     fixFields(sys, ftype, W);
-    if (sys.env && (sys.env.T != null || sys.env.P != null)) note(`Environnement importé : ${sys.env.T ?? 20} °C, ${sys.env.P ?? 1} atm (prescription à 20 °C)`);
+    if (sys.env && (sys.env.T != null || sys.env.P != null)) { if (Math.abs((sys.env.T ?? 20) - 20) < 1e-9 && Math.abs((sys.env.P ?? 1) - 1) < 1e-9) delete sys.env; else note(`Environnement importé : ${sys.env.T ?? 20} °C, ${+(sys.env.P ?? 1).toFixed(5)} atm (prescription à 20 °C)`); }
+    if (!sys.rayAiming) { sys.aimMode = 'chief'; note('Visée : rayon principal itéré au centre du diaphragme, comme CODE V par défaut (Données système → Avancé)'); }
     return { sys, warnings: W };
   }
 
@@ -3892,7 +3909,7 @@ const IO = (() => {
     L.push('INI \'FOC\'', 'X' + cv.slice(1) + ' ' + s.fields.map(f => f.x || 0).join(' '));
     L.push(cv + ' ' + s.fields.map(f => f.y).join(' '), 'WTF ' + s.fields.map(f => f.w ?? 1).join(' '));
     for (const k of ['vuy', 'vly', 'vux', 'vlx']) if (s.fields.some(f => +f[k])) L.push(k.toUpperCase() + ' ' + s.fields.map(f => fmtN(+f[k] || 0)).join(' '));
-    if (s.env && ((+s.env.T ?? 20) !== 20 || (+s.env.P ?? 1) !== 1)) { L.push(`TEM ${fmtN(s.env.T ?? 20)}`, `PRE ${fmtN(s.env.P ?? 1)}`); if (s.env.Tref != null && +s.env.Tref !== 20) W.push('Température de référence de la prescription ≠ 20 °C : non exportée'); }
+    if (s.env && ((+s.env.T ?? 20) !== 20 || (+s.env.P ?? 1) !== 1)) { L.push(`TEM ${fmtN(s.env.T ?? 20)}`, `PRE ${fmtN((s.env.P ?? 1) * 760)}`); if (s.env.Tref != null && +s.env.Tref !== 20) W.push('Température de référence de la prescription ≠ 20 °C : non exportée'); }
     if (s.apod && s.apod.type === 'gauss') L.push(`PUI ${fmtN(s.apod.I ?? 0.135)}`);
     if (priv.size) { L.push('PRV', 'PWL ' + wls.map(l => (l * 1000).toFixed(4)).join(' ')); for (const [nm, ns] of priv) L.push(`'${nm}' ${ns.map(v => v.toFixed(6)).join(' ')}`); L.push('END'); W.push(`${priv.size} verre(s) fictif(s) ou importé(s) exporté(s) en verres privés PRV`); }
     if ((ap.obscuration || 0) > 0) W.push('Obstruction centrale non exportée');
@@ -4579,6 +4596,8 @@ function lde(act) {
 }
 
 /* ---------------- Panneau système ---------------- */
+const AIMOPTS = [['none', 'Pupille paraxiale'], ['chief', 'Rayon principal au diaphragme (CODE V)'], ['full', 'Réelle : tous les rayons (ray aiming)']];
+function setAim(v) { commit(s => { s.rayAiming = v === 'full'; if (v === 'chief') s.aimMode = 'chief'; else delete s.aimMode; }); }
 const APTYPES = [['EPD', 'Diamètre pupille d\'entrée (mm)'], ['FNO', 'F/# image (EFL / EPD)'], ['NA', 'Ouverture numérique objet'], ['NAI', 'Ouverture numérique image'], ['STOP', 'Demi-diamètre du diaphragme (mm)']];
 /** change le type de champ ; convert : recalcule les valeurs pour garder les mêmes points de champ (CODE V « Convert Fields ») */
 function setFieldType(to, convert) {
@@ -4606,7 +4625,7 @@ function renderSide() {
     <div class="row"><select class="in" style="flex:1" data-f="apType">${apOpts.map(o => `<option value="${o[0]}" ${o[0] === ap.type ? 'selected' : ''}>${o[1]}</option>`).join('')}</select></div>
     <div class="row"><label>Valeur</label><input class="in mini" data-f="apVal" value="${fmt(ap.value, 6)}"></div>
     <div class="row"><label>Obstruction centrale (rayon rel.)</label><input class="in mini" data-f="obs" value="${fmt(ap.obscuration || 0, 4)}"></div>
-    <div class="row"><label title="Itère sur chaque rayon pour viser exactement le diaphragme">Visée réelle des rayons (ray aiming)</label><input type="checkbox" data-f="aim" ${s.rayAiming ? 'checked' : ''}></div>`);
+    <div class="row"><label title="Visée des rayons : pupille d'entrée paraxiale, rayon principal itéré au centre du diaphragme (défaut de CODE V), ou chaque rayon itéré sur le diaphragme">Visée</label><select class="in" data-f="aimSel" style="flex:1">${AIMOPTS.map(([k, l]) => `<option value="${k}" ${OE.aimMode(s) === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`);
   h += card('fi', `Champs — ${OE.FTYPES[ft].l.toLowerCase()} (${fu})`, `
     <div class="row"><select class="in" style="flex:1" data-f="ftype" title="Type de champ (CODE V : YAN, YOB, YIM, YRI). Les valeurs sont converties pour garder les mêmes points de champ.">${Object.entries(OE.FTYPES).filter(([k]) => !(objInf && k === 'obj')).map(([k, v]) => `<option value="${k}" ${k === ft ? 'selected' : ''}>${v.l} (${v.cv})</option>`).join('')}</select></div>
     <table class="mt"><tr><th></th><th>X (${fu})</th><th>Y (${fu})</th><th>Poids</th><th></th></tr>
@@ -4859,6 +4878,7 @@ function setupSide() {
       case 'apVal': if ((v = num(x => x > 0)) != null) commit(s => s.aperture.value = v); break;
       case 'obs': if ((v = num(x => x >= 0 && x < 0.95)) != null) commit(s => s.aperture.obscuration = v); break;
       case 'aim': commit(s => s.rayAiming = t.checked); break;
+      case 'aimSel': setAim(t.value); break;
       case 'ftype': setFieldType(t.value, true); break;
       case 'fy': if ((v = num()) != null) commit(s => s.fields[i].y = v); break;
       case 'fx': if ((v = num()) != null) commit(s => s.fields[i].x = v); break;
@@ -6134,8 +6154,8 @@ const SDTAB = {
   },
   adv() {
     const s = App.sys, ap = s.apod || { type: 'none' };
-    return `<h3>Visée des rayons</h3><div class="row"><label><input type="checkbox" data-sd="aim" ${s.rayAiming ? 'checked' : ''}> Visée réelle des rayons (ray aiming) : chaque rayon est itéré pour viser le diaphragme</label></div>
-      <div class="hint">Indispensable en grand angle ou avec une pupille d'entrée très aberrante (CODE V « Wide Angle Mode »).</div>
+    return `<h3>Visée des rayons</h3><div class="row"><select class="in" data-sd="aimSel">${AIMOPTS.map(([k, l]) => `<option value="${k}" ${OE.aimMode(s) === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="hint"><b>Pupille paraxiale</b> : rayons visés sur la pupille d'entrée paraxiale (Zemax sans « Ray Aiming »). <b>Rayon principal au diaphragme</b> : le rayon principal de chaque champ est itéré pour passer au centre du diaphragme, la pupille paraxiale étant translatée d'autant — comportement par défaut de CODE V (activé à l'import d'un .seq) ; à utiliser pour comparer avec CODE V, le vignetage VUY…VLX corrigeant le reste. <b>Réelle</b> : chaque rayon est itéré pour remplir exactement le diaphragme (grand angle, pupille très aberrante).</div>
       <h3>Apodisation de la pupille</h3><div class="row" style="gap:6px"><select class="in" data-sd="apodT"><option value="none" ${ap.type !== 'gauss' ? 'selected' : ''}>Uniforme</option><option value="gauss" ${ap.type === 'gauss' ? 'selected' : ''}>Gaussienne</option></select>
         ${ap.type === 'gauss' ? `<label>Intensité relative au bord de la pupille</label>${sdIn('apodI', fmt(ap.I ?? 0.135, 4), { w: 60 })}<span class="hint">0,135 = 1/e² (CODE V PUI)</span>` : ''}</div>
       <div class="hint">S'applique aux calculs de diffraction (PSF, FTM, énergie encerclée, Strehl).</div>
@@ -6174,6 +6194,7 @@ function sdChange(t) {
       if (t.value.trim() === '') { commit(s => { const m = s.env && s.env.mat && s.env.mat[g]; if (m) { delete m[kk]; if (!Object.keys(m).length) delete s.env.mat[g]; } }); break; }
       if ((v = num()) != null) commit(s => { s.env = { ...(s.env || {}) }; s.env.mat = { ...(s.env.mat || {}) }; s.env.mat[g] = { ...(s.env.mat[g] || {}), [kk]: v }; }); break; }
     case 'aim': commit(s => s.rayAiming = t.checked); break;
+    case 'aimSel': setAim(t.value); break;
     case 'apodT': commit(s => s.apod = t.value === 'gauss' ? { type: 'gauss', I: (s.apod && s.apod.I) || 0.135 } : { type: 'none' }); break;
     case 'apodI': if ((v = num(x => x > 0 && x < 1)) != null) commit(s => s.apod = { type: 'gauss', I: v }); break;
   }
@@ -6910,7 +6931,7 @@ async function genReport() {
       await step('Données du système…'); if (cf.sec.cover) page(); h1('Données du système');
       const ap = sys.aperture;
       kv([['Ouverture', `${({ EPD: 'Ø pupille d\'entrée', FNO: 'F/# image', NA: 'ON objet' })[ap.type]} = ${fmt(ap.value, 6)}`], ['Obstruction centrale', fmt(ap.obscuration || 0, 4)],
-        ['Objet', M.objInf ? 'à l\'infini' : `à ${fx(M.t0, 3)} mm`], ['Visée réelle des rayons', sys.rayAiming ? 'oui' : 'non'],
+        ['Objet', M.objInf ? 'à l\'infini' : `à ${fx(M.t0, 3)} mm`], ['Visée des rayons', ({ none: 'pupille paraxiale', chief: 'rayon principal au centre du diaphragme', full: 'réelle (tous les rayons)' })[OE.aimMode(sys)]],
         ['Champs', sys.fields.map((_, i) => fl(i)).join(' ; ')], ['Longueurs d\'onde (nm)', sys.wavelengths.map((w, i) => fmt(w.um * 1000, 5) + (i === sys.primary ? '*' : '')).join(' ; ')]]);
       h2('Données paraxiales');
       kv([['Focale effective (EFL)', `${fx(p.efl, 4)} mm`], ['Tirage (BFL)', `${fx(p.bfl, 4)} mm`], ['Distance image paraxiale', `${fx(p.imgDist, 4)} mm`], ['F/# (EFL/EPD)', fx(p.fno, 3)], ['F/# de travail', fx(p.wfno, 3)],

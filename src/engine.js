@@ -79,16 +79,28 @@ const OE = (() => {
     if (isAir(name)) return 1;
     const r = glassRecord(name);
     if (r) return dispN(r, l);
-    const m = String(name).match(/^\s*([0-9.]+)\s*[,\/;:]\s*([0-9.]+)\s*$/); // modèle nd/vd
-    if (m) {
-      const nd = +m[1], vd = +m[2];
-      const lF = 0.4861327, lC = 0.6562725, ld = 0.5875618;
-      const B = ((nd - 1) / vd) / (1 / (lF * lF) - 1 / (lC * lC));
-      return nd - B / (ld * ld) + B / (l * l);
-    }
+    const m = String(name).match(/^\s*([0-9.]+)\s*[,\/;:]\s*([0-9.]+)\s*(?:[,\/;:]\s*(-?[0-9.]+)\s*)?$/); // modèle nd/νd[/ΔPgF]
+    if (m) return modelN(+m[1], +m[2], m[3] != null ? +m[3] : 0, l);
     const v = parseFloat(name);
     if (isFinite(v) && v >= 1 && /^\s*[0-9.]+\s*$/.test(name)) return v;
     return NaN;
+  }
+  /**
+   * Verre modèle (nd, νd, ΔPg,F) : n = A + B/λ² + C/λ⁴ ajusté sur nd, nF − nC = (nd − 1)/νd et la dispersion partielle
+   * Pg,F = 0,6438 − 0,001682 νd + ΔPg,F (« ligne normale » de Schott, comme le verre modèle d'OpticStudio) :
+   * la dispersion dans le bleu et le violet suit celle des verres réels.
+   */
+  const MODC = new Map();
+  function modelN(nd, vd, dP, l) {
+    const key = nd + '|' + vd + '|' + dP; let c = MODC.get(key);
+    if (!c) {
+      const xd = 1 / 0.5875618 ** 2, xF = 1 / 0.4861327 ** 2, xC = 1 / 0.6562725 ** 2, xg = 1 / 0.4358343 ** 2;
+      const D = vd > 0 ? (nd - 1) / vd : 0, P = 0.6438 - 0.001682 * vd + dP;
+      const a11 = xF - xC, a12 = xF * xF - xC * xC, a21 = xg - xF, a22 = xg * xg - xF * xF, det = a11 * a22 - a12 * a21;
+      const B = (D * a22 - P * D * a12) / det, C = (a11 * P * D - a21 * D) / det;
+      c = [nd - B * xd - C * xd * xd, B, C]; if (MODC.size > 500) MODC.clear(); MODC.set(key, c);
+    }
+    const x = 1 / (l * l); return c[0] + c[1] * x + c[2] * x * x;
   }
   function recInfo(r) {
     if (!r.ndv) { const nd = dispN(r, 0.5875618), nF = dispN(r, 0.4861327), nC = dispN(r, 0.6562725); r.ndv = { nd, vd: (nd - 1) / (nF - nC) }; }
@@ -640,9 +652,13 @@ const OE = (() => {
     const dn = Math.hypot(dx, dy, dz) * Math.sign(dz || 1);
     return { p: [ox, oy, oz], d: [dx / dn, dy / dn, dz / dn] };
   }
+  /** mode de visée : 'none' (pupille d'entrée paraxiale), 'chief' (rayon principal itéré au centre du diaphragme, pupille paraxiale translatée — défaut de CODE V), 'full' (chaque rayon itéré sur le diaphragme) */
+  const aimMode = sys => sys.rayAiming ? 'full' : sys.aimMode === 'chief' ? 'chief' : 'none';
   function aimRay(M, ctx, f, px, py) {
     let ax = px * M.epr, ay = py * M.epr;
-    if (!M.sys.rayAiming) return [ax, ay];
+    const mode = aimMode(M.sys);
+    if (mode === 'none') return [ax, ay];
+    if (mode === 'chief' && (px || py)) { const c = chiefAim(M, ctx, f); return [ax + c[0], ay + c[1]]; }
     const tx = px * M.par.stopR, ty = py * M.par.stopR;
     const h = 1e-6 * Math.max(1, M.epr);
     const ev = (a, b) => { const s = startAt(M, ctx, f, a, b); const r = trace(M, ctx, s.p, s.d, 0, { upto: M.stopIdx, noClip: true }); return r.vig ? null : [r.x - tx, r.y - ty]; };
@@ -662,7 +678,7 @@ const OE = (() => {
   }
   function chiefAim(M, ctx, f) {
     const key = (f.x || 0) + '|' + (f.y || 0) + '|' + ctx.wi;
-    if (!M.sys.rayAiming) return [0, 0];
+    if (aimMode(M.sys) === 'none') return [0, 0];
     if (M.aimCache.has(key)) return M.aimCache.get(key);
     const a = aimRay(M, ctx, f, 0, 0); M.aimCache.set(key, a); return a;
   }
@@ -1848,6 +1864,6 @@ const OE = (() => {
   return { DEG, fiberInfo, binPSF, detMTF, extSource, binImage, imageSim, polPupil, polOut, POLSTATES, TOLT, TOLC, LT, quickFocus, wlSel, opValue, parseModel, fmtModel, glassNearest, glassPool, toModel, subTry, tolBase, tolDefaults, tolFreeze, tolItems, tolGen, tolApplicable, tolLabel, tolApply, tolWorse, tolSens, tolInverse, tolTrial, tolRebuild, tolValue, niceDown, rng, mtfAt, compensate, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
     wavefront, psf, psfGrid, mtf, mtfGeo, pupilScale, otfAC, mtfOne, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
     OPS, getVars, residuals, meritOf, optStep, pupilGrid, indices, paraxial,
-    ASPK, FTYPES, vigMap, setVignetting, convertFields, thermalScan, glassTherm, nAir, envN, envCtx, isSolid };
+    ASPK, FTYPES, vigMap, modelN, aimMode, setVignetting, convertFields, thermalScan, glassTherm, nAir, envN, envCtx, isSolid };
 })();
 if (typeof module !== 'undefined') module.exports = OE;
