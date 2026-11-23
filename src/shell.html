@@ -340,7 +340,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
         <b>Layout</b>
         <div class="seg" id="laySeg"><button data-m="2d" class="on">2D</button><button data-m="3d">3D</button></div>
         <span class="hint" style="margin-left:6px">Rayons</span>
-        <select class="in" id="nRays" style="height:24px"><option>3</option><option>5</option><option selected>7</option><option>11</option><option>15</option></select>
+        <input class="in" id="nRays" type="number" min="3" max="100" step="1" value="7" list="nRaysList" style="height:24px;width:66px" title="Nombre de rayons par champ : liste (3, 5, 7, 11, 15, 21) ou n'importe quel entier de 3 à 100 (Entrée pour valider, molette ou flèches pour ajuster)"><datalist id="nRaysList"><option value="3"><option value="5"><option value="7"><option value="11"><option value="15"><option value="21"></datalist>
         <button class="bt" data-act="fit" title="Ajuster la vue (double-clic)">Ajuster</button>
         <span class="grow"></span>
         <span class="hint">molette : zoom · glisser : déplacer · clic : sélectionner</span>

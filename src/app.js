@@ -54,12 +54,12 @@ const App = {
   panes: [{ type: 'spot' }, { type: 'wfe', fi: 0 }, { type: 'mtf' }, { type: 'psf', fi: 0 }, { type: 'rayfan' }, { type: 'footprint' }],
   grid: 4, mode: '2d', view: { auto: true, s: 1, ox: 0, oy: 0, yaw: 0.55, pitch: 0.32 }, nRays: 7, showAsph: false, qf: { crit: 'SPOT', wl: 'central' }, asst: true, fw: {},
 };
-function save() { try { localStorage.setItem('focale.sys', toJSON(App.sys)); localStorage.setItem('focale.ui', JSON.stringify({ panes: App.panes, grid: App.grid, qf: App.qf, asst: App.asst, fw: App.fw, th: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light' })); } catch (e) { } }
+function save() { try { localStorage.setItem('focale.sys', toJSON(App.sys)); localStorage.setItem('focale.ui', JSON.stringify({ panes: App.panes, grid: App.grid, qf: App.qf, asst: App.asst, fw: App.fw, nRays: App.nRays, th: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light' })); } catch (e) { } }
 function load() {
   try {
     const s = localStorage.getItem('focale.sys'); if (s) App.sys = normalize(fromJSON(s));
     const u = JSON.parse(localStorage.getItem('focale.ui') || 'null');
-    if (u) { if (Array.isArray(u.panes) && u.panes.length >= 6) App.panes = u.panes; if (u.grid) App.grid = u.grid; if (u.qf) App.qf = { ...App.qf, ...u.qf }; if (u.asst === false) App.asst = false; if (u.fw && typeof u.fw === 'object') App.fw = u.fw; }
+    if (u) { if (Array.isArray(u.panes) && u.panes.length >= 6) App.panes = u.panes; if (u.grid) App.grid = u.grid; if (u.qf) App.qf = { ...App.qf, ...u.qf }; if (u.asst === false) App.asst = false; if (u.fw && typeof u.fw === 'object') App.fw = u.fw; if (Number.isInteger(u.nRays) && u.nRays >= 3 && u.nRays <= 100) App.nRays = u.nRays; }
     // thème : sombre par défaut (premier lancement) ; ensuite le dernier choix de l'utilisateur
     document.documentElement.dataset.theme = u && u.th === 'light' ? '' : 'dark';
   } catch (e) { App.sys = null; }
@@ -950,7 +950,7 @@ function paneHeader(pi) {
     <label><input type="checkbox" data-p="upright" ${p.upright ? 'checked' : ''}>redresser</label><button class="bt" data-p="run" style="height:24px">▶ Simuler</button>`;
   if (p.type === 'glass') h += `<select data-p="cat"><option value="">Tous les catalogues</option>${OE.cats().map(k => `<option ${p.cat === k ? 'selected' : ''}>${k}</option>`).join('')}</select>`;
   if (p.type === 'psf' && det().on) h += `<label title="PSF intégrée sur les pixels du détecteur"><input type="checkbox" data-p="pix" ${p.pix ? 'checked' : ''}>pixels</label>`;
-  if (p.type === 'psf') h += `<span class="seg sm"><button data-p="view2" class="${p.view === '3d' ? '' : 'on'}" title="Carte 2D">2D</button><button data-p="view3" class="${p.view === '3d' ? 'on' : ''}" title="Surface 3D (glisser pour tourner)">3D</button></span><label><input type="checkbox" data-p="log" ${p.log ? 'checked' : ''}>log</label><label class="zr" title="Zoom continu de ×0,5 à ×5 (ou molette sur la PSF)">zoom <input type="range" data-p="zoom" min="0.5" max="5" step="0.05" value="${psfZoom(p)}"><span class="zv">×${psfZoom(p).toFixed(2)}</span></label>`;
+  if (p.type === 'psf') h += `<span class="seg sm"><button data-p="view2" class="${p.view === '3d' ? '' : 'on'}" title="Carte 2D">2D</button><button data-p="view3" class="${p.view === '3d' ? 'on' : ''}" title="Surface 3D (glisser pour tourner)">3D</button></span><label><input type="checkbox" data-p="log" ${p.log ? 'checked' : ''}>log</label><label class="zr" title="Zoom continu de ×0,5 à ×5 (ou molette sur la PSF)">zoom <input type="range" data-p="zoom" min="0.5" max="5" step="0.05" value="${psfZoom(p)}"><span class="zv">×${psfZoom(p).toFixed(2)}</span></label><button class="bt" data-p="zfit" style="height:24px" title="Ajuster : zoom ×1${p.view === '3d' ? ' et orientation 3D par défaut' : ''} (ou double-clic sur la PSF)">Ajuster</button>`;
   if (p.type === 'wfe') h += `<label><input type="checkbox" data-p="tilt" ${p.tilt !== false ? 'checked' : ''}>sans tilt</label>`;
   if (p.type === 'mtf') h += `<label>f max <input class="in" data-p="fmax" style="width:56px;height:22px" value="${p.fmax || ''}" placeholder="auto"></label>`;
   if (p.type === 'spot') h += `<label><input type="checkbox" data-p="chief" ${p.chief ? 'checked' : ''}>réf. principal</label>`;
@@ -973,6 +973,9 @@ function setupPaneEvents(el) {
     e.preventDefault(); const x0 = e.clientX, y0 = e.clientY, a0 = p.yaw ?? -35, b0 = p.pitch ?? 28;
     const mv = ev => { p.yaw = a0 + (ev.clientX - x0) * 0.5; p.pitch = Math.max(5, Math.min(89, b0 + (ev.clientY - y0) * 0.4)); paneBody(pi); }, up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); save(); };
     window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up); });
+  const zfit = pi => { const p = App.panes[pi]; p.zoom = 1; delete p.yaw; delete p.pitch; save(); renderPane(pi); };
+  el.addEventListener('click', e => { const z = e.target.closest('[data-p="zfit"]'); if (z) { zfit(+z.closest('.pane').dataset.i); return; } });
+  el.addEventListener('dblclick', e => { const pane = e.target.closest('.pane'); if (!pane || !e.target.closest('.pb canvas')) return; const pi = +pane.dataset.i; if (App.panes[pi] && App.panes[pi].type === 'psf') zfit(pi); });
   el.addEventListener('click', e => { const b = e.target.closest('[data-p="view2"],[data-p="view3"]'); if (!b) return; const pi = +b.closest('.pane').dataset.i; App.panes[pi].view = b.dataset.p === 'view3' ? '3d' : '2d'; save(); renderPane(pi); });
   void later;
   el.addEventListener('change', e => {
@@ -1076,7 +1079,7 @@ function psf3d(p, M, c, w, h, data, n, mx, ext, ps, ra) {
   }
   c.restore();
   cbar(c, w - 58, 30, 12, Math.max(40, h - 70), log ? -6 : 0, log ? 0 : 100, 'jet', log ? 'log₁₀' : '%');
-  text(c, `glisser : tourner · molette : zoom · Ø Airy ${fx(2 * ra, 2)} µm`, 8, h - 14, { col: TH.mut, size: 10 });
+  text(c, `glisser : tourner · molette : zoom · double-clic : ajuster · Ø Airy ${fx(2 * ra, 2)} µm`, 8, h - 14, { col: TH.mut, size: 10 });
 }
 const fLabel = (M, i) => { const f = (M.ufields || M.sys.fields)[i] || M.sys.fields[i], u = fUnitOf(M.ftype || (M.objInf ? 'ang' : 'obj')); return f.x ? `(${fmt(f.x, 4)}, ${fmt(f.y, 4)})${u}` : `${fmt(f.y, 4)}${u}`; };
 const wlLegend = M => M.wls.map((l, i) => ({ col: wlCol(l), l: `${fmt(l * 1000, 4)} nm` }));
@@ -1143,7 +1146,7 @@ const R = {
       pixGrid(c, A, pu, 'rgba(255,255,255,.35)');
       text(c, `pixel ${pu} µm · énergie pixel central ${fx(bp.G[4] * 100, 1)} % · 3×3 ${fx(bp.G.reduce((a, b) => a + b, 0) * 100, 1)} %`, A.P.x + 4, A.P.y + A.P.h - 14, { col: '#fff', size: 10.5 });
     }
-    text(c, 'molette : zoom', A.P.x + A.P.w - 4, A.P.y + 4, { col: 'rgba(255,255,255,.55)', size: 9.5, align: 'right' });
+    text(c, 'molette : zoom · double-clic : ×1', A.P.x + A.P.w - 4, A.P.y + 4, { col: 'rgba(255,255,255,.55)', size: 9.5, align: 'right' });
   },
   mtf(p, M, c, w, h) {
     const res = M.sys.fields.map((_, i) => OE.mtf(M, i, { fmax: p.fmax }));
@@ -2451,7 +2454,10 @@ function init() {
   });
   $('#gridSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { App.grid = +b.dataset.g; save(); buildPanes(); } });
   $('#laySeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; App.mode = b.dataset.m; drawLayout(); });
-  $('#nRays').addEventListener('change', e => { App.nRays = +e.target.value; drawLayout(); });
+  { const nr = $('#nRays'); nr.value = App.nRays;
+    const setN = (draw) => { const v = Math.round(parseNum(nr.value, false)); if (!isFinite(v)) { nr.value = App.nRays; return; } const n = Math.max(3, Math.min(100, v)); if (String(n) !== nr.value) nr.value = n; if (n !== App.nRays) { App.nRays = n; save(); if (draw) drawLayout(); } };
+    nr.addEventListener('change', () => setN(true)); nr.addEventListener('input', () => { const v = +nr.value; if (Number.isInteger(v) && v >= 3 && v <= 100) setN(true); });
+    nr.addEventListener('keydown', e => { if (e.key === 'Enter') { setN(true); nr.blur(); } }); }
   $('#showAsph').addEventListener('change', e => { App.showAsph = e.target.checked; if (!App.showAsph) { App.hiAsph = false; $('#showHi').checked = false; } renderLDE(); });
   $('#showHi').addEventListener('change', e => { App.hiAsph = e.target.checked; if (App.hiAsph) { App.showAsph = true; $('#showAsph').checked = true; } renderLDE(); });
   $('#fileIn').addEventListener('change', e => { const f = e.target.files[0]; if (!f) return; readAndImport(f); e.target.value = ''; });
