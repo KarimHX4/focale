@@ -178,7 +178,7 @@ const HELP = [
 
   { id: 'imgsim', t: 'Simulation d\'image', h: `
 <p>L'analyse <b>Simulation d'image</b> montre ce que produit votre système à partir d'une scène :</p>
-<ol><li>La scène (mire intégrée ou votre image via <i>Image…</i>) couvre le demi-champ choisi (par défaut le champ maximal du système).</li>
+<ol><li>La scène (mire intégrée ou votre image via <i>Image</i>) couvre le demi-champ choisi (par défaut le champ maximal du système).</li>
 <li>Chaque point est envoyé à sa position image réelle par interpolation des <b>rayons principaux</b> : la <b>distorsion</b> et le <b>chromatisme latéral</b> sont inclus.</li>
 <li>L'image est convoluée par une <b>PSF qui varie dans le champ</b> (grille 5×5, interpolation bilinéaire), calculée par diffraction ou, si le front d'onde dépasse 1,5 λ RMS, à partir du spot géométrique.</li>
 <li>Les canaux <b>rouge, vert, bleu</b> utilisent respectivement la plus grande, la médiane et la plus petite longueur d'onde du système.</li>
