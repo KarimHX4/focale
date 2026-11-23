@@ -966,12 +966,14 @@ function setupPanes() {
 }
 function setupPaneEvents(el) {
   const later = pi => { cancelAnimationFrame(App._pz); App._pz = requestAnimationFrame(() => renderPane(pi)); };
-  el.addEventListener('input', e => { const t = e.target; if (t.dataset.p !== 'zoom' || !t.closest('.pane')) return; const pi = +t.closest('.pane').dataset.i; App.panes[pi].zoom = +t.value; const z = t.parentElement.querySelector('.zv'); if (z) z.textContent = '×' + (+t.value).toFixed(2); paneBody(pi); });
+  el.addEventListener('input', e => { const t = e.target; if (t.dataset.p !== 'zoom' || !t.closest('.pane')) return; const pi = +t.closest('.pane').dataset.i; App.panes[pi].zoom = +t.value; const z = t.parentElement.querySelector('.zv'); if (z) z.textContent = '×' + (+t.value).toFixed(2);
+    const p = App.panes[pi]; if (p.view === '3d') { p._drag = true; clearTimeout(App._zs); App._zs = setTimeout(() => { delete p._drag; paneBody(pi); }, 250); } paneBody(pi); });
   el.addEventListener('wheel', e => { const pane = e.target.closest('.pane'); if (!pane || !e.target.closest('.pb')) return; const pi = +pane.dataset.i, p = App.panes[pi]; if (!p || p.type !== 'psf') return;
-    e.preventDefault(); p.zoom = Math.min(5, Math.max(0.5, psfZoom(p) * (e.deltaY < 0 ? 1.08 : 1 / 1.08))); const r = pane.querySelector('input[data-p="zoom"]'); if (r) { r.value = p.zoom; r.parentElement.querySelector('.zv').textContent = '×' + p.zoom.toFixed(2); } paneBody(pi); clearTimeout(App._zs); App._zs = setTimeout(save, 400); }, { passive: false });
+    e.preventDefault(); p.zoom = Math.min(5, Math.max(0.5, psfZoom(p) * (e.deltaY < 0 ? 1.08 : 1 / 1.08))); const r = pane.querySelector('input[data-p="zoom"]'); if (r) { r.value = p.zoom; r.parentElement.querySelector('.zv').textContent = '×' + p.zoom.toFixed(2); }
+    if (p.view === '3d') p._drag = true; paneBody(pi); clearTimeout(App._zs); App._zs = setTimeout(() => { if (p._drag) { delete p._drag; paneBody(pi); } save(); }, 300); }, { passive: false });
   el.addEventListener('mousedown', e => { const pane = e.target.closest('.pane'); if (!pane || e.button !== 0 || !e.target.closest('.pb canvas')) return; const pi = +pane.dataset.i, p = App.panes[pi]; if (!p || p.type !== 'psf' || p.view !== '3d') return;
     e.preventDefault(); const x0 = e.clientX, y0 = e.clientY, a0 = p.yaw ?? -35, b0 = p.pitch ?? 28;
-    const mv = ev => { p.yaw = a0 + (ev.clientX - x0) * 0.5; p.pitch = Math.max(5, Math.min(89, b0 + (ev.clientY - y0) * 0.4)); paneBody(pi); }, up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); save(); };
+    const mv = ev => { p._drag = true; p.yaw = a0 + (ev.clientX - x0) * 0.5; p.pitch = Math.max(5, Math.min(89, b0 + (ev.clientY - y0) * 0.4)); paneBody(pi); }, up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); delete p._drag; paneBody(pi); save(); };
     window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up); });
   const zfit = pi => { const p = App.panes[pi]; p.zoom = 1; delete p.yaw; delete p.pitch; save(); renderPane(pi); };
   el.addEventListener('click', e => { const z = e.target.closest('[data-p="zfit"]'); if (z) { zfit(+z.closest('.pane').dataset.i); return; } });
@@ -1033,11 +1035,12 @@ const fUnitOf = t => t === 'ang' ? '°' : t === 'obj' ? ' mm' : ' mm im.';
 /* ---------------- PSF : zoom continu et vue 3D (surface façon CODE V « Diffraction Intensity Spread Function ») ---------------- */
 const PSFC = new WeakMap();
 const psfZoom = p => Math.min(5, Math.max(0.5, +p.zoom || 2));
-function psf3d(p, M, c, w, h, data, n, mx, ext, ps, ra) {
+function psf3d(p, M, c, w, h, g, ra) {
+  const ps = g, ext = g.half * 1e3, m = g.m, mx = g.strehl || 1;
   const yaw = (p.yaw ?? -35) * Math.PI / 180, pit = (p.pitch ?? 28) * Math.PI / 180, log = !!p.log;
-  // rééchantillonnage : au plus ~72 mailles par côté
-  const st = Math.max(1, Math.ceil(n / 72)), m = Math.floor(n / st), Z = new Float64Array(m * m);
-  for (let j = 0; j < m; j++) for (let i = 0; i < m; i++) { let v = 0; for (let b = 0; b < st; b++) for (let a = 0; a < st; a++) v = Math.max(v, data[(j * st + b) * n + i * st + a]); Z[j * m + i] = log ? (Math.log10(Math.max(v / mx, 1e-6)) + 6) / 6 : v / mx; }
+  // hauteurs aux nœuds du maillage (la PSF est calculée exactement en ces points)
+  const Z = new Float64Array(m * m);
+  for (let k = 0; k < m * m; k++) { const v = g.I[k] / mx; Z[k] = log ? (Math.log10(Math.max(v, 1e-6)) + 6) / 6 : v; }
   const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pit), sp = Math.sin(pit), H = 0.9;
   const pr = (x, y, z) => { const xr = x * cy - y * sy, yr = x * sy + y * cy; return [xr, z * H * cp + yr * sp, yr]; };
   // échelle : boîte [-1,1]² × [0,1] projetée dans la zone de tracé
@@ -1067,15 +1070,19 @@ function psf3d(p, M, c, w, h, data, n, mx, ext, ps, ra) {
   for (const t of tk) { const u = t / ext; if (Math.abs(u) > 1.0001) continue; const qa = P2(u, near[1], 0), qb = P2(near[0], u, 0); c.fillText(tl(t, ts), qa[0], qa[1] + 4); c.fillText(tl(t, ts), qb[0], qb[1] + 4); }
   { const qa = P2(0, near[1] * 1.28, 0), qb = P2(near[0] * 1.28, 0, 0); c.fillStyle = TH.fg; c.fillText('X, µm', qa[0], qa[1] + 6); c.fillText('Y, µm', qb[0], qb[1] + 6); }
   // surface : mailles de la plus éloignée à la plus proche
-  const Lc = lut('jet'), G = (i, j) => [-1 + 2 * i / (m - 1), -1 + 2 * j / (m - 1)], quads = [];
+  const U = g.xs.map(x => x / g.half), Lc = lut('jet'), G = (i, j) => [U[i], U[j]], quads = [];
   for (let j = 0; j < m - 1; j++) for (let i = 0; i < m - 1; i++) { const [xa, ya] = G(i, j), [xb, yb] = G(i + 1, j + 1); quads.push([i, j, pr((xa + xb) / 2, (ya + yb) / 2, 0)[2]]); }
   quads.sort((a, b) => b[2] - a[2]);
-  const thin = m > 50;
+  // éclairage doux (normale de chaque maille, lumière fixe par rapport à l'observateur) pour lire le relief
+  const lx = -0.45 * cy - 0.35 * sy, ly = 0.45 * sy - 0.35 * cy, lz = 0.82;
+  c.lineJoin = 'round'; c.lineWidth = 0.6;
   for (const [i, j] of quads) {
     const z00 = Z[j * m + i], z10 = Z[j * m + i + 1], z11 = Z[(j + 1) * m + i + 1], z01 = Z[(j + 1) * m + i];
     const [xa, ya] = G(i, j), [xb, yb] = G(i + 1, j + 1), zm = Math.max(0, Math.min(1, (z00 + z10 + z11 + z01) / 4)), k = Math.round(zm * 255);
-    const col = `rgb(${Lc[k * 3]},${Lc[k * 3 + 1]},${Lc[k * 3 + 2]})`;
-    poly([P2(xa, ya, z00), P2(xb, ya, z10), P2(xb, yb, z11), P2(xa, yb, z01)], col, thin ? col : 'rgba(0,0,0,.25)');
+    const gx = H * ((z10 + z11) - (z00 + z01)) / (2 * (xb - xa)), gy = H * ((z01 + z11) - (z00 + z10)) / (2 * (yb - ya)), nn = Math.hypot(gx, gy, 1);
+    const sh = Math.max(0.55, Math.min(1.15, 0.62 + 0.5 * (-gx * lx - gy * ly + lz) / nn));
+    const col = `rgb(${Math.min(255, Lc[k * 3] * sh) | 0},${Math.min(255, Lc[k * 3 + 1] * sh) | 0},${Math.min(255, Lc[k * 3 + 2] * sh) | 0})`;
+    poly([P2(xa, ya, z00), P2(xb, ya, z10), P2(xb, yb, z11), P2(xa, yb, z01)], col, col);
   }
   c.restore();
   cbar(c, w - 58, 30, 12, Math.max(40, h - 70), log ? -6 : 0, log ? 0 : 100, 'jet', log ? 'log₁₀' : '%');
@@ -1125,14 +1132,22 @@ const R = {
       <p class="hint">RMS total (piston retiré) : <b>${fx(wf.rms, 5)} λ</b> · PV : <b>${fx(wf.pv, 4)} λ</b></p>`;
   },
   psf(p, M, c, w, h) {
-    const zoom = psfZoom(p), P = zoom > 2.2 ? 512 : 256, fi = p.fi || 0, wi = p.wi ?? M.pw;
+    const zoom = psfZoom(p), fi = p.fi || 0, wi = p.wi ?? M.pw, ra = 1.22 * M.ctxs[wi].lmm * M.par.wfno * 1e3;
+    if (p.view === '3d') { // 3D : front d'onde 128×128 et PSF calculée directement sur la grille affichée (201×201, 81×81 pendant une rotation ou un zoom)
+      let C = PSFC.get(p); if (!C || C.M !== M || C.fi !== fi || C.wi !== wi || !C.wf3) { C = { M, fi, wi, wf3: OE.wavefront(M, fi, wi, 128, false) }; PSFC.set(p, C); }
+      const half = 16 * M.ctxs[wi].lmm * M.par.wfno / zoom, m = p._drag ? 81 : 201, key = zoom + '|' + m;
+      C.gs = C.gs || new Map(); let g = C.gs.get(key); if (!g) { if (C.gs.size > 6) C.gs.clear(); const xs = Array.from({ length: m }, (_, k) => { const t = -1 + 2 * k / (m - 1); return half * Math.sign(t) * Math.pow(Math.abs(t), 1.7); }); // nœuds resserrés au centre (pic)
+        g = OE.psfGrid(M, fi, wi, half, m, 128, C.wf3, xs); C.gs.set(key, g); }
+      return psf3d(p, M, c, w, h, g, ra);
+    }
+    // 2D : pupille 64×64 dans une FFT 256² (512² au-delà de ×2,2)
+    const P = zoom > 2.2 ? 512 : 256;
     let C = PSFC.get(p); if (!C || C.M !== M || C.fi !== fi || C.wi !== wi || C.P !== P) { C = { M, fi, wi, P, ps: OE.psf(M, fi, wi, 64, P) }; PSFC.set(p, C); }
     const ps = C.ps;
     const half = Math.max(4, Math.min(P >> 1, Math.round(P / 4 / zoom))), n = 2 * half, o = P / 2 - half, data = new Float64Array(n * n);
     let mx = 0;
     for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { const v = ps.I[(y + o) * P + x + o]; data[y * n + x] = v; mx = Math.max(mx, v); }
-    const ext = half * ps.dx * 1e3, ra = 1.22 * M.ctxs[wi].lmm * M.par.wfno * 1e3;
-    if (p.view === '3d') return psf3d(p, M, c, w, h, data, n, mx, ext, ps, ra);
+    const ext = half * ps.dx * 1e3;
     if (p.log) for (let i = 0; i < data.length; i++) data[i] = Math.log10(Math.max(data[i] / mx, 1e-6));
     const A = axes(c, { x: 0, y: 0, w: w - 70, h: h - 4 }, [-ext, ext], [-ext, ext], { equal: true, title: `PSF  Strehl ${fx(ps.strehl, 4)} · zoom ×${fmt(zoom, 2)}`, ml: 46, xl: 'µm', zero: false });
     A.xr0 = -ext; A.xr1 = ext; A.yr0 = -ext; A.yr1 = ext;

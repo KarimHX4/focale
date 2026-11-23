@@ -893,6 +893,30 @@ const OE = (() => {
     const dx = M.ctxs[wi].lmm * M.par.wfno * N / P;
     return { I, P, N, dx, strehl: pk, wf };
   }
+  /**
+   * PSF sur une grille choisie (transformée de Fourier matricielle) : m×m points couvrant [−half, half] mm dans le plan image,
+   * à partir d'un front d'onde N×N (wf facultatif). Même normalisation que psf() : le maximum vaut le rapport de Strehl.
+   * Résolution indépendante d'une FFT : utile pour la vue 3D et les zooms.
+   */
+  function psfGrid(M, fi, wi, half, m, N = 128, wfIn, xsIn) {
+    const wf = wfIn || wavefront(M, fi, wi, N, false), apod = sysApod(M);
+    const lF = M.ctxs[wi].lmm * M.par.wfno, dx = 2 * half / (m - 1), xs = xsIn || Array.from({ length: m }, (_, k) => -half + k * dx);
+    const Ar = new Float64Array(N * N), Ai = new Float64Array(N * N); let sa = 0;
+    for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+      const w = wf.W[i * N + j]; if (!isFinite(w)) continue;
+      const A = apod ? apod(-1 + (2 * j + 1) / N, -1 + (2 * i + 1) / N) : 1; if (!(A > 0)) continue;
+      const ph = -2 * Math.PI * w; Ar[i * N + j] = A * Math.cos(ph); Ai[i * N + j] = A * Math.sin(ph); sa += A;
+    }
+    // noyau e^{−2πi (j − N/2) x / (λF N)} (même convention que la FFT de psf())
+    const Kr = new Float64Array(m * N), Ki = new Float64Array(m * N);
+    for (let k = 0; k < m; k++) { const x = xs[k]; for (let j = 0; j < N; j++) { const a = -2 * Math.PI * (j - N / 2) * x / (lF * N); Kr[k * N + j] = Math.cos(a); Ki[k * N + j] = Math.sin(a); } }
+    // T = A · Kxᵀ  (N × m), puis E = Ky · T (m × m)
+    const Tr = new Float64Array(N * m), Ti = new Float64Array(N * m);
+    for (let i = 0; i < N; i++) for (let k = 0; k < m; k++) { let sr = 0, si = 0; const o = i * N, q = k * N; for (let j = 0; j < N; j++) { const ar = Ar[o + j]; if (!ar && !Ai[o + j]) continue; const ai = Ai[o + j], kr = Kr[q + j], ki = Ki[q + j]; sr += ar * kr - ai * ki; si += ar * ki + ai * kr; } Tr[i * m + k] = sr; Ti[i * m + k] = si; }
+    const I = new Float64Array(m * m), norm = sa * sa || 1; let pk = 0;
+    for (let r = 0; r < m; r++) for (let k = 0; k < m; k++) { let sr = 0, si = 0; const q = r * N; for (let i = 0; i < N; i++) { const tr = Tr[i * m + k], ti = Ti[i * m + k], kr = Kr[q + i], ki = Ki[q + i]; sr += kr * tr - ki * ti; si += kr * ti + ki * tr; } const v = (sr * sr + si * si) / norm; I[r * m + k] = v; if (v > pk) pk = v; }
+    return { I, m, dx, half, xs, strehl: pk, wf };
+  }
   function mtfOne(M, fi, wi, N = 64, P = 256) {
     const p = psf(M, fi, wi, N, P);
     const otf = I => { const re = Float64Array.from(I), im = new Float64Array(P * P); fft2(re, im, P, false); return (x, y) => Math.hypot(re[y * P + x], im[y * P + x]); };
@@ -1736,7 +1760,7 @@ const OE = (() => {
   }
 
   return { DEG, fiberInfo, binPSF, detMTF, extSource, binImage, imageSim, polPupil, polOut, POLSTATES, TOLT, TOLC, LT, quickFocus, wlSel, opValue, parseModel, fmtModel, glassNearest, glassPool, toModel, subTry, tolBase, tolDefaults, tolFreeze, tolItems, tolGen, tolApplicable, tolLabel, tolApply, tolWorse, tolSens, tolInverse, tolTrial, tolRebuild, tolValue, niceDown, rng, mtfAt, compensate, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
-    wavefront, psf, mtf, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
+    wavefront, psf, psfGrid, mtf, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
     OPS, getVars, residuals, meritOf, optStep, pupilGrid, indices, paraxial,
     ASPK, FTYPES, vigMap, setVignetting, convertFields, thermalScan, glassTherm, nAir, envN, envCtx, isSolid };
 })();

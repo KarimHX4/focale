@@ -158,4 +158,7 @@ const P = []; OE.ray(M, 1, 20, 0, 1, { pts: P }); near('Visée réelle sur diaph
   const back = IO.parseSeq(IO.toSeq(r.sys).text).sys; near('.seq : aller-retour des champs et du vignetage', JSON.stringify(back.fields) === JSON.stringify(r.sys.fields) ? 1 : 0, 1, 0);
   const z = IO.parseZMX(IO.toZMX(r.sys).text).sys; near('.zmx : aller-retour vignetage VCY/VDY', Math.abs(z.fields[2].vly - 0.1112) + Math.abs(z.fields[2].vuy - 0.2027), 0, 1e-12);
   const c = S; const yim = IO.parseSeq('EPD 10\nWL 587.56\nYIM 0 5\nSO 0 1e20\nSTO 50 5 NBK7_SCHOTT\nS -50 90\nSI 0 0\nGO').sys; near('.seq : YIM → champs en hauteur image paraxiale', yim.ftype === 'pim' && yim.fields[1].y === 5 ? 1 : 0, 1, 0); }
+{ const M = OE.prepare(S['Triplet de Cooke f=50 F/5']()), ps = OE.psf(M, 2, M.pw, 64, 256), P = ps.P, c = P / 2, g = OE.psfGrid(M, 2, M.pw, 60 * ps.dx, 121, 64); let e = 0;
+  for (let y = -60; y <= 60; y++) for (let x = -60; x <= 60; x++) e = Math.max(e, Math.abs(ps.I[(c + y) * P + c + x] - g.I[(y + 60) * 121 + x + 60]));
+  near('PSF matricielle (3D) ≡ PSF par FFT', e, 0, 1e-12); }
 console.log(fail ? `${fail} échec(s)` : 'Tous les tests passent'); process.exit(fail ? 1 : 0);
