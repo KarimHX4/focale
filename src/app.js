@@ -922,6 +922,14 @@ const PT = {
   presc: { l: 'Prescription & synthèse', html: 1 },
   thermal: { l: 'Analyse thermique (focale, foyer, qualité vs T)', f: 1 },
 };
+/** groupes du menu des fenêtres d'analyse */
+const PTG = [
+  ['Image et aberrations', ['spot', 'rayfan', 'opdfan', 'wfe', 'zern']],
+  ['Diffraction', ['psf', 'mtf', 'ee']],
+  ['Système', ['field', 'seidel', 'chrom', 'footprint', 'thermal', 'polar']],
+  ['Capteur et simulation', ['detector', 'source', 'imgsim']],
+  ['Données et outils', ['glass', 'presc']],
+];
 const newPaneEl = i => { const d = document.createElement('div'); d.className = 'pane'; d.dataset.i = i; d.innerHTML = `<div class="ph"></div><div class="pb"><canvas></canvas><div class="phtml"></div></div>`; return d; };
 function buildPanes() {
   const el = $('#panes'); el.innerHTML = '';
@@ -936,7 +944,8 @@ function buildPanes() {
 }
 function paneHeader(pi) {
   const p = App.panes[pi], t = PT[p.type] || PT.spot, s = App.sys, M = App.M;
-  let h = `<select class="pt" data-p="type">${Object.entries(PT).map(([k, v]) => `<option value="${k}" ${k === p.type ? 'selected' : ''}>${v.l}</option>`).join('')}</select>`;
+  const opt = k => `<option value="${k}" ${k === p.type ? 'selected' : ''}>${PT[k].l}</option>`, inG = new Set(PTG.flatMap(g => g[1]));
+  let h = `<select class="pt" data-p="type">${PTG.map(([g, ks]) => `<optgroup label="${g}">${ks.map(opt).join('')}</optgroup>`).join('')}${Object.keys(PT).filter(k => !inG.has(k)).map(opt).join('')}</select>`;
   if (t.f) { p.fi = Math.min(p.fi || 0, s.fields.length - 1); h += `<select data-p="fi">${s.fields.map((f, i) => `<option value="${i}" ${i === p.fi ? 'selected' : ''}>Champ ${i + 1} (${M && M.ok ? fLabel(M, i) : fmt(f.y, 4)})</option>`).join('')}</select>`; }
   if (t.w) { if (p.wi != null && p.wi >= s.wavelengths.length) p.wi = null; const we = p.wi ?? s.primary; h += `<select data-p="wi">${s.wavelengths.map((w, i) => `<option value="${i}" ${i === we ? 'selected' : ''}>${fmt(w.um * 1000, 5)} nm</option>`).join('')}</select>`; }
   if (t.s) h += `<select data-p="si"><option value="">Surface sélectionnée</option>${s.surfaces.map((x, i) => i ? `<option value="${i}" ${p.si === i ? 'selected' : ''}>Surface ${i}${x.comment ? ' · ' + esc(x.comment) : ''}</option>` : '').join('')}</select>`;

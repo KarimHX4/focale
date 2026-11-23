@@ -109,6 +109,7 @@ const HELP = [
 </ul>` },
 
   { id: 'analyses', t: 'Analyses', h: `
+<p>Le menu de chaque fenêtre est rangé en groupes : <b>Image et aberrations</b> (spot, ray fan, OPD fan, carte WFE, Zernike), <b>Diffraction</b> (PSF, FTM, énergie encerclée), <b>Système</b> (courbure de champ et distorsion, Seidel, chromatisme, footprint, analyse thermique, polarisation), <b>Capteur et simulation</b> (détecteur, source étendue, simulation d'image) et <b>Données et outils</b> (carte des verres, prescription et synthèse : vues de référence tenues à jour en permanence).</p>
 <table class="ht"><tr><th>Analyse</th><th>Description</th></tr>
 <tr><td>Diagramme de spot</td><td>Impacts des rayons dans le plan image (grille de pupille), par champ, couleur = longueur d'onde. RMS et GEO par rapport au barycentre (ou au rayon principal), cercle d'Airy 1,22·λ·F/#.</td></tr>
 <tr><td>Ray fan</td><td>Aberration transverse εy(Py) (tangentiel) et εx(Px) (sagittal) par rapport au rayon principal.</td></tr>
