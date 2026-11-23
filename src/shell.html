@@ -121,6 +121,10 @@ table.sdt td.ro,table.sdt th.ro{font-family:var(--mono);font-size:11.5px;color:v
 .fwin .wb:hover{background:var(--acc2);color:var(--fg)}
 body.wdrag .fwin .fwb{pointer-events:none}
 .fwin button[data-fw]{display:none}
+.nrc{display:inline-flex;align-items:center;gap:2px}
+.nrc>.bt{height:24px;padding:0 6px}
+.nrc .menu{top:28px}
+.nrc .menu button{white-space:nowrap}
 .fwin #ldeBox .bh>b,.fwin #layBox .bh>b{display:none}
 .chip{border:1px solid var(--line);border-radius:20px;padding:2px 8px;background:none;cursor:pointer;font-size:11.5px;color:var(--mut)}
 .chip:hover{border-color:var(--acc);color:var(--acc)}
@@ -340,7 +344,8 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
         <b>Layout</b>
         <div class="seg" id="laySeg"><button data-m="2d" class="on">2D</button><button data-m="3d">3D</button></div>
         <span class="hint" style="margin-left:6px">Rayons</span>
-        <input class="in" id="nRays" type="number" min="3" max="100" step="1" value="7" list="nRaysList" style="height:24px;width:66px" title="Nombre de rayons par champ : liste (3, 5, 7, 11, 15, 21) ou n'importe quel entier de 3 à 100 (Entrée pour valider, molette ou flèches pour ajuster)"><datalist id="nRaysList"><option value="3"><option value="5"><option value="7"><option value="11"><option value="15"><option value="21"></datalist>
+        <span class="dd nrc"><input class="in" id="nRays" type="number" min="3" max="100" step="1" value="7" style="height:24px;width:58px" title="Nombre de rayons par champ : un entier de 3 à 100 (Entrée pour valider, flèches ou molette pour ajuster), ou ▾ pour une valeur courante"><button class="bt" data-menu="nRaysMenu" title="Valeurs courantes" aria-label="Valeurs courantes du nombre de rayons">▾</button>
+          <div class="menu" id="nRaysMenu" style="min-width:110px"><button data-nr="3">3 rayons</button><button data-nr="5">5 rayons</button><button data-nr="7">7 rayons</button><button data-nr="11">11 rayons</button><button data-nr="15">15 rayons</button><button data-nr="21">21 rayons</button><button data-nr="31">31 rayons</button><button data-nr="51">51 rayons</button></div></span>
         <button class="bt" data-act="fit" title="Ajuster la vue (double-clic)">Ajuster</button>
         <span class="grow"></span>
         <span class="hint">molette : zoom · glisser : déplacer · clic : sélectionner</span>

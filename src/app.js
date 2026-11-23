@@ -2490,7 +2490,8 @@ function init() {
   { const nr = $('#nRays'); nr.value = App.nRays;
     const setN = (draw) => { const v = Math.round(parseNum(nr.value, false)); if (!isFinite(v)) { nr.value = App.nRays; return; } const n = Math.max(3, Math.min(100, v)); if (String(n) !== nr.value) nr.value = n; if (n !== App.nRays) { App.nRays = n; save(); if (draw) drawLayout(); } };
     nr.addEventListener('change', () => setN(true)); nr.addEventListener('input', () => { const v = +nr.value; if (Number.isInteger(v) && v >= 3 && v <= 100) setN(true); });
-    nr.addEventListener('keydown', e => { if (e.key === 'Enter') { setN(true); nr.blur(); } }); }
+    nr.addEventListener('keydown', e => { if (e.key === 'Enter') { setN(true); nr.blur(); } });
+    $('#nRaysMenu').addEventListener('click', e => { const b = e.target.closest('[data-nr]'); if (!b) return; nr.value = b.dataset.nr; setN(true); $('#nRaysMenu').classList.remove('open'); }); }
   $('#showAsph').addEventListener('change', e => { App.showAsph = e.target.checked; if (!App.showAsph) { App.hiAsph = false; $('#showHi').checked = false; } renderLDE(); });
   $('#showHi').addEventListener('change', e => { App.hiAsph = e.target.checked; if (App.hiAsph) { App.showAsph = true; $('#showAsph').checked = true; } renderLDE(); });
   $('#fileIn').addEventListener('change', e => { const f = e.target.files[0]; if (!f) return; readAndImport(f); e.target.value = ''; });

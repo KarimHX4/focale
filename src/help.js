@@ -18,7 +18,7 @@ const HELP = [
 <li><b>Barre du haut</b> : fichiers, exemples, annuler/rétablir, <b>Système</b> (Données système façon CODE V, Ctrl+Maj+D), optimisation, tolérancement, <b>+ Fenêtre</b> (analyse supplémentaire flottante), nombre de fenêtres d'analyse de la grille (1, 2, 4, 6), thème clair/sombre (sombre au premier lancement, puis le dernier choix est retenu), aide.</li>
 <li><b>Panneau de gauche</b> : bouton <b>⚙ Données système…</b>, propriétés de la <b>surface sélectionnée</b> (type d'élément, forme, décentrements), puis ouverture, champs, longueurs d'onde et données paraxiales.</li>
 <li><b>Éditeur de lentilles</b> (centre, en haut) : une ligne par surface.</li>
-<li><b>Layout</b> (centre, en bas) : coupe 2D ou vue 3D. <b>Rayons</b> : nombre de rayons tracés par champ — choix rapide dans la liste (3, 5, 7, 11, 15, 21) ou n'importe quel entier de 3 à 100 tapé au clavier (Entrée), flèches ou molette ; mémorisé. Molette = zoom, glisser = déplacer (3D : rotation ; Maj+glisser = déplacer), clic = sélectionner une surface, double-clic = ajuster.</li>
+<li><b>Layout</b> (centre, en bas) : coupe 2D ou vue 3D. <b>Rayons</b> : nombre de rayons tracés par champ — n'importe quel entier de 3 à 100 tapé au clavier (Entrée), flèches ou molette, ou valeur courante par le bouton ▾ (3, 5, 7, 11, 15, 21, 31, 51) ; mémorisé. Molette = zoom, glisser = déplacer (3D : rotation ; Maj+glisser = déplacer), clic = sélectionner une surface, double-clic = ajuster.</li>
 <li><b>Analyses</b> (droite) : chaque fenêtre a son propre choix d'analyse et ses réglages ; ⤓ enregistre l'image PNG, ⤢ agrandit.</li>
 <li><b>Barre d'état</b> : focale, F/#, longueur, nombre de variables, avertissements et temps de calcul.</li>
 </ul>
