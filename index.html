@@ -295,18 +295,18 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
   <div class="dd"><button class="tb" data-menu="mFile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h10l6 6v10H4z"/><path d="M14 4v6h6"/></svg>Fichier ▾</button>
     <div class="menu" id="mFile">
       <button data-act="new">Nouveau système</button>
-      <button data-act="open">Ouvrir… <span class="kb">Ctrl+O</span></button>
+      <button data-act="open">Ouvrir <span class="kb">Ctrl+O</span></button>
       <button data-act="save">Enregistrer (.json) <span class="kb">Ctrl+S</span></button>
-      <button data-act="saveAs">Enregistrer sous…</button>
+      <button data-act="saveAs">Enregistrer sous</button>
       <hr>
       <button data-act="dlZmx">Exporter Zemax (.zmx)</button>
       <button data-act="dlSeq">Exporter CODE V (.seq)</button>
-      <button data-act="import">Importer un système (Zemax / CODE V / JSON)…</button>
-      <button data-act="export">Afficher / copier le texte (JSON / .zmx / .seq)…</button>
+      <button data-act="import">Importer un système (Zemax / CODE V / JSON)</button>
+      <button data-act="export">Afficher / copier le texte (JSON / .zmx / .seq)</button>
       <hr>
-      <button data-act="report">Rapport PDF…</button>
-      <button data-act="tolrpt">Rapport de tolérancement (PDF)…</button>
-      <button data-act="drawings">Plans de fabrication ISO 10110 (PDF)…</button>
+      <button data-act="report">Rapport PDF</button>
+      <button data-act="tolrpt">Rapport de tolérancement (PDF)</button>
+      <button data-act="drawings">Plans de fabrication ISO 10110 (PDF)</button>
       <hr>
       <button data-act="asstShow" id="asstShow">Masquer le bouton Assistant</button>
       <button data-act="about">À propos / version</button>
@@ -326,9 +326,9 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
   <button class="tb" data-act="tol" title="Sensibilités et Monte-Carlo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20h18"/><path d="M6 20V10M10 20V4M14 20V8M18 20v-6"/></svg>Tolérancer</button>
   <div class="dd"><button class="tb" data-menu="mRpt" title="Documents PDF : rapport de conception, rapport de tolérancement, plans de fabrication"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6"/><path d="M9 13h7M9 17h5"/></svg>Rapport ▾</button>
     <div class="menu" id="mRpt">
-      <button data-act="report">Rapport de conception…</button>
-      <button data-act="tolrpt">Rapport de tolérancement…</button>
-      <button data-act="drawings">Plans de fabrication ISO 10110…</button>
+      <button data-act="report">Rapport de conception</button>
+      <button data-act="tolrpt">Rapport de tolérancement</button>
+      <button data-act="drawings">Plans de fabrication ISO 10110</button>
     </div></div>
   <button class="tb" data-act="assistant" id="asstBtn" title="Assistant en langage naturel (module facultatif, modèle local) — Ctrl+Maj+A"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M9 11h.01M12 11h.01M15 11h.01"/></svg>Assistant</button>
   <div class="grow"></div>
@@ -352,7 +352,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
         <button class="bt" data-act="stop" title="Placer le diaphragme sur la surface sélectionnée">Diaphragme</button>
         <button class="bt" data-act="mirror" title="Transformer la surface sélectionnée en miroir">Miroir</button>
         <button class="bt" data-act="flip" title="Retourner l'élément (de la sélection à la surface suivante)">Retourner</button>
-        <button class="bt" data-act="glasses" title="Parcourir les catalogues de verres et affecter un verre">Verres…</button>
+        <button class="bt" data-act="glasses" title="Parcourir les catalogues de verres et affecter un verre">Verres</button>
         <span class="qfb"><button class="bt" data-act="qfocus" title="Quick focus : déplace l'image au meilleur foyer (Ctrl+Maj+F)">⌖ Quick focus</button><button class="bt" data-act="qfopt" title="Options du quick focus : critère et longueur d'onde" aria-label="Options du quick focus">▾</button></span>
         <span class="grow"></span>
         <label class="hint"><input type="checkbox" id="showAsph"> Asphères</label>
@@ -390,7 +390,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 <div class="toast" id="toast"></div>
 <input type="file" id="fileIn" accept=".json,.zmx,.seq,.txt,.agf" style="display:none">
 <div class="drop" id="drop">Déposez un fichier .zmx, .seq, .json ou .agf</div>
-<script>const FOCALE_VERSION = '668eeddd';</script>
+<script>const FOCALE_VERSION = '87eb588a';</script>
 <script id="js-engine">
 'use strict';
 /* =====================================================================
@@ -3728,7 +3728,7 @@ const HELP = [
   { id: 'interface', t: 'L\'interface', h: `
 <ul>
 <li><b>Barre du haut</b> : fichiers, exemples, annuler/rétablir, <b>Système</b> (Données système façon CODE V, Ctrl+Maj+D), <b>Configs</b> (multi-configuration, Ctrl+Maj+M ; le sélecteur ◀ Config ▶ apparaît dès qu'il y a plusieurs configurations), optimisation, tolérancement, <b>+ Fenêtre</b> (analyse supplémentaire flottante), nombre de fenêtres d'analyse de la grille (1, 2, 4, 6), thème clair/sombre (sombre au premier lancement, puis le dernier choix est retenu), aide.</li>
-<li><b>Panneau de gauche</b> : bouton <b>⚙ Données système…</b>, propriétés de la <b>surface sélectionnée</b> (type d'élément, forme, décentrements), puis ouverture, champs, longueurs d'onde et données paraxiales.</li>
+<li><b>Panneau de gauche</b> : bouton <b>⚙ Données système</b>, propriétés de la <b>surface sélectionnée</b> (type d'élément, forme, décentrements), puis ouverture, champs, longueurs d'onde et données paraxiales.</li>
 <li><b>Éditeur de lentilles</b> (centre, en haut) : une ligne par surface.</li>
 <li><b>Layout</b> (centre, en bas) : coupe 2D ou vue 3D. <b>Rayons</b> : nombre de rayons tracés par champ — n'importe quel entier de 3 à 100 tapé au clavier (Entrée), flèches ou molette, ou valeur courante par le bouton ▾ (3, 5, 7, 11, 15, 21, 31, 51) ; mémorisé. Molette = zoom, glisser = déplacer (3D : rotation ; Maj+glisser = déplacer), clic = sélectionner une surface, double-clic = ajuster. En 3D, chaque lentille est dessinée comme un volume de verre translucide : ses deux dioptres sont reliés par la tranche (silhouette), avec la collerette plane quand les demi-diamètres diffèrent ; l'élément sélectionné est cerclé d'orange, les miroirs sont grisés, le diaphragme apparaît comme une lame annulaire et le plan image comme un disque.</li>
 <li><b>Analyses</b> (droite) : chaque fenêtre a son propre choix d'analyse et ses réglages ; ⤓ enregistre l'image PNG, ⤢ agrandit.</li>
@@ -3789,12 +3789,12 @@ const HELP = [
 <h4>Ouverture</h4><ul><li><b>Diamètre de la pupille d'entrée</b> (EPD), <b>F/# image</b>, <b>ouverture numérique objet</b> (objet à distance finie seulement), <b>ouverture numérique image</b> (CODE V NA) ou <b>demi-diamètre du diaphragme</b> (l'ouverture est fixée par le diaphragme, Zemax « Float by stop size »). Le F/# image suit la convention Zemax « Image Space F/# » : EPD = EFL / F#, y compris en conjugué fini (le F/# de travail réel est affiché dans les données paraxiales).</li>
 <li><b>Obstruction centrale</b> : fraction du rayon de pupille masquée (télescopes à miroir secondaire).</li>
 <li><b>Visée des rayons</b> : <i>pupille paraxiale</i> (rayons visés sur la pupille d'entrée paraxiale) ; <i>rayon principal au diaphragme</i> (le rayon principal de chaque champ est itéré pour passer au centre du diaphragme et la pupille paraxiale est translatée d'autant : comportement par défaut de CODE V, activé à l'import d'un .seq) ; <i>réelle</i> (chaque rayon est itéré pour remplir exactement le diaphragme : grands champs, pupilles très aberrantes).</li></ul>
-<h4>Champs</h4><p>Quatre <b>types de champ</b>, comme dans CODE V : <b>angle objet</b> (YAN, en °, direction ∝ (tan X, tan Y, 1) ; en conjugué fini l'angle est mesuré depuis la pupille d'entrée), <b>hauteur objet</b> (YOB, mm, objet à distance finie), <b>hauteur image paraxiale</b> (YIM, mm) et <b>hauteur image réelle</b> (YRI, mm : le point de champ est ajusté pour que le rayon principal réel arrive à cette hauteur — idéal pour couvrir exactement un capteur malgré la distorsion). Changer le type dans la liste <b>convertit</b> les valeurs pour garder les mêmes points de champ. Sans type choisi : angles pour un objet à l'infini, hauteurs objet sinon. Le poids sert à l'optimisation et au tolérancement. Le bouton <b>Vignetage…</b> ouvre l'onglet Champs des Données système (facteurs VUY, VLY, VUX, VLX, génération de champs). Le <b>carré de couleur</b> devant chaque champ ouvre un sélecteur : palette, couleur libre (« Autre ») ou code hexadécimal, aperçu avant / après ; la couleur n'est appliquée qu'avec <b>OK</b> (ou Entrée, ou double-clic sur une pastille) ; <b>Annuler</b> (ou Échap, ou clic à côté) l'abandonne, <b>Par défaut</b> revient à la couleur automatique. Elle est utilisée dans le layout, les spots, la FTM, le footprint… et enregistrée avec le système.</p>
+<h4>Champs</h4><p>Quatre <b>types de champ</b>, comme dans CODE V : <b>angle objet</b> (YAN, en °, direction ∝ (tan X, tan Y, 1) ; en conjugué fini l'angle est mesuré depuis la pupille d'entrée), <b>hauteur objet</b> (YOB, mm, objet à distance finie), <b>hauteur image paraxiale</b> (YIM, mm) et <b>hauteur image réelle</b> (YRI, mm : le point de champ est ajusté pour que le rayon principal réel arrive à cette hauteur — idéal pour couvrir exactement un capteur malgré la distorsion). Changer le type dans la liste <b>convertit</b> les valeurs pour garder les mêmes points de champ. Sans type choisi : angles pour un objet à l'infini, hauteurs objet sinon. Le poids sert à l'optimisation et au tolérancement. Le bouton <b>Vignetage</b> ouvre l'onglet Champs des Données système (facteurs VUY, VLY, VUX, VLX, génération de champs). Le <b>carré de couleur</b> devant chaque champ ouvre un sélecteur : palette, couleur libre (« Autre ») ou code hexadécimal, aperçu avant / après ; la couleur n'est appliquée qu'avec <b>OK</b> (ou Entrée, ou double-clic sur une pastille) ; <b>Annuler</b> (ou Échap, ou clic à côté) l'abandonne, <b>Par défaut</b> revient à la couleur automatique. Elle est utilisée dans le layout, les spots, la FTM, le footprint… et enregistrée avec le système.</p>
 <h4>Longueurs d'onde</h4><p>En µm, avec poids et longueur d'onde <b>primaire</b> (pupilles, fronts d'onde par défaut, solves). Préréglages F-d-C, visible, 632,8 nm, NIR. Par défaut chaque λ prend sa couleur spectrale ; cliquez sur son carré de couleur pour en choisir une autre, validée par <b>OK</b> (utile en infrarouge ou pour distinguer des λ proches).</p>
 <h4>Données paraxiales</h4><p>Focale effective, tirage, F/#, ouvertures numériques, positions et diamètres des pupilles, grandissement, invariant de Lagrange.</p>` },
 
   { id: 'donnees', t: 'Données système (CODE V)', h: `
-<p>Bouton <b>Système</b> de la barre du haut, <b>⚙ Données système…</b> du panneau de gauche ou <b>Ctrl+Maj+D</b> : une fenêtre organisée comme le « System Data » de CODE V, avec un onglet par catégorie à gauche. Toutes les modifications s'annulent avec Ctrl+Z.</p>
+<p>Bouton <b>Système</b> de la barre du haut, <b>⚙ Données système</b> du panneau de gauche ou <b>Ctrl+Maj+D</b> : une fenêtre organisée comme le « System Data » de CODE V, avec un onglet par catégorie à gauche. Toutes les modifications s'annulent avec Ctrl+Z.</p>
 <table class="ht"><tr><th>Onglet</th><th>Contenu</th></tr>
 <tr><td>Pupille</td><td>Type et valeur de l'ouverture (EPD, F/#, ON objet, ON image, demi-diamètre du diaphragme), obstruction centrale ; résultats paraxiaux (EPD, F/#, ON, pupilles).</td></tr>
 <tr><td>Longueurs d'onde</td><td>λ en nm, poids, longueur d'onde de référence, couleur ; préréglages.</td></tr>
@@ -3827,14 +3827,14 @@ const HELP = [
 <li><b>Points de sauvegarde</b> : donnez un nom à l'état actuel (★ Créer) pour y revenir plus tard, <b>même après avoir fermé Focale</b> (conservés dans le navigateur, 40 au plus). Charger un point de sauvegarde est lui-même annulable.</li></ul>` },
 
   { id: 'plans', t: 'Plans de fabrication ISO 10110', h: `
-<p>Menu <b>Rapport ▾ → Plans de fabrication ISO 10110…</b> (ou <i>Fichier</i>), puis <b>Aperçu des plans</b> (téléchargement depuis l'aperçu) : un plan A4 par lentille (paires de dioptres séparées par un verre ; les lentilles collées sont dessinées séparément et signalées).</p>
+<p>Menu <b>Rapport ▾ → Plans de fabrication ISO 10110</b> (ou <i>Fichier</i>), puis <b>Aperçu des plans</b> (téléchargement depuis l'aperçu) : un plan A4 par lentille (paires de dioptres séparées par un verre ; les lentilles collées sont dessinées séparément et signalées).</p>
 <ul><li><b>Coupe à l'échelle</b> (échelle normalisée 1:1, 2:1, 5:1…) : contour réel des faces (asphères comprises), diamètres utiles en bleu, axe optique, cotes de l'<b>épaisseur au centre</b> (avec sa tolérance), de l'<b>épaisseur au bord</b> (référence ; alerte si elle est faible), du <b>diamètre extérieur</b> (diamètre utile maximal + 2 × la surépaisseur de bord, ajustement h9) et du diamètre utile, rayons avec CX (convexe) / CC (concave), constante de conicité pour les asphères, chanfreins de protection.</li>
 <li><b>Tableau ISO 10110</b> à trois colonnes : surface gauche | matériau | surface droite. Surfaces : rayon, diamètre utile, traitement, <b>3/</b> A(B) (puissance et irrégularité en franges), <b>4/</b> centrage (minutes d'arc), <b>5/</b> défauts de surface, <b>6/</b> tenue au flux laser. Matériau : verre et fabricant, nd ± Δn, νd ± %, <b>0/</b> biréfringence, <b>1/</b> bulles et inclusions, <b>2/</b> homogénéité et stries, épaisseur, décentrement de l'élément.</li>
 <li>Les tolérances viennent de la <b>liste du tolérancement</b> (TFRN, TIRR, TST*, TET*, TTHI, TIND, TABB, TED*) quand elle existe ; sinon des valeurs par défaut de la fenêtre (mémorisées). Cartouche : titre, élément, échelle, date, dessinateur, feuille.</li></ul>
 <p class="hint">Les franges sont exprimées à 632,8 nm (convention du tolérancement de Focale) ; ISO 10110-5 utilise par défaut 546,07 nm : précisez la longueur d'onde au fabricant si besoin.</p>` },
 
   { id: 'verres', t: 'Verres et catalogues', h: `
-<p>Plus de 1000 verres <b>Schott, Ohara, CDGM et Hoya</b> (base refractiveindex.info, domaine public), plus silice fondue et CaF₂. Bouton <b>Verres…</b> (ou clic droit sur une surface › Choisir le verre) : recherche et filtre par fabricant. Un clic <b>surligne</b> le verre choisi et affiche en bas de la fenêtre la demande de confirmation (verre, nd, νd, surface visée et verre actuel) : <b>Valider</b> l'affecte, <b>Annuler</b> abandonne (Entrée dans la recherche valide aussi). Le verre actuel de la surface est repéré par « · actuel ». La fenêtre reste ouverte : sélectionnez une autre surface dans l'éditeur pour continuer.</p>
+<p>Plus de 1000 verres <b>Schott, Ohara, CDGM et Hoya</b> (base refractiveindex.info, domaine public), plus silice fondue et CaF₂. Bouton <b>Verres</b> (ou clic droit sur une surface › Choisir le verre) : recherche et filtre par fabricant. Un clic <b>surligne</b> le verre choisi et affiche en bas de la fenêtre la demande de confirmation (verre, nd, νd, surface visée et verre actuel) : <b>Valider</b> l'affecte, <b>Annuler</b> abandonne (Entrée dans la recherche valide aussi). Le verre actuel de la surface est repéré par « · actuel ». La fenêtre reste ouverte : sélectionnez une autre surface dans l'éditeur pour continuer.</p>
 <ul>
 <li>Saisie libre avec auto-complétion ; tirets et casse ignorés (<code>nbk7</code> = N-BK7).</li>
 <li>Homonymes : suffixe fabricant, ex. <code>F2_CDGM</code>. Les noms CODE V (<code>NBK7_SCHOTT</code>) sont reconnus.</li>
@@ -3842,7 +3842,7 @@ const HELP = [
 <li><b>Liste</b> : nd, νd, <b>Pg,F</b> (dispersion partielle relative), <b>transmission interne τ₁₀</b> (10 mm d'épaisseur) à la longueur d'onde choisie (« τ à … µm », en orange sous 0,9), <b>prix relatif</b> à N-BK7, <b>densité</b>, <b>résistances chimiques</b> CR / FR / SR / AR / PR (climatique, taches, acides, alcalis, phosphates ; plus petit = meilleur), domaine de validité et statut. Filtres : préférentiels seulement, obsolètes, τ₁₀ minimale.</li>
 <li><b>Diagramme</b> interactif : nd/νd ou <b>Pg,F/νd</b> (pour choisir des verres à dispersion partielle anormale, apochromats), couleur par catalogue, transmission, prix, densité ou ΔPg,F. Survol : fiche du verre ; clic : sélection (puis Valider) ; molette : zoom ; glisser : déplacer ; double-clic : vue entière. Les verres utilisés par le système sont entourés en orange.</li>
 <li>Transmission, densité et résistances viennent de la base refractiveindex.info (catalogues des fabricants) ; le <b>prix relatif</b> n'y figure pas : il est lu dans les fichiers <b>AGF</b> des fabricants (ligne OD), comme la transmission (lignes IT) et la densité (ED).</li>
-<li><b>Import AGF</b> (catalogue Zemax, formules 1 à 13) : glisser-déposer le fichier ou bouton « Importer un AGF… ». Les verres importés sont gardés dans le navigateur et embarqués dans les fichiers .json qui les utilisent.</li>
+<li><b>Import AGF</b> (catalogue Zemax, formules 1 à 13) : glisser-déposer le fichier ou bouton « Importer un AGF ». Les verres importés sont gardés dans le navigateur et embarqués dans les fichiers .json qui les utilisent.</li>
 <li>Un avertissement s'affiche si une longueur d'onde sort du domaine de validité d'un verre.</li>
 <li><b>Données thermiques</b> (dn/dT de Schott et CTE) : incluses pour la plupart des verres des catalogues et lues dans les AGF importés ; modifiables par verre dans Données système → Matériaux.</li>
 </ul>` },
@@ -3926,7 +3926,7 @@ const HELP = [
 <p>L'extrémité de la fibre (gaine, cœur, cône d'ouverture) est dessinée dans le layout au plan objet.</p>` },
 
   { id: 'rapport', t: 'Rapports PDF', h: `
-<p>Menu <b>Rapport ▾</b> de la barre d'outils (ou menu <i>Fichier</i>) : <b>Rapport de conception…</b>, <b>Rapport de tolérancement…</b> (voir <i>Tolérancement</i>) et <b>Plans de fabrication ISO 10110…</b> (voir la rubrique dédiée). Pour le rapport de conception, composez le rapport puis cliquez sur <b>Aperçu du rapport</b>.</p>
+<p>Menu <b>Rapport ▾</b> de la barre d'outils (ou menu <i>Fichier</i>) : <b>Rapport de conception</b>, <b>Rapport de tolérancement</b> (voir <i>Tolérancement</i>) et <b>Plans de fabrication ISO 10110</b> (voir la rubrique dédiée). Pour le rapport de conception, composez le rapport puis cliquez sur <b>Aperçu du rapport</b>.</p>
 <p><b>Aperçu</b> : tous les documents PDF (rapport, rapport de tolérancement, plans ISO 10110) s'ouvrent d'abord dans une visionneuse plein écran, page par page, rendue par Focale elle-même (elle fonctionne aussi dans claude.ai). Zoom −/+ et « Ajuster » (largeur de la fenêtre), défilement, numéro de page. <b>⤓ Télécharger le PDF</b> enregistre le fichier ; ✕ ou Échap ferme l'aperçu pour modifier les réglages et régénérer. Dans claude.ai, Claude demande une confirmation avant le téléchargement.</p>
 <ul><li><b>Titre, auteur, notes</b> : repris en page de garde (avec date, version de Focale et chiffres clés) et dans les pieds de page.</li>
 <li><b>Sections</b> : données du système et paraxiales, prescription (avec asphères et décentrements), multi-configuration (paramètres, synthèse et layout de chaque configuration), layout 2D, performances par champ (spot, front d'onde, Strehl, vignetage), coefficients de Seidel, détecteur, source / fibre, tableau des tolérances de fabrication, tolérancement (résultats déjà calculés : sensibilités, RSS, Monte-Carlo avec histogramme). Voir aussi <i>Rapport de tolérancement</i> (Tolérancement) et <i>Plans de fabrication ISO 10110</i>.</li>
@@ -4001,7 +4001,7 @@ La liste <b>Meilleures solutions</b> (12 solutions distinctes, avec leur mérite
 <ul><li><b>Sensibilité</b> : chaque tolérance seule, à sa borne min puis max ; dégradation (Δ &gt; 0 = pire), part cumulée de la dégradation RSS, dérive de visée (déplacement du rayon principal du 1ᵉʳ champ) et mouvement du compensateur. Estimation RSS de la performance : nominal ± √ΣΔ².</li>
 <li><b>Tolérances inverses</b> (Zemax « Inverse Limit ») : pour chaque tolérance, la valeur ± qui produit une dégradation donnée. Soit une Δ max par tolérance, soit un <b>budget</b> : critère visé après fabrication, la marge étant répartie en RSS (Δ = |cible − nominal|/√n). Valeurs arrondies vers le bas (1 · 1,5 · 2 · 2,5 · 3 · 4 · 5 · 6 · 8 × 10ⁿ), signalées « à resserrer » ou « peut être élargie », et applicables d'un clic à la liste détaillée.</li>
 <li><b>Monte-Carlo</b> : toutes les tolérances tirées simultanément entre leurs bornes (gaussienne tronquée, uniforme, parabolique — extrêmes favorisés — ou extrêmes seulement), avec une <b>graine</b> pour des tirages reproductibles. Résultats : moyenne, écart-type, centiles (50 à 98 %), meilleur et pire, <b>rendement</b> par rapport à une spécification, course du compensateur, dérive de visée, histogramme et fonction de répartition, principaux contributeurs (corrélation). Les tirages pire, médian et meilleur se <b>chargent dans l'éditeur</b> pour être analysés (Ctrl+Z pour revenir).</li></ul>
-<p><b>Rapport de tolérancement</b> (menu <b>Rapport ▾ → Rapport de tolérancement…</b>, menu <i>Fichier</i> ou depuis cette fenêtre) : document pour le fabricant avec page de garde, données et prescription, layout, <b>tableau des tolérances de fabrication</b> classé par lentille (valeur nominale, tolérance ±, notation ISO 10110 3/ et 4/, colonne « Retenue » avec les tolérances arrondies du calcul inverse), compensateurs et course de mise au point observée au Monte-Carlo, dégradation RSS et rendement, puis toutes les analyses calculées. Le même tableau peut être ajouté au rapport PDF général (section « Tableau des tolérances de fabrication »). Les plans ISO 10110 reprennent ces tolérances.</p>
+<p><b>Rapport de tolérancement</b> (menu <b>Rapport ▾ → Rapport de tolérancement</b>, menu <i>Fichier</i> ou depuis cette fenêtre) : document pour le fabricant avec page de garde, données et prescription, layout, <b>tableau des tolérances de fabrication</b> classé par lentille (valeur nominale, tolérance ±, notation ISO 10110 3/ et 4/, colonne « Retenue » avec les tolérances arrondies du calcul inverse), compensateurs et course de mise au point observée au Monte-Carlo, dégradation RSS et rendement, puis toutes les analyses calculées. Le même tableau peut être ajouté au rapport PDF général (section « Tableau des tolérances de fabrication »). Les plans ISO 10110 reprennent ces tolérances.</p>
 <p>Les calculs sont répartis sur plusieurs cœurs (Web Workers) et tournent en tâche de fond : on peut fermer la fenêtre ou continuer à éditer ; <b>Arrêter</b> interrompt le calcul en gardant les résultats déjà obtenus. Avec une multi-configuration, le tolérancement porte sur la configuration active.</p>
 <p>« Exporter CSV » copie tous les résultats (y compris chaque tirage Monte-Carlo et ses valeurs) ; le rapport PDF reprend les trois analyses.</p>` },
 
@@ -4027,7 +4027,7 @@ La liste <b>Meilleures solutions</b> (12 solutions distinctes, avec leur mérite
 <h4>Module facultatif</h4>
 <p>L'assistant est un fichier séparé, <code>assistant.js</code>, chargé seulement quand on clique sur le bouton : <code>index.html</code> seul est un Focale complet. Pour une installation sans assistant, il suffit de ne pas copier <code>assistant.js</code> ; <b>Fichier › Masquer le bouton Assistant</b> retire le bouton de l'en-tête.</p>` },
   { id: 'fichiers', t: 'Fichiers, Zemax et CODE V', h: `
-<ul><li><b>Ctrl+O</b> ouvrir, <b>Ctrl+S</b> enregistrer (.json, format natif complet), <i>Enregistrer sous…</i></li>
+<ul><li><b>Ctrl+O</b> ouvrir, <b>Ctrl+S</b> enregistrer (.json, format natif complet), <i>Enregistrer sous</i></li>
 <li><b>Glisser-déposer</b> d'un fichier <b>.zmx</b>, <b>.seq</b>, .json ou .agf sur la fenêtre, ou <i>Fichier → Importer un système</i> : le format est reconnu automatiquement. Les .zmx enregistrés en UTF-16 (cas courant) sont décodés.</li>
 <li><i>Fichier → Exporter Zemax (.zmx)</i> et <i>Exporter CODE V (.seq)</i> téléchargent le fichier ; <i>Afficher / copier le texte</i> montre les trois formats.</li>
 <li>Après un import ou un export, un <b>rapport</b> liste ce qui a été converti ou ignoré.</li></ul>
@@ -5244,7 +5244,7 @@ function ctxMenu(x, y, i) {
   const it = (c, l, on = true, kb = '', cls = '') => `<button data-c="${c}" class="${cls}" ${on ? '' : 'disabled'}>${l}${kb ? `<span class="kb">${kb}</span>` : ''}</button>`;
   m.innerHTML = `<div class="hint" style="padding:4px 10px 6px">Surface ${i}${i === 0 ? ' (objet)' : i === N ? ' (image)' : s.comment ? ' — ' + esc(s.comment) : ''}</div>`
     + it('insB', 'Insérer une surface avant', i > 0) + it('insA', 'Insérer une surface après', i < N, 'Inser') + it('addLens', 'Ajouter une lentille après', i < N)
-    + '<hr>' + it('qfocus', 'Quick focus (meilleur foyer)', true, 'Ctrl+Maj+F') + it('glasses', 'Choisir le verre dans le catalogue…', i < N) + it('vg', s.vg ? 'Verre fixe (retirer la variable)' : 'Verre variable (nd/νd, puis substitution)', opt && !OE.isAir(s.glass) && !OE.isMirror(s)) + it('stop', 'Définir comme diaphragme', opt && !s.stop) + it('mirror', OE.isMirror(s) ? 'Redevenir un dioptre' : 'Transformer en miroir', opt) + it('flip', 'Retourner l\'élément', i > 0 && i < N - 1)
+    + '<hr>' + it('qfocus', 'Quick focus (meilleur foyer)', true, 'Ctrl+Maj+F') + it('glasses', 'Choisir le verre dans le catalogue', i < N) + it('vg', s.vg ? 'Verre fixe (retirer la variable)' : 'Verre variable (nd/νd, puis substitution)', opt && !OE.isAir(s.glass) && !OE.isMirror(s)) + it('stop', 'Définir comme diaphragme', opt && !s.stop) + it('mirror', OE.isMirror(s) ? 'Redevenir un dioptre' : 'Transformer en miroir', opt) + it('flip', 'Retourner l\'élément', i > 0 && i < N - 1)
     + '<hr>' + it('del', 'Supprimer la surface', opt && N > 2, 'Suppr', 'danger') + it('delEl', `Supprimer l'élément (surfaces ${i} et ${i + 1})`, lens && N > 3, '', 'danger');
   m.classList.add('open'); m.style.left = '0px'; m.style.top = '0px';
   const r = m.getBoundingClientRect(); m.style.left = Math.min(x, innerWidth - r.width - 6) + 'px'; m.style.top = Math.min(y, innerHeight - r.height - 6) + 'px';
@@ -5299,7 +5299,7 @@ function renderSide() {
   if (!apOpts.find(o => o[0] === ap.type)) ap.type = 'EPD';
   const ft = ftypeOf(s), fu = OE.FTYPES[ft].u;
   const el = document.activeElement; const keep = el && el.closest && el.closest('#side') && el.dataset.f ? `[data-f="${el.dataset.f}"]${el.dataset.k ? `[data-k="${el.dataset.k}"]` : ''}${el.dataset.i != null ? `[data-i="${el.dataset.i}"]` : ''}` : null;
-  let h = `<div class="sidebar-h"><button class="bt" data-act="sysdata" title="Données système façon CODE V : pupille, longueurs d'onde, champs et vignetage, température et pression, dn/dT, avancé (Ctrl+Maj+D)">⚙ Données système…</button><span class="grow"></span><button class="x" data-help="systeme" title="Aide : ouverture, champs, longueurs d'onde">?</button>${App.fw.side ? '' : '<button class="x" data-fw="side" title="Détacher ce panneau dans une fenêtre flottante">⧉</button>'}</div>`;
+  let h = `<div class="sidebar-h"><button class="bt" data-act="sysdata" title="Données système façon CODE V : pupille, longueurs d'onde, champs et vignetage, température et pression, dn/dT, avancé (Ctrl+Maj+D)">⚙ Données système</button><span class="grow"></span><button class="x" data-help="systeme" title="Aide : ouverture, champs, longueurs d'onde">?</button>${App.fw.side ? '' : '<button class="x" data-fw="side" title="Détacher ce panneau dans une fenêtre flottante">⧉</button>'}</div>`;
   h += card('gen', 'Système', `
     <div class="row"><input class="in" style="flex:1" data-f="title" value="${esc(s.title)}" placeholder="Titre du système"></div>`);
   h += inspector();
@@ -5313,7 +5313,7 @@ function renderSide() {
     <table class="mt"><tr><th></th><th>X (${fu})</th><th>Y (${fu})</th><th>Poids</th><th></th></tr>
     ${s.fields.map((f, i) => `<tr><td><button class="cpk" data-cpk="f" data-i="${i}" style="background:${hexCol(fcol(i))}" title="Couleur du champ ${i + 1} (clic pour la changer)" aria-label="Couleur du champ ${i + 1}"></button></td><td><input class="in" data-f="fx" data-i="${i}" value="${fmt(f.x || 0, 6)}"></td><td><input class="in" data-f="fy" data-i="${i}" value="${fmt(f.y, 6)}"></td><td><input class="in" data-f="fw" style="width:44px" data-i="${i}" value="${fmt(f.w ?? 1, 4)}"></td><td><button class="x" data-a="fdel" data-i="${i}" title="Supprimer">✕</button></td></tr>`).join('')}
     </table><button class="add" data-a="fadd">+ Ajouter un champ</button>
-    <div class="chips"><button class="chip" data-a="fspread">Répartir 0 · 0.7 · 1</button><button class="chip" data-a="sdfld" title="Vignetage (VUY, VLY, VUX, VLX), génération et conversion des champs">Vignetage…</button></div>${s.fields.some(f => +f.vuy || +f.vly || +f.vux || +f.vlx) ? '<div class="hint">Facteurs de vignetage actifs (voir Données système).</div>' : ''}`);
+    <div class="chips"><button class="chip" data-a="fspread">Répartir 0 · 0.7 · 1</button><button class="chip" data-a="sdfld" title="Vignetage (VUY, VLY, VUX, VLX), génération et conversion des champs">Vignetage</button></div>${s.fields.some(f => +f.vuy || +f.vly || +f.vux || +f.vlx) ? '<div class="hint">Facteurs de vignetage actifs (voir Données système).</div>' : ''}`);
   h += card('wl', 'Longueurs d\'onde (µm)', `
     <table class="mt"><tr><th></th><th>λ (µm)</th><th>Poids</th><th title="Primaire">Prim.</th><th></th></tr>
     ${s.wavelengths.map((w, i) => `<tr><td><button class="cpk" data-cpk="w" data-i="${i}" style="background:${hexCol(wlCol(w.um))}" title="Couleur de λ${i + 1} (clic pour la changer)" aria-label="Couleur de la longueur d'onde ${i + 1}"></button></td><td><input class="in" data-f="wum" data-i="${i}" value="${fmt(w.um, 7)}"></td><td><input class="in" data-f="ww" style="width:48px" data-i="${i}" value="${fmt(w.w ?? 1, 4)}"></td><td style="text-align:center"><input type="radio" name="prim" data-f="wp" data-i="${i}" ${i === s.primary ? 'checked' : ''}></td><td><button class="x" data-a="wdel" data-i="${i}">✕</button></td></tr>`).join('')}
@@ -5394,7 +5394,7 @@ function openGlasses() {
       <label class="hint"><input type="checkbox" id="gp"> préférentiels</label><label class="hint"><input type="checkbox" id="go"> obsolètes</label>
       <label class="hint" title="Longueur d'onde de la transmission interne affichée">τ à <input class="in" id="gtl" value="${GLW.tl}" style="width:46px"> µm</label>
       <label class="hint" title="Transmission interne minimale pour 10 mm (0 à 1) ; vide = pas de filtre">τ₁₀ ≥ <input class="in" id="gtm" value="${GLW.tm ?? ''}" style="width:42px" placeholder="—"></label>
-      <button class="bt" data-d="agf">Importer un AGF…</button></div>
+      <button class="bt" data-d="agf">Importer un AGF</button></div>
     <div class="row" id="gmapopt" style="display:${GLW.view === 'map' ? 'flex' : 'none'};gap:8px"><label class="hint">Axes <select class="in" id="gax"><option value="nd" ${GLW.ax === 'nd' ? 'selected' : ''}>nd / νd</option><option value="pgf" ${GLW.ax === 'pgf' ? 'selected' : ''}>Pg,F / νd (dispersion partielle)</option></select></label>
       <label class="hint">Couleur <select class="in" id="gcol">${[['cat', 'catalogue'], ['tau', 'transmission τ₁₀'], ['cost', 'prix relatif'], ['dens', 'densité'], ['dpgf', 'ΔPg,F']].map(([k, l]) => `<option value="${k}" ${GLW.col === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label><span class="hint">survol : détails · clic : choisir · molette : zoom · glisser : déplacer · double-clic : vue entière</span></div>
     <div class="hint" id="gn"></div>
@@ -6059,12 +6059,12 @@ function paneHeader(pi) {
   if (t.s) h += `<select data-p="si"><option value="">Surface sélectionnée</option>${s.surfaces.map((x, i) => i ? `<option value="${i}" ${p.si === i ? 'selected' : ''}>Surface ${i}${x.comment ? ' · ' + esc(x.comment) : ''}</option>` : '').join('')}</select>`;
   if (p.type === 'detector') h += `<select data-p="phase"><option value="centre" ${(p.phase || 'centre') === 'centre' ? 'selected' : ''}>centrée sur un pixel</option><option value="coin" ${p.phase === 'coin' ? 'selected' : ''}>centrée sur un coin</option></select>`;
   if (p.type === 'source') {
-    const S = src(); h += `<span class="hint">Source : <b>${S.type === 'fiber' ? ({ si: 'fibre SI', gi: 'fibre GI', sm: 'fibre monomode' })[S.fib] + ' ' + fmt(S.core, 4) + ' µm, ON ' + fmt(S.na, 3) : (SRCT.find(q => q[0] === S.type) || [0, ''])[1]}</b></span><button class="bt" data-p="srccfg" style="height:24px">Configurer…</button>`;
+    const S = src(); h += `<span class="hint">Source : <b>${S.type === 'fiber' ? ({ si: 'fibre SI', gi: 'fibre GI', sm: 'fibre monomode' })[S.fib] + ' ' + fmt(S.core, 4) + ' µm, ON ' + fmt(S.na, 3) : (SRCT.find(q => q[0] === S.type) || [0, ''])[1]}</b></span><button class="bt" data-p="srccfg" style="height:24px">Configurer</button>`;
     if (det().on) h += `<label><input type="checkbox" data-p="pix" ${p.pix ? 'checked' : ''}>pixels</label>`;
   }
   if (p.type === 'imgsim' && det().on) h += `<label title="Échantillonner l'image sur les pixels du détecteur (bruit inclus si activé)"><input type="checkbox" data-p="det" ${p.det !== false ? 'checked' : ''}>détecteur</label>`;
   if (p.type === 'polar') h += `<select data-p="st">${[['X', 'Linéaire X'], ['Y', 'Linéaire Y'], ['P45', 'Linéaire +45°'], ['M45', 'Linéaire −45°'], ['RCP', 'Circulaire droite'], ['LCP', 'Circulaire gauche'], ['NONE', 'Non polarisée']].map(([k, l]) => `<option value="${k}" ${(p.st || 'X') === k ? 'selected' : ''}>${l}</option>`).join('')}</select><label title="Pertes et déphasages de Fresnel aux dioptres non traités"><input type="checkbox" data-p="fresnel" ${p.fresnel !== false ? 'checked' : ''}>Fresnel</label>`;
-  if (p.type === 'imgsim') h += `<select data-p="src">${SIMSRC.map(([k, l]) => `<option value="${k}" ${(p.src || 'mire') === k ? 'selected' : ''}>${l}</option>`).join('')}${App.userImg ? `<option value="user" ${p.src === 'user' ? 'selected' : ''}>${esc(App.userImg.name)}</option>` : ''}</select><button class="bt" data-p="load" style="height:24px">Image…</button>
+  if (p.type === 'imgsim') h += `<select data-p="src">${SIMSRC.map(([k, l]) => `<option value="${k}" ${(p.src || 'mire') === k ? 'selected' : ''}>${l}</option>`).join('')}${App.userImg ? `<option value="user" ${p.src === 'user' ? 'selected' : ''}>${esc(App.userImg.name)}</option>` : ''}</select><button class="bt" data-p="load" style="height:24px">Image</button>
     <select data-p="res">${[128, 192, 256, 384].map(r => `<option value="${r}" ${(p.res || 192) == r ? 'selected' : ''}>${r} px</option>`).join('')}</select>
     <label title="Demi-champ objet couvert par l'image (vide : champ max du système)">½ champ <input class="in" data-p="fov" style="width:52px;height:22px" value="${p.fov || ''}" placeholder="auto"></label>
     <label><input type="checkbox" data-p="upright" ${p.upright ? 'checked' : ''}>redresser</label><button class="bt" data-p="run" style="height:24px">▶ Simuler</button>`;
@@ -7829,7 +7829,7 @@ function openImport() {
   dlg(`<h2>Importer un système <button class="x" data-d="close">✕</button></h2><div class="db">
   <div class="hint">Collez un fichier <b>Zemax OpticStudio (.zmx)</b>, <b>CODE V (.seq)</b> ou JSON Focale — le format est reconnu automatiquement — ou choisissez un fichier (les .zmx en UTF-16 sont pris en charge).</div>
   <textarea id="imTxt" spellcheck="false" placeholder="VERS …&#10;MODE SEQ&#10;SURF 0 …   (Zemax)&#10;&#10;RDM;LEN&#10;EPD 10 …&#10;SO 0 1e18&#10;S 22.01 3.26 NSK16_SCHOTT …   (CODE V)"></textarea></div>
-  <div class="df"><button class="bt" data-d="pick">Choisir un fichier…</button><button class="tb pri" data-d="load">Importer</button></div>`);
+  <div class="df"><button class="bt" data-d="pick">Choisir un fichier</button><button class="tb pri" data-d="load">Importer</button></div>`);
 }
 function openHelp(id, anchor) {
   const nav = HELP.map(x => `<button class="hn" data-h="${x.id}">${x.t}</button>`).join('');
@@ -8414,7 +8414,7 @@ function openTolReport() {
     <div class="row"><label style="width:120px">Auteur</label><input class="in" id="trau" value="${esc(TR.author || rptCfg().author || '')}" style="flex:1"></div>
     <div class="row"><label style="width:120px">Notes</label><textarea class="in" id="trno" rows="3" style="flex:1">${esc(TR.notes || '')}</textarea></div>
     <label class="row"><input type="checkbox" id="trinv" ${TR.useInv ? 'checked' : ''} ${TOL.inv ? '' : 'disabled'}> ajouter la colonne des tolérances retenues (calcul inverse, arrondies)</label>
-    <div class="row" style="gap:8px"><button class="bt" data-d="tolopen">Ouvrir le tolérancement…</button><button class="bt" data-d="dwopen">Plans ISO 10110…</button></div></div>
+    <div class="row" style="gap:8px"><button class="bt" data-d="tolopen">Ouvrir le tolérancement</button><button class="bt" data-d="dwopen">Plans ISO 10110</button></div></div>
     <div class="df"><span class="hint grow" id="trmsg"></span><button class="tb pri" data-d="trgen" title="Génère le rapport et l'affiche en aperçu ; le téléchargement se fait depuis l'aperçu">Aperçu du rapport</button></div>`, true, { w: 720, h: 480 });
   $('#trau').addEventListener('change', e => TR.author = e.target.value); $('#trno').addEventListener('change', e => TR.notes = e.target.value); $('#trinv').addEventListener('change', e => TR.useInv = e.target.checked);
 }

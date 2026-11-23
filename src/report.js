@@ -393,7 +393,7 @@ function openTolReport() {
     <div class="row"><label style="width:120px">Auteur</label><input class="in" id="trau" value="${esc(TR.author || rptCfg().author || '')}" style="flex:1"></div>
     <div class="row"><label style="width:120px">Notes</label><textarea class="in" id="trno" rows="3" style="flex:1">${esc(TR.notes || '')}</textarea></div>
     <label class="row"><input type="checkbox" id="trinv" ${TR.useInv ? 'checked' : ''} ${TOL.inv ? '' : 'disabled'}> ajouter la colonne des tolérances retenues (calcul inverse, arrondies)</label>
-    <div class="row" style="gap:8px"><button class="bt" data-d="tolopen">Ouvrir le tolérancement…</button><button class="bt" data-d="dwopen">Plans ISO 10110…</button></div></div>
+    <div class="row" style="gap:8px"><button class="bt" data-d="tolopen">Ouvrir le tolérancement</button><button class="bt" data-d="dwopen">Plans ISO 10110</button></div></div>
     <div class="df"><span class="hint grow" id="trmsg"></span><button class="tb pri" data-d="trgen" title="Génère le rapport et l'affiche en aperçu ; le téléchargement se fait depuis l'aperçu">Aperçu du rapport</button></div>`, true, { w: 720, h: 480 });
   $('#trau').addEventListener('change', e => TR.author = e.target.value); $('#trno').addEventListener('change', e => TR.notes = e.target.value); $('#trinv').addEventListener('change', e => TR.useInv = e.target.checked);
 }

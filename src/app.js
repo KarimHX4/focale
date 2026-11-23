@@ -308,7 +308,7 @@ function ctxMenu(x, y, i) {
   const it = (c, l, on = true, kb = '', cls = '') => `<button data-c="${c}" class="${cls}" ${on ? '' : 'disabled'}>${l}${kb ? `<span class="kb">${kb}</span>` : ''}</button>`;
   m.innerHTML = `<div class="hint" style="padding:4px 10px 6px">Surface ${i}${i === 0 ? ' (objet)' : i === N ? ' (image)' : s.comment ? ' — ' + esc(s.comment) : ''}</div>`
     + it('insB', 'Insérer une surface avant', i > 0) + it('insA', 'Insérer une surface après', i < N, 'Inser') + it('addLens', 'Ajouter une lentille après', i < N)
-    + '<hr>' + it('qfocus', 'Quick focus (meilleur foyer)', true, 'Ctrl+Maj+F') + it('glasses', 'Choisir le verre dans le catalogue…', i < N) + it('vg', s.vg ? 'Verre fixe (retirer la variable)' : 'Verre variable (nd/νd, puis substitution)', opt && !OE.isAir(s.glass) && !OE.isMirror(s)) + it('stop', 'Définir comme diaphragme', opt && !s.stop) + it('mirror', OE.isMirror(s) ? 'Redevenir un dioptre' : 'Transformer en miroir', opt) + it('flip', 'Retourner l\'élément', i > 0 && i < N - 1)
+    + '<hr>' + it('qfocus', 'Quick focus (meilleur foyer)', true, 'Ctrl+Maj+F') + it('glasses', 'Choisir le verre dans le catalogue', i < N) + it('vg', s.vg ? 'Verre fixe (retirer la variable)' : 'Verre variable (nd/νd, puis substitution)', opt && !OE.isAir(s.glass) && !OE.isMirror(s)) + it('stop', 'Définir comme diaphragme', opt && !s.stop) + it('mirror', OE.isMirror(s) ? 'Redevenir un dioptre' : 'Transformer en miroir', opt) + it('flip', 'Retourner l\'élément', i > 0 && i < N - 1)
     + '<hr>' + it('del', 'Supprimer la surface', opt && N > 2, 'Suppr', 'danger') + it('delEl', `Supprimer l'élément (surfaces ${i} et ${i + 1})`, lens && N > 3, '', 'danger');
   m.classList.add('open'); m.style.left = '0px'; m.style.top = '0px';
   const r = m.getBoundingClientRect(); m.style.left = Math.min(x, innerWidth - r.width - 6) + 'px'; m.style.top = Math.min(y, innerHeight - r.height - 6) + 'px';
@@ -363,7 +363,7 @@ function renderSide() {
   if (!apOpts.find(o => o[0] === ap.type)) ap.type = 'EPD';
   const ft = ftypeOf(s), fu = OE.FTYPES[ft].u;
   const el = document.activeElement; const keep = el && el.closest && el.closest('#side') && el.dataset.f ? `[data-f="${el.dataset.f}"]${el.dataset.k ? `[data-k="${el.dataset.k}"]` : ''}${el.dataset.i != null ? `[data-i="${el.dataset.i}"]` : ''}` : null;
-  let h = `<div class="sidebar-h"><button class="bt" data-act="sysdata" title="Données système façon CODE V : pupille, longueurs d'onde, champs et vignetage, température et pression, dn/dT, avancé (Ctrl+Maj+D)">⚙ Données système…</button><span class="grow"></span><button class="x" data-help="systeme" title="Aide : ouverture, champs, longueurs d'onde">?</button>${App.fw.side ? '' : '<button class="x" data-fw="side" title="Détacher ce panneau dans une fenêtre flottante">⧉</button>'}</div>`;
+  let h = `<div class="sidebar-h"><button class="bt" data-act="sysdata" title="Données système façon CODE V : pupille, longueurs d'onde, champs et vignetage, température et pression, dn/dT, avancé (Ctrl+Maj+D)">⚙ Données système</button><span class="grow"></span><button class="x" data-help="systeme" title="Aide : ouverture, champs, longueurs d'onde">?</button>${App.fw.side ? '' : '<button class="x" data-fw="side" title="Détacher ce panneau dans une fenêtre flottante">⧉</button>'}</div>`;
   h += card('gen', 'Système', `
     <div class="row"><input class="in" style="flex:1" data-f="title" value="${esc(s.title)}" placeholder="Titre du système"></div>`);
   h += inspector();
@@ -377,7 +377,7 @@ function renderSide() {
     <table class="mt"><tr><th></th><th>X (${fu})</th><th>Y (${fu})</th><th>Poids</th><th></th></tr>
     ${s.fields.map((f, i) => `<tr><td><button class="cpk" data-cpk="f" data-i="${i}" style="background:${hexCol(fcol(i))}" title="Couleur du champ ${i + 1} (clic pour la changer)" aria-label="Couleur du champ ${i + 1}"></button></td><td><input class="in" data-f="fx" data-i="${i}" value="${fmt(f.x || 0, 6)}"></td><td><input class="in" data-f="fy" data-i="${i}" value="${fmt(f.y, 6)}"></td><td><input class="in" data-f="fw" style="width:44px" data-i="${i}" value="${fmt(f.w ?? 1, 4)}"></td><td><button class="x" data-a="fdel" data-i="${i}" title="Supprimer">✕</button></td></tr>`).join('')}
     </table><button class="add" data-a="fadd">+ Ajouter un champ</button>
-    <div class="chips"><button class="chip" data-a="fspread">Répartir 0 · 0.7 · 1</button><button class="chip" data-a="sdfld" title="Vignetage (VUY, VLY, VUX, VLX), génération et conversion des champs">Vignetage…</button></div>${s.fields.some(f => +f.vuy || +f.vly || +f.vux || +f.vlx) ? '<div class="hint">Facteurs de vignetage actifs (voir Données système).</div>' : ''}`);
+    <div class="chips"><button class="chip" data-a="fspread">Répartir 0 · 0.7 · 1</button><button class="chip" data-a="sdfld" title="Vignetage (VUY, VLY, VUX, VLX), génération et conversion des champs">Vignetage</button></div>${s.fields.some(f => +f.vuy || +f.vly || +f.vux || +f.vlx) ? '<div class="hint">Facteurs de vignetage actifs (voir Données système).</div>' : ''}`);
   h += card('wl', 'Longueurs d\'onde (µm)', `
     <table class="mt"><tr><th></th><th>λ (µm)</th><th>Poids</th><th title="Primaire">Prim.</th><th></th></tr>
     ${s.wavelengths.map((w, i) => `<tr><td><button class="cpk" data-cpk="w" data-i="${i}" style="background:${hexCol(wlCol(w.um))}" title="Couleur de λ${i + 1} (clic pour la changer)" aria-label="Couleur de la longueur d'onde ${i + 1}"></button></td><td><input class="in" data-f="wum" data-i="${i}" value="${fmt(w.um, 7)}"></td><td><input class="in" data-f="ww" style="width:48px" data-i="${i}" value="${fmt(w.w ?? 1, 4)}"></td><td style="text-align:center"><input type="radio" name="prim" data-f="wp" data-i="${i}" ${i === s.primary ? 'checked' : ''}></td><td><button class="x" data-a="wdel" data-i="${i}">✕</button></td></tr>`).join('')}
@@ -458,7 +458,7 @@ function openGlasses() {
       <label class="hint"><input type="checkbox" id="gp"> préférentiels</label><label class="hint"><input type="checkbox" id="go"> obsolètes</label>
       <label class="hint" title="Longueur d'onde de la transmission interne affichée">τ à <input class="in" id="gtl" value="${GLW.tl}" style="width:46px"> µm</label>
       <label class="hint" title="Transmission interne minimale pour 10 mm (0 à 1) ; vide = pas de filtre">τ₁₀ ≥ <input class="in" id="gtm" value="${GLW.tm ?? ''}" style="width:42px" placeholder="—"></label>
-      <button class="bt" data-d="agf">Importer un AGF…</button></div>
+      <button class="bt" data-d="agf">Importer un AGF</button></div>
     <div class="row" id="gmapopt" style="display:${GLW.view === 'map' ? 'flex' : 'none'};gap:8px"><label class="hint">Axes <select class="in" id="gax"><option value="nd" ${GLW.ax === 'nd' ? 'selected' : ''}>nd / νd</option><option value="pgf" ${GLW.ax === 'pgf' ? 'selected' : ''}>Pg,F / νd (dispersion partielle)</option></select></label>
       <label class="hint">Couleur <select class="in" id="gcol">${[['cat', 'catalogue'], ['tau', 'transmission τ₁₀'], ['cost', 'prix relatif'], ['dens', 'densité'], ['dpgf', 'ΔPg,F']].map(([k, l]) => `<option value="${k}" ${GLW.col === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label><span class="hint">survol : détails · clic : choisir · molette : zoom · glisser : déplacer · double-clic : vue entière</span></div>
     <div class="hint" id="gn"></div>
@@ -1123,12 +1123,12 @@ function paneHeader(pi) {
   if (t.s) h += `<select data-p="si"><option value="">Surface sélectionnée</option>${s.surfaces.map((x, i) => i ? `<option value="${i}" ${p.si === i ? 'selected' : ''}>Surface ${i}${x.comment ? ' · ' + esc(x.comment) : ''}</option>` : '').join('')}</select>`;
   if (p.type === 'detector') h += `<select data-p="phase"><option value="centre" ${(p.phase || 'centre') === 'centre' ? 'selected' : ''}>centrée sur un pixel</option><option value="coin" ${p.phase === 'coin' ? 'selected' : ''}>centrée sur un coin</option></select>`;
   if (p.type === 'source') {
-    const S = src(); h += `<span class="hint">Source : <b>${S.type === 'fiber' ? ({ si: 'fibre SI', gi: 'fibre GI', sm: 'fibre monomode' })[S.fib] + ' ' + fmt(S.core, 4) + ' µm, ON ' + fmt(S.na, 3) : (SRCT.find(q => q[0] === S.type) || [0, ''])[1]}</b></span><button class="bt" data-p="srccfg" style="height:24px">Configurer…</button>`;
+    const S = src(); h += `<span class="hint">Source : <b>${S.type === 'fiber' ? ({ si: 'fibre SI', gi: 'fibre GI', sm: 'fibre monomode' })[S.fib] + ' ' + fmt(S.core, 4) + ' µm, ON ' + fmt(S.na, 3) : (SRCT.find(q => q[0] === S.type) || [0, ''])[1]}</b></span><button class="bt" data-p="srccfg" style="height:24px">Configurer</button>`;
     if (det().on) h += `<label><input type="checkbox" data-p="pix" ${p.pix ? 'checked' : ''}>pixels</label>`;
   }
   if (p.type === 'imgsim' && det().on) h += `<label title="Échantillonner l'image sur les pixels du détecteur (bruit inclus si activé)"><input type="checkbox" data-p="det" ${p.det !== false ? 'checked' : ''}>détecteur</label>`;
   if (p.type === 'polar') h += `<select data-p="st">${[['X', 'Linéaire X'], ['Y', 'Linéaire Y'], ['P45', 'Linéaire +45°'], ['M45', 'Linéaire −45°'], ['RCP', 'Circulaire droite'], ['LCP', 'Circulaire gauche'], ['NONE', 'Non polarisée']].map(([k, l]) => `<option value="${k}" ${(p.st || 'X') === k ? 'selected' : ''}>${l}</option>`).join('')}</select><label title="Pertes et déphasages de Fresnel aux dioptres non traités"><input type="checkbox" data-p="fresnel" ${p.fresnel !== false ? 'checked' : ''}>Fresnel</label>`;
-  if (p.type === 'imgsim') h += `<select data-p="src">${SIMSRC.map(([k, l]) => `<option value="${k}" ${(p.src || 'mire') === k ? 'selected' : ''}>${l}</option>`).join('')}${App.userImg ? `<option value="user" ${p.src === 'user' ? 'selected' : ''}>${esc(App.userImg.name)}</option>` : ''}</select><button class="bt" data-p="load" style="height:24px">Image…</button>
+  if (p.type === 'imgsim') h += `<select data-p="src">${SIMSRC.map(([k, l]) => `<option value="${k}" ${(p.src || 'mire') === k ? 'selected' : ''}>${l}</option>`).join('')}${App.userImg ? `<option value="user" ${p.src === 'user' ? 'selected' : ''}>${esc(App.userImg.name)}</option>` : ''}</select><button class="bt" data-p="load" style="height:24px">Image</button>
     <select data-p="res">${[128, 192, 256, 384].map(r => `<option value="${r}" ${(p.res || 192) == r ? 'selected' : ''}>${r} px</option>`).join('')}</select>
     <label title="Demi-champ objet couvert par l'image (vide : champ max du système)">½ champ <input class="in" data-p="fov" style="width:52px;height:22px" value="${p.fov || ''}" placeholder="auto"></label>
     <label><input type="checkbox" data-p="upright" ${p.upright ? 'checked' : ''}>redresser</label><button class="bt" data-p="run" style="height:24px">▶ Simuler</button>`;
@@ -2893,7 +2893,7 @@ function openImport() {
   dlg(`<h2>Importer un système <button class="x" data-d="close">✕</button></h2><div class="db">
   <div class="hint">Collez un fichier <b>Zemax OpticStudio (.zmx)</b>, <b>CODE V (.seq)</b> ou JSON Focale — le format est reconnu automatiquement — ou choisissez un fichier (les .zmx en UTF-16 sont pris en charge).</div>
   <textarea id="imTxt" spellcheck="false" placeholder="VERS …&#10;MODE SEQ&#10;SURF 0 …   (Zemax)&#10;&#10;RDM;LEN&#10;EPD 10 …&#10;SO 0 1e18&#10;S 22.01 3.26 NSK16_SCHOTT …   (CODE V)"></textarea></div>
-  <div class="df"><button class="bt" data-d="pick">Choisir un fichier…</button><button class="tb pri" data-d="load">Importer</button></div>`);
+  <div class="df"><button class="bt" data-d="pick">Choisir un fichier</button><button class="tb pri" data-d="load">Importer</button></div>`);
 }
 function openHelp(id, anchor) {
   const nav = HELP.map(x => `<button class="hn" data-h="${x.id}">${x.t}</button>`).join('');
