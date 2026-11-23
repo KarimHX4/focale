@@ -105,10 +105,11 @@ function openAssistant() {
 /* ---------------- Rafraîchissement ---------------- */
 let paneTimer = null;
 function refresh(opts = {}) {
-  const t0 = performance.now();
+  const t0 = performance.now(); App.sysKey = null;
+  if (App.sys.mc) OE.mcSync(App.sys);
   try { App.M = OE.prepare(App.sys); } catch (e) { console.error(e); App.M = { ok: false, errors: ['Erreur de calcul : ' + e.message] }; }
   App.sel = Math.min(Math.max(1, App.sel), App.sys.surfaces.length - 1);
-  renderLDE(); renderSide(); drawLayout(); if (window.GLW) GLW.refresh?.(); if (WIN.key === 'Données système') renderSD();
+  renderLDE(); renderSide(); drawLayout(); if (window.GLW) GLW.refresh?.(); if (WIN.key === 'Données système') renderSD(); if (WIN.key === 'Multi-configuration') renderMC(); renderMCBar();
   App.lastPrep = performance.now() - t0;
   clearTimeout(paneTimer);
   paneTimer = setTimeout(renderPanes, opts.fast ? 0 : 40);
@@ -122,7 +123,8 @@ function status(extra) {
   <span>TTL <span class="k">${fx(p.ttl, 2)}</span></span><span>Variables <span class="k">${OE.getVars(s).length}</span></span>
   ${M.env ? `<span title="Environnement (Données système → Température et pression)">🌡 <span class="k">${fmt(M.env.T, 4)} °C · ${fmt(M.env.P, 4)} atm</span></span>` : ''}
   ${M.warnings && M.warnings.length ? `<span style="color:var(--warn)" title="${esc(M.warnings.join('\n'))}">⚠ ${M.warnings.length} avertissement(s)</span>` : ''}
-  <span class="grow"></span><span>${extra || ''}</span><span>calcul <span class="k">${(App.lastPanes || 0).toFixed(0)} ms</span></span>`;
+  <span class="grow"></span><span id="bgst"></span><span>${extra || ''}</span><span>calcul <span class="k">${(App.lastPanes || 0).toFixed(0)} ms</span></span>`;
+  bgStatus();
 }
 
 /* ---------------- Éditeur de lentilles ---------------- */
@@ -153,6 +155,9 @@ function renderLDE() {
   });
   h += '</tbody>';
   const tb = $('#lde'); tb.innerHTML = h;
+  // valeurs pilotées par la multi-configuration
+  if (OE.mcOn(App.sys)) { const KM = { THI: 't', RAD: 'r', GLA: 'glass', SD: 'sd', CNC: 'k' }, nm = mcName(App.sys, App.sys.mc.cur | 0);
+    for (const op of App.sys.mc.ops) { const k = KM[op.type]; if (!k) continue; const inp = tb.querySelector(`input[data-i="${op.i}"][data-k="${k}"]`); if (inp) { inp.classList.add('mcc'); inp.title = `Valeur de « ${nm} » (multi-configuration : ${op.v.map(v => v === Infinity ? '∞' : typeof v === 'number' ? fmt(v, 6) : v).join(' / ')})`; } } }
   if (App.focus) { const f = App.focus; App.focus = null; const inp = tb.querySelector(`input[data-i="${f.i}"][data-k="${f.k}"]`); if (inp && !inp.disabled) { inp.focus(); inp.select(); } }
 }
 /** colonnes asphériques affichées : A4…A10, et A12…A20 dès qu'une surface les utilise (ou App.hiAsph) */
@@ -936,7 +941,9 @@ const PT = {
   wfe: { l: 'Carte de front d\'onde (WFE)', f: 1, w: 1 },
   zern: { l: 'Coefficients de Zernike', f: 1, w: 1, html: 1 },
   psf: { l: 'PSF diffractive (FFT)', f: 1, w: 1 },
-  mtf: { l: 'FTM / MTF polychromatique' },
+  mtf: { l: 'FTM / MTF polychromatique', job: p => ({ name: 'mtf', args: { o: { geo: p.mt === 'geo', dl: p.gdl !== false, N: +p.ns || 64, fmax: +p.fmax || 0 } } }) },
+  tfmtf: { l: 'FTM through-focus (meilleur foyer)', job: p => ({ name: 'tfmtf', args: { o: { freq: +p.tff || 30, half: p.tfh ? p.tfh / 1000 : 0, n: 21, N: +p.ns || 32 } } }) },
+  mtffield: { l: 'FTM selon le champ', job: p => ({ name: 'mtffield', args: { o: { freqs: mffList(p), n: 11, N: +p.ns || 32 } } }) },
   ee: { l: 'Énergie encerclée', f: 1 },
   footprint: { l: 'Footprint (empreinte du faisceau)', s: 1 },
   field: { l: 'Courbure de champ & distorsion' },
@@ -948,21 +955,24 @@ const PT = {
   source: { l: 'Source étendue (fibre, fente…)', f: 1 },
   imgsim: { l: 'Simulation d\'image' },
   presc: { l: 'Prescription & synthèse', html: 1 },
-  thermal: { l: 'Analyse thermique (focale, foyer, qualité vs T)', f: 1 },
+  thermal: { l: 'Analyse thermique (focale, foyer, qualité vs T)', f: 1, job: p => ({ name: 'thermal', args: { o: { T1: p.t1 ?? -20, T2: p.t2 ?? 60, n: 9, fi: p.fi || 0 } } }) },
+  relillum: { l: 'Éclairement relatif', w: 1, job: (p, M) => ({ name: 'relillum', args: { o: { n: 21, wi: p.wi ?? M.pw, grid: 40 } } }) },
+  distgrid: { l: 'Grille de distorsion', w: 1 },
+  mcsum: { l: 'Multi-configuration : synthèse', html: 1 },
 };
 /** section (et repère) de l'aide pour chaque type d'analyse */
-const HELPAN = { spot: ['analyses', 'Diagramme de spot'], rayfan: ['analyses', 'Ray fan'], opdfan: ['analyses', 'OPD fan'], wfe: ['analyses', 'Carte WFE'], zern: ['analyses', 'Zernike'], psf: ['analyses', 'PSF'],
+const HELPAN = { tfmtf: ['analyses', 'FTM through-focus'], mtffield: ['analyses', 'FTM selon le champ'], relillum: ['analyses', 'Éclairement relatif'], distgrid: ['analyses', 'Grille de distorsion'], mcsum: ['multiconfig'], spot: ['analyses', 'Diagramme de spot'], rayfan: ['analyses', 'Ray fan'], opdfan: ['analyses', 'OPD fan'], wfe: ['analyses', 'Carte WFE'], zern: ['analyses', 'Zernike'], psf: ['analyses', 'PSF'],
   mtf: ['analyses', 'FTM / MTF'], ee: ['analyses', 'Énergie encerclée'], footprint: ['analyses', 'Footprint'], field: ['analyses', 'Courbure de champ'], seidel: ['analyses', 'Seidel'], chrom: ['analyses', 'Décalage focal chromatique'],
   glass: ['analyses', 'Carte des verres'], polar: ['polarisation'], detector: ['detecteur'], source: ['source'], imgsim: ['imgsim'], presc: ['analyses', 'Prescription'], thermal: ['donnees', 'Analyse thermique'] };
 /** aide des fenêtres (par titre) */
-const HELPDLG = [['Catalogue de verres', 'verres'], ['Optimisation', 'optimisation'], ['Données système', 'donnees'], ['Tolérancement', 'tolerancement'], ['Rapport', 'rapport'], ['Export', 'fichiers'], ['Import', 'fichiers'], ['Assistant', 'assistant'], ['À propos', 'demarrage']];
+const HELPDLG = [['Catalogue de verres', 'verres'], ['Optimisation', 'optimisation'], ['Données système', 'donnees'], ['Tolérancement', 'tolerancement'], ['Rapport', 'rapport'], ['Export', 'fichiers'], ['Import', 'fichiers'], ['Assistant', 'assistant'], ['Multi-configuration', 'multiconfig'], ['À propos', 'demarrage']];
 /** choix du nombre de termes de Zernike Fringe (ordre radial et azimutal) */
 const ZNOPTS = [[4, 'défocalisation'], [9, '3ᵉ ordre'], [16, '5ᵉ ordre'], [25, '7ᵉ ordre'], [36, '9ᵉ ordre'], [37, '9ᵉ ordre + sphérique 11ᵉ']];
 /** groupes du menu des fenêtres d'analyse */
 const PTG = [
   ['Image et aberrations', ['spot', 'rayfan', 'opdfan', 'wfe', 'zern']],
-  ['Diffraction', ['psf', 'mtf', 'ee']],
-  ['Système', ['field', 'seidel', 'chrom', 'footprint', 'thermal', 'polar']],
+  ['Diffraction', ['psf', 'mtf', 'tfmtf', 'mtffield', 'ee']],
+  ['Système', ['field', 'distgrid', 'relillum', 'seidel', 'chrom', 'footprint', 'thermal', 'polar', 'mcsum']],
   ['Capteur et simulation', ['detector', 'source', 'imgsim']],
   ['Données et outils', ['glass', 'presc']],
 ];
@@ -1003,6 +1013,10 @@ function paneHeader(pi) {
   if (p.type === 'zern') h += `<select data-p="nz" title="Nombre de termes de Zernike Fringe ajustés">${ZNOPTS.map(([n, l]) => `<option value="${n}" ${(+p.nz || 16) === n ? 'selected' : ''}>Z1…Z${n} — ${l}</option>`).join('')}</select>`;
   if (p.type === 'mtf') h += `<select data-p="mt" title="Méthode de calcul de la FTM"><option value="diff" ${p.mt !== 'geo' ? 'selected' : ''}>Diffraction</option><option value="geo" ${p.mt === 'geo' ? 'selected' : ''}>Géométrique</option></select>${p.mt === 'geo' ? `<label title="Multiplier par la FTM d'une pupille parfaite (recommandé)"><input type="checkbox" data-p="gdl" ${p.gdl !== false ? 'checked' : ''}>× diffraction</label>` : `<select data-p="ns" title="Échantillonnage de la pupille (front d'onde N×N)">${[32, 64, 128, 256].map(n => `<option value="${n}" ${(+p.ns || 64) === n ? 'selected' : ''}>${n}×${n}</option>`).join('')}</select>`}<label>f max <input class="in" data-p="fmax" style="width:56px;height:22px" value="${p.fmax || ''}" placeholder="auto"></label>`;
   if (p.type === 'spot') h += `<label><input type="checkbox" data-p="chief" ${p.chief ? 'checked' : ''}>réf. principal</label>`;
+  const nsSel = d => `<select data-p="ns" title="Échantillonnage de la pupille (front d'onde N×N) : 32 rapide, 64 précis">${[32, 64, 128].map(n => `<option value="${n}" ${(+p.ns || d) === n ? 'selected' : ''}>${n}×${n}</option>`).join('')}</select>`;
+  if (p.type === 'tfmtf') h += `<label>f <input class="in" data-p="tff" style="width:46px;height:22px" value="${p.tff || 30}"> cy/mm</label><label title="Demi-étendue de la défocalisation (vide : automatique, au moins 8 λF² et englobant le meilleur foyer)">± <input class="in" data-p="tfh" style="width:52px;height:22px" value="${p.tfh || ''}" placeholder="auto"> µm</label>${nsSel(32)}<button class="bt" data-p="tfapply" style="height:24px" title="Déplacer le plan image au meilleur foyer trouvé (épaisseur avant l'image)">Appliquer le meilleur foyer</button>`;
+  if (p.type === 'mtffield') h += `<label title="Fréquences spatiales (cycles/mm), séparées par des virgules ou des espaces">f <input class="in" data-p="mff" style="width:96px;height:22px" value="${esc(mffList(p).join(', '))}"> cy/mm</label>${nsSel(32)}`;
+  if (p.type === 'distgrid') h += `<select data-p="dgn" title="Nombre de lignes de la grille">${[7, 11, 15, 21].map(n => `<option value="${n}" ${(+p.dgn || 11) === n ? 'selected' : ''}>${n}×${n}</option>`).join('')}</select><label title="Coché : les coins de la grille correspondent au champ maximal (diagonale du capteur). Décoché : le bord de la grille correspond au champ maximal."><input type="checkbox" data-p="diag" ${p.diag !== false ? 'checked' : ''}>coins = champ max</label><label title="Amplifier les écarts pour les rendre visibles"><input type="checkbox" data-p="dgx" ${p.dgx ? 'checked' : ''}>écarts ×10</label>`;
   if (p.type === 'thermal') h += `<label>de <input class="in" data-p="t1" style="width:46px;height:22px" value="${p.t1 ?? -20}"></label><label>à <input class="in" data-p="t2" style="width:46px;height:22px" value="${p.t2 ?? 60}"> °C</label>`;
   const fl = !!App.fw['p' + pi];
   h += `<span class="grow"></span><button class="x hb" data-help="${(HELPAN[p.type] || ['analyses'])[0]}" data-ha="${esc((HELPAN[p.type] || [])[1] || '')}" title="Aide sur cette analyse">?</button>${t.html ? '' : '<button class="x" data-p="png" title="Enregistrer l\'image (PNG)">⤓</button>'}${fl ? '' : `<button class="x" data-fw="p${pi}" title="Détacher dans une fenêtre flottante (déplaçable, redimensionnable)">⧉</button><button class="x" data-p="max" title="Agrandir / réduire">⤢</button>`}`;
@@ -1033,7 +1047,9 @@ function setupPaneEvents(el) {
     const t = e.target, k = t.dataset.p; if (!k || !t.closest('.pane')) return; const pi = +t.closest('.pane').dataset.i, p = App.panes[pi];
     if (k === 'zoom') { p.zoom = Math.min(5, Math.max(0.5, +t.value)); save(); paneBody(pi); return; }
     if (k === 'type') { App.panes[pi] = { type: t.value }; }
-    else if (['log', 'tilt', 'chief', 'fresnel', 'upright', 'pix', 'det', 'grid', 'gdl'].includes(k)) p[k] = t.checked;
+    else if (['log', 'tilt', 'chief', 'fresnel', 'upright', 'pix', 'det', 'grid', 'gdl', 'diag', 'dgx'].includes(k)) p[k] = t.checked;
+    else if (k === 'tff' || k === 'tfh') { const v = parseFloat(String(t.value).replace(',', '.')); p[k] = isFinite(v) && v > 0 ? v : null; }
+    else if (k === 'mff') p.mff = t.value;
     else if (['stype', 'phase', 'mt'].includes(k)) p[k] = t.value;
     else if (['sd', 'sna', 'sw', 'sh'].includes(k)) { const v = parseFloat(String(t.value).replace(',', '.')); p[k] = isFinite(v) && v >= 0 ? v : null; }
     else if (k === 'st' || k === 'src') p[k] = t.value;
@@ -1048,6 +1064,10 @@ function setupPaneEvents(el) {
   el.addEventListener('click', e => {
     const sc = e.target.closest('[data-p="srccfg"]'); if (sc) { closedCards.delete('src'); renderSide(); const el2 = $('#side [data-card="src"]'); if (el2) { el2.scrollIntoView({ behavior: 'smooth', block: 'start' }); el2.style.outline = '2px solid var(--acc)'; setTimeout(() => el2.style.outline = '', 1200); } return; }
     const ld = e.target.closest('[data-p="load"]'); if (ld) { App.simPane = +ld.closest('.pane').dataset.i; $('#imgIn').click(); return; }
+    const tfa = e.target.closest('[data-p="tfapply"]'); if (tfa) { const p = App.panes[+tfa.closest('.pane').dataset.i], d = App.M && App.M.ok ? JCACHE.get(jobSpec(p, App.M).key) : null;
+      if (!d || d.err || !isFinite(d.best)) { toast('Attendez la fin du calcul'); return; }
+      const j = App.sys.surfaces.length - 2; if (App.sys.surfaces[j].tsolve === 'M') { toast('L\'épaisseur avant l\'image est pilotée par un solve M : retirez-le d\'abord'); return; }
+      commit(s => { s.surfaces[j].t = +(d.t0 + d.best).toFixed(6); }); toast(`Plan image déplacé de ${fx(d.best * 1000, 1)} µm (meilleur foyer à ${fmt(d.freq, 4)} cy/mm)`); return; }
     const run = e.target.closest('[data-p="run"]'); if (run) { const pi = +run.closest('.pane').dataset.i; SIM.cache.clear(); SIM.force = true; renderPane(pi); return; }
     const g = e.target.closest('[data-p="png"]');
     if (g) { const pane = g.closest('.pane'), cv = pane.querySelector('canvas'), p = App.panes[+pane.dataset.i]; const o = document.createElement('canvas'); o.width = cv.width; o.height = cv.height; const oc = o.getContext('2d'); oc.fillStyle = TH.panel || '#fff'; oc.fillRect(0, 0, o.width, o.height); oc.drawImage(cv, 0, 0); o.toBlob(b => download(`${fileBase()}_${p.type}.png`, b)); return; }
@@ -1059,7 +1079,7 @@ function renderPanes() { readTheme(); const t0 = performance.now(); $$('.pane[da
 /** redessine le contenu d'un panneau sans reconstruire son en-tête (curseurs, rotation 3D) */
 function paneBody(pi) {
   const d = document.querySelector(`.pane[data-i="${pi}"]`), p = App.panes[pi], M = App.M; if (!d || !M || !M.ok || PT[p.type].html) return;
-  const cv = d.querySelector('canvas'); try { const { c, w, h } = prepCanvas(cv); R[p.type](p, M, c, w, h); } catch (err) { console.error(err); }
+  const cv = d.querySelector('canvas'); try { const { c, w, h } = prepCanvas(cv); if (PT[p.type].job) { const dd = JCACHE.get(jobSpec(p, M).key); if (dd && !dd.err) R[p.type](p, M, c, w, h, dd); } else R[p.type](p, M, c, w, h); } catch (err) { console.error(err); }
 }
 function renderPane(pi) {
   const d = document.querySelector(`.pane[data-i="${pi}"]`); if (!d) return;
@@ -1072,7 +1092,15 @@ function renderPane(pi) {
   if (!M || !M.ok) { if (isH) hd.innerHTML = '<p style="color:#dc2626">Système invalide</p>'; else { const { c } = prepCanvas(cv); text(c, 'Système invalide : ' + (M && M.errors || []).join(', '), 12, 12, { col: '#dc2626' }); } return; }
   try {
     if (isH) hd.innerHTML = R[p.type](p, M);
-    else { const { c, w, h } = prepCanvas(cv); R[p.type](p, M, c, w, h); }
+    else {
+      const { c, w, h } = prepCanvas(cv);
+      if (PT[p.type].job) {
+        const dd = paneData(p, M);
+        if (dd === undefined) drawWait(p, c, w, h, BG.pend && BG.pend.get(jobSpec(p, M).key));
+        else if (!dd || dd.err) text(c, 'Erreur : ' + ((dd && dd.err) || 'calcul impossible'), 12, 12, { col: '#dc2626' });
+        else R[p.type](p, M, c, w, h, dd);
+      } else R[p.type](p, M, c, w, h);
+    }
   } catch (err) {
     console.error(err);
     if (isH) hd.innerHTML = 'Erreur : ' + esc(err.message); else { const { c } = prepCanvas(cv); text(c, 'Erreur : ' + err.message, 12, 12, { col: '#dc2626' }); }
@@ -1080,6 +1108,8 @@ function renderPane(pi) {
 }
 /** type de champ effectif d'un système (ang, obj, pim, rim) */
 const ftypeOf = s => { const inf = !isFinite(s.surfaces[0].t) || Math.abs(s.surfaces[0].t) > 1e10; return OE.FTYPES[s.ftype] ? s.ftype : (inf ? 'ang' : 'obj'); };
+/** fréquences de l'analyse « FTM selon le champ » */
+const mffList = p => { const v = String(p.mff ?? '10, 30, 50').split(/[\s,;]+/).map(x => parseFloat(x)).filter(x => isFinite(x) && x > 0).slice(0, 6); return v.length ? v : [10, 30, 50]; };
 const fUnitOf = t => t === 'ang' ? '°' : t === 'obj' ? ' mm' : ' mm im.';
 /* ---------------- PSF : zoom continu et vue 3D (surface façon CODE V « Diffraction Intensity Spread Function ») ---------------- */
 const PSFC = new WeakMap();
@@ -1217,11 +1247,8 @@ const R = {
     }
     text(c, 'molette : zoom · double-clic : ×1', A.P.x + A.P.w - 4, A.P.y + 4, { col: 'rgba(255,255,255,.55)', size: 9.5, align: 'right' });
   },
-  mtf(p, M, c, w, h) {
-    const geo = p.mt === 'geo', N = +p.ns || 64, F = M.sys.fields;
-    const sc = F.map(f => M.wls.map((_, wi) => OE.pupilScale(M, f, wi)));
-    const fmax = p.fmax || Math.max(...sc.flatMap((a, i) => a.map((q, wi) => Math.max(q.dM, q.dL) / M.ctxs[wi].lmm)));
-    const res = F.map((_, i) => geo ? OE.mtfGeo(M, i, { fmax, dl: p.gdl !== false }) : OE.mtf(M, i, { fmax, N }));
+  mtf(p, M, c, w, h, d) {
+    const geo = p.mt === 'geo', N = +p.ns || 64, sc = d.sc, res = d.res;
     const f = res[0].f;
     const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, [0, f[f.length - 1]], [0, 1.02], { xl: 'Fréquence spatiale (cycles/mm)', yl: 'Module FTM', title: geo ? `FTM polychromatique géométrique (rayons${p.gdl !== false ? ' × limite de diffraction' : ''})` : `FTM polychromatique (diffraction, autocorrélation de la pupille ${N}×${N})` });
     { const pw = M.pw, fn = sc.map((a, i) => `F${i + 1} ${fx(1 / a[pw].dM, 2)}/${fx(1 / a[pw].dL, 2)}`).join(' · ');
@@ -1289,10 +1316,8 @@ const R = {
     legend(c, 8, h - 22, keys.map((k, i) => ({ col: kc[i], l: nm[i] })));
     text(c, `W040 = ${fx(sd.sum.SI / 8 / lm, 3)} λ · W131 = ${fx(sd.sum.SII / 2 / lm, 3)} λ · W222 = ${fx(sd.sum.SIII / 2 / lm, 3)} λ · W220 = ${fx((sd.sum.SIV) / 4 / lm, 3)} λ · W311 = ${fx(sd.sum.SV / 2 / lm, 3)} λ`, 8, h - 12, { col: TH.mut, size: 10.5, mono: true, maxW: w - 16 });
   },
-  thermal(p, M, c, w, h) {
-    const T1 = p.t1 ?? -20, T2 = p.t2 ?? 60, key = toJSON(App.sys) + '|' + T1 + '|' + T2 + '|' + (p.fi || 0);
-    if (!App._th || App._th.key !== key) App._th = { key, r: OE.thermalScan(App.sys, { T1, T2, n: 9, fi: p.fi || 0 }) };
-    const r = App._th.r, efl0 = M.par.efl, h1 = Math.round(h / 2), solve = App.sys.surfaces.some(x => x.tsolve === 'M');
+  thermal(p, M, c, w, h, r) {
+    const T1 = p.t1 ?? -20, T2 = p.t2 ?? 60, efl0 = M.par.efl, h1 = Math.round(h / 2), solve = App.sys.surfaces.some(x => x.tsolve === 'M');
     const dE = r.efl.map(v => (v - efl0) * 1000);
     let A = axes(c, { x: 0, y: 0, w, h: h1 - 20 }, [T1, T2], range([r.dz, dE], 0.1), { xl: '', yl: 'µm', title: solve ? 'Δ focale — solve de mise au point (M) actif : le plan image suit le foyer' : 'Défocalisation (foyer paraxial − plan image) et Δ focale' });
     pline(c, A, r.T, r.dz, TH.acc, 2); pline(c, A, r.T, dE, TH.mut, 1.6, [5, 4]);
@@ -1304,6 +1329,49 @@ const R = {
     c.strokeStyle = '#f59e0b'; c.lineWidth = 1.6; c.setLineDash([4, 3]); c.beginPath(); r.T.forEach((t, i) => { const X = A.X(t), Y = ys(r.spot[i]); i ? c.lineTo(X, Y) : c.moveTo(X, Y); }); c.stroke(); c.setLineDash([]);
     text(c, `${fx(sr[1], 2)} µm`, A.P.x + A.P.w - 4, A.P.y + 2, { col: '#f59e0b', size: 10, align: 'right' });
     legend(c, 8, h - 8, [{ col: '#16a34a', l: 'WFE RMS (λ)' }, { col: '#f59e0b', dash: [4, 3], l: `Spot RMS (µm, ${fx(sr[0], 2)} à ${fx(sr[1], 2)})` }]);
+  },
+  tfmtf(p, M, c, w, h, d) {
+    const X = d.dz.map(v => v * 1e3), F = M.sys.fields;
+    const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, [X[0], X[X.length - 1]], [0, 1.02], { xl: 'Défocalisation par rapport au plan image (µm)', yl: 'Module FTM', title: `FTM through-focus à ${fmt(d.freq, 4)} cy/mm — meilleur foyer ${d.best >= 0 ? '+' : ''}${fx(d.best * 1e3, 1)} µm (FTM moyenne ${fx(d.bestV, 3)})` });
+    pline(c, A, X, d.DL, TH.fg, 1.2, [2, 2]);
+    d.T.forEach((t, i) => { pline(c, A, X, t, fcol(i), 1.7); pline(c, A, X, d.S[i], fcol(i), 1.7, [6, 4]); });
+    pline(c, A, X, d.avg, '#f59e0b', 2.6);
+    const vl = (x, col, dash, lab) => { c.strokeStyle = col; c.lineWidth = 1.2; c.setLineDash(dash); c.beginPath(); c.moveTo(A.X(x), A.P.y); c.lineTo(A.X(x), A.P.y + A.P.h); c.stroke(); c.setLineDash([]); if (lab) text(c, lab, A.X(x) + 4, A.P.y + 4, { col, size: 10 }); };
+    vl(0, TH.mut, [2, 3], 'plan image'); vl(d.best * 1e3, TH.acc, [5, 3], 'meilleur foyer');
+    legend(c, 8, h - 8, [{ col: TH.fg, dash: [2, 2], l: 'Limite de diffraction' }, { col: '#f59e0b', l: 'Moyenne (T+S)/2 pondérée' }, { col: TH.mut, l: 'T' }, { col: TH.mut, dash: [6, 4], l: 'S' }, ...F.map((_, i) => ({ col: fcol(i), l: fLabel(M, i) }))]);
+  },
+  mtffield(p, M, c, w, h, d) {
+    const u = d.u, xr = [0, Math.max(...u.filter(isFinite)) || 1], fc = ['#2563eb', '#16a34a', '#dc2626', '#9333ea', '#ea580c', '#0891b2'];
+    const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, xr, [0, 1.02], { xl: `Champ (${d.unit})`, yl: 'Module FTM', title: `FTM en fonction du champ — ${d.freqs.map(f => fmt(f, 4)).join(', ')} cy/mm (pupille ${+p.ns || 32}×${+p.ns || 32})` });
+    d.freqs.forEach((f, q) => { const col = fc[q % fc.length]; pline(c, A, u, d.T[q], col, 1.8); pline(c, A, u, d.S[q], col, 1.8, [6, 4]); pline(c, A, u, d.DL[q], col, 0.9, [1, 3]); });
+    if (!d.img) d.defF.forEach((v, i) => { c.fillStyle = fcol(i); c.beginPath(); c.moveTo(A.X(v), A.P.y + A.P.h); c.lineTo(A.X(v) - 4, A.P.y + A.P.h + 6); c.lineTo(A.X(v) + 4, A.P.y + A.P.h + 6); c.fill(); });
+    legend(c, 8, h - 8, [{ col: TH.mut, l: 'T' }, { col: TH.mut, dash: [6, 4], l: 'S' }, { col: TH.mut, dash: [1, 3], l: 'limite de diffraction' }, ...d.freqs.map((f, q) => ({ col: fc[q % fc.length], l: `${fmt(f, 4)} cy/mm` }))]);
+  },
+  relillum(p, M, c, w, h, d) {
+    const u = d.u, xr = [0, Math.max(...u.filter(isFinite)) || 1], lo = Math.min(...d.ri.filter(isFinite), ...d.cos4.filter(isFinite));
+    const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, xr, [Math.min(0, Math.floor(lo * 10) / 10), 1.05], { xl: `Champ (${d.unit})`, yl: 'Éclairement relatif', title: `Éclairement relatif à ${fmt(d.wl * 1000, 5)} nm — bord du champ ${fx(100 * d.ri[d.ri.length - 1], 1)} %` });
+    pline(c, A, u, d.cos4, TH.mut, 1.3, [5, 4]); pline(c, A, u, d.ri, TH.acc, 2.2);
+    legend(c, 8, h - 8, [{ col: TH.acc, l: 'Éclairement relatif (vignetage et aberrations de pupille inclus)' }, { col: TH.mut, dash: [5, 4], l: 'cos⁴ θ′ du rayon principal' }]);
+  },
+  distgrid(p, M, c, w, h) {
+    const g = OE.distGrid(M, { n: +p.dgn || 11, diag: p.diag !== false, wi: p.wi ?? M.pw }), n = g.n, amp = p.dgx ? 10 : 1;
+    const P = g.R.map((q, k) => q ? [g.I[k][0] + amp * (q[0] - g.I[k][0]), g.I[k][1] + amp * (q[1] - g.I[k][1])] : null);
+    let m = 0; for (const q of [...g.I, ...P]) if (q) m = Math.max(m, Math.abs(q[0]), Math.abs(q[1])); m *= 1.08;
+    const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, [-m, m], [-m, m], { equal: true, xl: 'X image (mm)', yl: 'Y image (mm)', title: `Grille de distorsion — max ${g.dmax >= 0 ? '+' : ''}${fx(g.dmax, 3)} %${g.dAt ? ` en (${fmt(g.dAt[0], 3)}, ${fmt(g.dAt[1], 3)})${g.unit === '°' ? '°' : ' mm'}` : ''}${amp > 1 ? ' · écarts ×10' : ''}` });
+    const lines = (Q, col, lw, dash) => { c.strokeStyle = col; c.lineWidth = lw; c.setLineDash(dash || []);
+      for (let j = 0; j < n; j++) for (const dir of [0, 1]) { c.beginPath(); let on = false; for (let i = 0; i < n; i++) { const q = Q[dir ? i * n + j : j * n + i]; if (!q) { on = false; continue; } const X = A.X(q[0]), Y = A.Y(q[1]); on ? c.lineTo(X, Y) : c.moveTo(X, Y); on = true; } c.stroke(); }
+      c.setLineDash([]); };
+    lines(g.I, TH.mut, 0.8, [3, 3]); lines(P, TH.acc, 1.6);
+    c.fillStyle = TH.acc; for (const q of P) if (q) { c.beginPath(); c.arc(A.X(q[0]), A.Y(q[1]), 1.8, 0, 7); c.fill(); }
+    legend(c, 8, h - 8, [{ col: TH.mut, dash: [3, 3], l: 'Grille idéale (paraxiale)' }, { col: TH.acc, l: 'Rayons principaux réels' }]);
+  },
+  mcsum(p, M) {
+    if (!OE.mcOn(App.sys)) return `<div class="hint" style="padding:10px">Ce système n'a qu'une configuration. Ouvrez <b>Système → Multi-configuration…</b> pour en créer plusieurs (zoom, mise au point, changement de filtre…).</div>`;
+    const S = OE.mcSummary(App.sys), cur = App.sys.mc.cur | 0, nm = k => esc((App.sys.mc.names || [])[k] || `Config ${k + 1}`);
+    const row = (l, f) => `<tr><th style="text-align:left">${l}</th>${S.map(o => `<td class="mono" style="text-align:right${o.k === cur ? ';background:var(--sel)' : ''}">${o.ok ? f(o) : '—'}</td>`).join('')}</tr>`;
+    return `<table style="width:100%"><tr><th></th>${S.map(o => `<th style="text-align:right"><button class="bt" data-mcgo="${o.k}" style="height:22px${o.k === cur ? ';border-color:var(--acc);color:var(--acc)' : ''}">${nm(o.k)}</button></th>`).join('')}</tr>
+      ${row('Focale (EFL), mm', o => fx(o.efl, 4))}${row('F/# de travail', o => fx(o.wfno, 3))}${row('Champ max', o => fmt(o.fmax, 4) + (App.M.objInf ? '°' : ' mm'))}${row('Hauteur image, mm', o => fx(o.imgH, 3))}${row('Tirage (BFL), mm', o => fx(o.bfl, 3))}${row('Longueur totale, mm', o => fx(o.ttl, 3))}${row('Spot RMS max, µm', o => fx(o.spot, 2))}${row('WFE RMS max, λ', o => fx(o.wfe, 3))}</table>
+      <div class="hint" style="padding:6px 2px">Cliquez sur une configuration pour l'activer. Paramètres variables : ${App.sys.mc.ops.length} ligne(s) dans l'éditeur de multi-configuration.</div>`;
   },
   chrom(p, M, c, w, h) {
     const cs = OE.chromShift(M, 60);
@@ -1586,13 +1654,14 @@ function openOptim() {
     </div>
     <div class="oR">
       <h4 class="th4" style="margin-top:0">Opérandes</h4>
-      <div class="oscroll"><table class="mt otab"><tr><th>Opérande</th><th>Param.</th><th></th><th>Cible</th><th>Poids</th><th>Valeur</th><th title="Part de la fonction de mérite (somme des carrés)">%</th><th></th></tr>
+      <div class="oscroll"><table class="mt otab"><tr><th>Opérande</th><th>Param.</th><th></th><th>Cible</th><th>Poids</th>${OE.mcOn(App.sys) ? '<th title="Configuration où l\'opérande s\'applique (multi-configuration)">Config.</th>' : ''}<th>Valeur</th><th title="Part de la fonction de mérite (somme des carrés)">%</th><th></th></tr>
       ${mf.ops.map((o, i) => { const d = OE.OPS[o.type] || {}; const cmp = o.cmp || d.kind; return `<tr><td><select class="in" data-o="type" data-i="${i}" title="${esc(d.label || '')}">${ops.map(([k, v]) => `<option value="${k}" ${k === o.type ? 'selected' : ''}>${k} — ${v.label}</option>`).join('')}</select></td>
         <td>${d.p ? `<input class="in" data-o="p" data-i="${i}" value="${o.p ?? d.pdef}" title="${d.p}" style="width:56px">` : ''}</td>
         <td><select class="in" data-o="cmp" data-i="${i}" style="width:44px" title="Égal, au moins (≥) ou au plus (≤)">${[['eq', '='], ['ge', '≥'], ['le', '≤']].map(([k, l]) => `<option value="${k}" ${cmp === k ? 'selected' : ''}>${l}</option>`).join('')}</select></td>
         <td><input class="in" data-o="target" data-i="${i}" value="${o.target}" style="width:70px"></td><td><input class="in" data-o="weight" data-i="${i}" value="${o.weight}" style="width:48px"></td>
+        ${OE.mcOn(App.sys) ? `<td><select class="in" data-o="cfg" data-i="${i}" style="width:64px"><option value="0">toutes</option>${Array.from({ length: App.sys.mc.n }, (_, k) => `<option value="${k + 1}" ${+o.cfg === k + 1 ? 'selected' : ''}>${k + 1}</option>`).join('')}</select></td>` : ''}
         <td class="ov" data-ov="${i}"></td><td class="ov" data-oc="${i}"></td><td><button class="x" data-d="odel" data-i="${i}">✕</button></td></tr>`; }).join('')}
-      <tr><td colspan="5" class="hint">Critère image</td><td class="ov" id="oimgv"></td><td class="ov" id="oimgc"></td><td></td></tr></table></div>
+      <tr><td colspan="${OE.mcOn(App.sys) ? 6 : 5}" class="hint">Critère image${OE.mcOn(App.sys) && App.sys.mc.opt !== 'cur' ? ` (somme sur ${App.sys.mc.n} configurations)` : ''}</td><td class="ov" id="oimgv"></td><td class="ov" id="oimgc"></td><td></td></tr></table></div>
       <button class="add" data-d="oadd">+ Ajouter un opérande</button>
       <div style="display:flex;gap:16px;align-items:center;margin-top:10px">
         <div style="flex:none;width:150px"><div class="hint">Fonction de mérite</div><div class="big" id="mval">—</div><div class="hint" id="mit"></div></div>
@@ -1645,7 +1714,7 @@ async function runSubst() {
           const r = OE.subTry(best, j, cands[c], 12); if (!pick || r.m < pick.m) pick = { ...r, name: cands[c] };
           OPT.hist.push(Math.min(bm, pick.m)); if ($('#mchart')) drawMerit();
         }
-        if (pick && (m || pick.m < bm * (1 - 1e-9))) { if (pick.name !== cur) { log.push(`S${j} : ${cur} → ${pick.name}`); changed = true; } best = pick.sys; bm = pick.m; App.sys = structuredClone(best); App.M = OE.prepare(App.sys); renderLDE(); drawLayout(); if ($('#ovars')) optLive(); }
+        if (pick && (m || pick.m < bm * (1 - 1e-9))) { if (pick.name !== cur) { log.push(`S${j} : ${cur} → ${pick.name}`); changed = true; } best = pick.sys; bm = pick.m; App.sys = structuredClone(best); App.M = OE.prepare(App.sys); App.sysKey = null; renderLDE(); drawLayout(); if ($('#ovars')) optLive(); }
       }
       if (!changed && p > 0) break;
     }
@@ -1655,15 +1724,16 @@ async function runSubst() {
   }
 }
 /** valeurs des variables (pour afficher l'écart depuis le début) */
-function optSnapVars(s) { const o = {}; for (const v of OE.getVars(s)) o[v.kind + v.si] = optVarVal(s, v); return o; }
-function optVarVal(s, v) { const x = s.surfaces[v.si]; if (v.kind === 'nd' || v.kind === 'vd') return (OE.parseModel(x.glass) || {})[v.kind]; return v.kind === 'c' ? x.r : v.kind === 't' ? x.t : v.kind === 'k' ? (x.k || 0) : (+x[v.kind] || 0); }
-const optVarLab = v => v.kind === 'c' ? `R${v.si}` : v.kind === 't' ? `T${v.si}` : v.kind === 'k' ? `K${v.si}` : v.kind === 'nd' ? `nd S${v.si}` : v.kind === 'vd' ? `νd S${v.si}` : `${v.kind.toUpperCase()} S${v.si}`;
+const optVarKey = v => v.kind + v.si + (v.mc != null ? '@' + v.cfg : '');
+function optSnapVars(s) { const o = {}; for (const v of OE.getVars(s)) o[optVarKey(v)] = optVarVal(s, v); return o; }
+function optVarVal(s, v) { if (v.mc != null) { const y = OE.getVal(s, v); return v.kind === 'c' ? (y ? 1 / y : Infinity) : y; } const x = s.surfaces[v.si]; if (v.kind === 'nd' || v.kind === 'vd') return (OE.parseModel(x.glass) || {})[v.kind]; return v.kind === 'c' ? x.r : v.kind === 't' ? x.t : v.kind === 'k' ? (x.k || 0) : (+x[v.kind] || 0); }
+const optVarLab = v => v.mc != null ? `${v.kind === 'c' ? 'R' : v.kind === 't' ? 'T' : 'K'}${v.si} · ${mcName(App.sys, v.cfg)}` : v.kind === 'c' ? `R${v.si}` : v.kind === 't' ? `T${v.si}` : v.kind === 'k' ? `K${v.si}` : v.kind === 'nd' ? `nd S${v.si}` : v.kind === 'vd' ? `νd S${v.si}` : `${v.kind.toUpperCase()} S${v.si}`;
 /** met à jour variables, valeurs des opérandes, contributions et courbe de mérite */
 function optLive() {
   const s = App.sys, vars = OE.getVars(s), r = OE.residuals(s), x0 = OPT.x0 || {};
   const ev = $('#ovars'); if (!ev) return;
   $('#onv').textContent = `(${vars.length})`;
-  ev.innerHTML = vars.length ? `<table class="mt" style="font-size:12px"><tr><th>Variable</th><th>Valeur</th><th>Écart</th></tr>${vars.map(v => { const x = optVarVal(s, v), a = x0[v.kind + v.si]; const d = a != null && isFinite(a) && isFinite(x) ? x - a : NaN;
+  ev.innerHTML = vars.length ? `<table class="mt" style="font-size:12px"><tr><th>Variable</th><th>Valeur</th><th>Écart</th></tr>${vars.map(v => { const x = optVarVal(s, v), a = x0[optVarKey(v)]; const d = a != null && isFinite(a) && isFinite(x) ? x - a : NaN;
     return `<tr><td>${optVarLab(v)}</td><td style="font-family:var(--mono)">${fmt(x, 7)}</td><td style="font-family:var(--mono);color:var(--mut)">${isFinite(d) && Math.abs(d) > 1e-12 ? (d > 0 ? '+' : '') + fmt(d, 4) : ''}</td></tr>`; }).join('')}</table>` : '<em class="hint">aucune variable définie</em>';
   if (!r) { $('#mval').textContent = '—'; return; }
   const m2 = r.f.reduce((a, b) => a + b * b, 0) || 1;
@@ -1993,7 +2063,7 @@ function dlg(html, wide, o = {}) {
 }
 function winSave() { const d = $('#dlg'); if (!WIN.key) return; const { left, top, width, height } = d.style; WIN.geo.set(WIN.key, { left, top, width, height }); }
 function winClamp() { const d = $('#dlg'), r = d.getBoundingClientRect(); let l = parseFloat(d.style.left) || r.left, t = parseFloat(d.style.top) || r.top; l = Math.max(0, Math.min(l, innerWidth - r.width)); t = Math.min(Math.max(t, 0), innerHeight - 40); d.style.left = l + 'px'; d.style.top = t + 'px'; }
-function closeDlg() { if ($('#modal').classList.contains('open')) winSave(); $('#modal').classList.remove('open'); WIN.key = null; OPT.running = false; if (typeof TOL !== 'undefined') TOL.running = false; }
+function closeDlg() { if ($('#modal').classList.contains('open')) winSave(); $('#modal').classList.remove('open'); WIN.key = null; OPT.running = false; }
 function setupWin() {
   const d = $('#dlg');
   const track = (e, fn) => { e.preventDefault(); const mv = ev => fn(ev), up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); document.body.classList.remove('wdrag'); winSave(); }; document.body.classList.add('wdrag'); window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up); };
@@ -2044,7 +2114,8 @@ function setupDlg() {
     if (t.id === 'gAmp') OPT.gAmp = Math.max(1, Math.min(100, parseFloat(String(t.value).replace(',', '.')) || 20));
     if (t.dataset.o) { const i = +t.dataset.i, k = t.dataset.o; commit(s => { const o = s.merit.ops[i]; if (k === 'type') { o.type = t.value; delete o.cmp; const d = OE.OPS[t.value]; if (d.p) o.p = o.p ?? d.pdef; else delete o.p; } else if (k === 'cmp') o.cmp = t.value; else o[k] = parseFloat(String(t.value).replace(',', '.')) || 0; }); openOptim(); }
   });
-  $('#dlg').addEventListener('change', e => { if (e.target.dataset.sd) sdChange(e.target); });
+  $('#dlg').addEventListener('change', e => { if (e.target.dataset.sd) sdChange(e.target); if (e.target.closest('#mcw')) mcEvent(e); });
+  $('#dlg').addEventListener('click', e => { const b = e.target.closest('#mcw [data-mcact]'); if (b) mcAction(b); });
   $('#dlg').addEventListener('click', e => { const t = e.target.closest('[data-sdt]'); if (t) { SD.tab = t.dataset.sdt; renderSD(); return; } const b = e.target.closest('[data-sda]'); if (b) sdAction(b); });
   $('#dlg').addEventListener('click', e => {
     const tb = e.target.closest('[data-tl],[data-tr]'); if (tb) { if (tb.dataset.tl) { TOL.tabL = tb.dataset.tl; renderTolL(); } else { TOL.tabR = tb.dataset.tr; renderTolRes(); } return; }
@@ -2055,7 +2126,7 @@ function setupDlg() {
     if (a === 'tsens') runSens();
     if (a === 'tmc') runMC();
     if (a === 'tinv') runInv();
-    if (a === 'tstop') TOL.running = false;
+    if (a === 'tstop') { TOL.running = false; bgCancel('tol'); }
     if (a === 'tcopy') { const r = tolReport(); navigator.clipboard?.writeText(r).then(() => toast('Rapport copié (CSV, séparateur ;)'), () => download(fileBase() + '_tolerances.csv', r, 'text/csv')); }
     if (a === 'tgen') { commit(s => { const c = tolCfg(); c.list = OE.tolGen(s, c).map(x => ({ ...x })); }); TOL.stale = !!(TOL.sens || TOL.mc || TOL.inv); TOL.tabL = 'list'; renderTolL(); renderTolRes(); toast('Liste détaillée créée depuis les valeurs par défaut'); }
     if (a === 'tlauto') { commit(s => { tolCfg().list = null; }); TOL.stale = !!(TOL.sens || TOL.mc || TOL.inv); renderTolL(); renderTolRes(); }
@@ -2096,7 +2167,7 @@ function runOpt() {
     if (!OPT.running) { finish('Arrêté'); return; }
     const t = performance.now(); let r;
     do { r = OE.optStep(OPT.st); OPT.it++; if (r.merit != null) OPT.hist.push(r.merit); } while (!r.done && OPT.it < maxIt && performance.now() - t < 90);
-    App.sys = OPT.st.sys; App.M = OE.prepare(App.sys); renderLDE(); renderSide(); drawLayout();
+    App.sys = OPT.st.sys; App.M = OE.prepare(App.sys); App.sysKey = null; renderLDE(); renderSide(); drawLayout();
     if (performance.now() - lastPane > 600) { renderPanes(); lastPane = performance.now(); }
     if ($('#mval')) { optLive(); $('#mit').textContent = `itération ${OPT.it}`; }
     if (r.done || OPT.it >= maxIt) { OPT.running = false; finish(r.msg || (OPT.it >= maxIt ? 'Nombre max d\'itérations atteint' : 'Convergé')); return; }
@@ -2114,17 +2185,17 @@ async function runGlobal() {
   const run = async st => { let r, n = 0, t = performance.now(); do { r = OE.optStep(st); n++; OPT.it++; if (performance.now() - t > 80) { await tick(); t = performance.now(); if (!OPT.running) break; } } while (!r.done && n < maxIt); return st.merit ?? OE.meritOf(OE.residuals(st.sys).f); };
   // point de départ : optimum local du système actuel
   let best = { sys: structuredClone(App.sys), mu: 1e-3 }; let bm = await run(best); best = best.sys; OPT.hist.push(bm);
-  App.sys = structuredClone(best); App.M = OE.prepare(App.sys); renderLDE(); drawLayout(); optLive();
+  App.sys = structuredClone(best); App.M = OE.prepare(App.sys); App.sysKey = null; renderLDE(); drawLayout(); optLive();
   let improved = 0;
   for (let c = 0; c < cyc && OPT.running; c++) {
     const s = structuredClone(best);
-    for (const v of OE.getVars(s)) { const g = 2 * Math.random() - 1, x = (() => { const o = s.surfaces[v.si]; return v.kind === 'c' ? OE.curv(o) : v.kind === 't' ? o.t : v.kind === 'k' ? (o.k || 0) : (+o[v.kind] || 0); })();
+    for (const v of OE.getVars(s)) { const g = 2 * Math.random() - 1, x = OE.getVal(s, v);
       const o = s.surfaces[v.si];
       if (v.kind === 'nd' || v.kind === 'vd') { const m = OE.parseModel(o.glass); if (m) { m[v.kind] += v.kind === 'nd' ? amp * g * 0.3 : amp * g * 40; o.glass = OE.fmtModel(Math.min(2.2, Math.max(1.35, m.nd)), Math.min(100, Math.max(15, m.vd))); } continue; }
       const nx = v.kind === 'c' ? x * (1 + amp * g) + (Math.abs(x) < 1e-6 ? amp * g * 0.01 : 0) : v.kind === 't' ? Math.sign(x || 1) * Math.max(0.05, Math.abs(x) * (1 + amp * g)) : v.kind === 'k' ? x + amp * g * 2 : x * (1 + amp * g);
-      if (v.kind === 'c') o.r = Math.abs(nx) < 1e-12 ? Infinity : 1 / nx; else if (v.kind === 't') o.t = nx; else if (v.kind === 'k') o.k = nx; else o[v.kind] = nx; }
+      OE.setVal(s, v, nx); }
     const st = { sys: s, mu: 1e-3 }; const m = await run(st);
-    if (isFinite(m) && m < bm * (1 - 1e-6)) { bm = m; best = st.sys; improved++; App.sys = structuredClone(best); App.M = OE.prepare(App.sys); renderLDE(); drawLayout(); }
+    if (isFinite(m) && m < bm * (1 - 1e-6)) { bm = m; best = st.sys; improved++; App.sys = structuredClone(best); App.M = OE.prepare(App.sys); App.sysKey = null; renderLDE(); drawLayout(); }
     OPT.hist.push(bm); if ($('#mval')) { optLive(); $('#mit').textContent = `cycle ${c + 1} / ${cyc}`; $('#omsg').textContent = `Recherche globale : cycle ${c + 1} / ${cyc} — ${improved} amélioration(s)`; }
   }
   OPT.running = false; App.sys = best; pushHist(); refresh({ fast: true }); optLive();
@@ -2164,6 +2235,188 @@ function drawMerit() {
 /* ---------------- Tolérancement ---------------- */
 const TOL = { running: false, sens: null, inv: null, mc: null, stale: false, tabL: 'set', tabR: 'sens' };
 const tick = () => new Promise(r => setTimeout(r, 0));
+/* ---------------- Multi-configuration (zoom) ---------------- */
+const mcName = (s, k) => (s.mc && s.mc.names && s.mc.names[k]) || `Config ${k + 1}`;
+function mcGo(k) {
+  const s = App.sys; if (!OE.mcOn(s)) return; const n = s.mc.n;
+  if (k === 'prev') k = ((s.mc.cur | 0) - 1 + n) % n; else if (k === 'next') k = ((s.mc.cur | 0) + 1) % n;
+  commit(x => OE.mcSet(x, +k), { fast: true });
+}
+function renderMCBar() {
+  const el = $('#mcbar'); if (!el) return; const s = App.sys;
+  if (!OE.mcOn(s)) { el.innerHTML = ''; el.style.display = 'none'; return; }
+  el.style.display = ''; const cur = s.mc.cur | 0;
+  el.innerHTML = `<button class="tb" data-mcgo="prev" title="Configuration précédente (Ctrl+Maj+Page préc.)">◀</button><select data-mcsel title="Configuration active (multi-configuration)">${Array.from({ length: s.mc.n }, (_, k) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${esc(mcName(s, k))} (${k + 1}/${s.mc.n})</option>`).join('')}</select><button class="tb" data-mcgo="next" title="Configuration suivante (Ctrl+Maj+Page suiv.)">▶</button>`;
+}
+function openMC() { dlg(`<h2>Multi-configuration <button class="x" data-d="close">✕</button></h2><div class="db" id="mcw"></div>`, true, { w: 900, h: 560 }); renderMC(); }
+function renderMC() {
+  const el = $('#mcw'); if (!el) return; const s = App.sys, mc = s.mc || { n: 1, cur: 0, ops: [] }, n = mc.n, cur = mc.cur | 0;
+  const nS = s.surfaces.length - 1, T = OE.MCT;
+  const idxOpts = (type, i) => { const D = T[type]; let L = [];
+    if (D.s) L = s.surfaces.map((x, j) => [j, `S${j}${x.comment ? ' · ' + x.comment : ''}`]).filter(([j]) => j > 0 && (type !== 'THI' || j < nS) || (type === 'THI' && j === 0));
+    else if (D.f) L = s.fields.map((_, j) => [j, `Champ ${j + 1}`]); else if (D.w) L = s.wavelengths.map((w, j) => [j, `λ${j + 1} (${fmt(w.um * 1000, 5)} nm)`]); else return '<span class="hint">—</span>';
+    return `<select data-mca="i" data-mco="__O__">${L.map(([j, l]) => `<option value="${j}" ${j === i ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`; };
+  const typeSel = (t, o) => `<select data-mca="type" data-mco="${o}">${Object.entries(T).map(([k, d]) => `<option value="${k}" ${k === t ? 'selected' : ''}>${esc(d.l)}${d.u ? ' (' + d.u + ')' : ''}</option>`).join('')}</select>`;
+  const cell = (op, oi, k) => { const D = T[op.type], v = op.v ? op.v[k] : '', vs = v === Infinity ? 'Infini' : v == null ? '' : D.num ? fmt(+v, 8) : String(v);
+    return `<td style="${k === cur ? 'background:var(--sel)' : ''}"><div style="display:flex;gap:3px;align-items:center"><input class="in" data-mcv="${oi}" data-k="${k}" value="${esc(vs)}" style="flex:1;min-width:62px">${D.var ? `<label title="Variable d'optimisation pour cette configuration" style="font-size:10px;display:inline-flex;align-items:center;white-space:nowrap"><input type="checkbox" data-mcvv="${oi}" data-k="${k}" ${op.vv && op.vv[k] ? 'checked' : ''}>V</label>` : ''}</div></td>`; };
+  el.innerHTML = `<div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+      <b>${n} configuration${n > 1 ? 's' : ''}</b><button class="bt" data-mcact="addcfg" title="Ajoute une configuration, copie de la configuration active">+ Configuration</button>
+      <button class="bt" data-mcact="delcfg" ${n < 2 ? 'disabled' : ''} title="Supprime la configuration active">− Supprimer la config. active</button>
+      <span class="grow"></span><label title="La fonction de mérite additionne les résidus de toutes les configurations (zoom optimisé d'un seul tenant)"><input type="radio" name="mco" data-mcopt="all" ${mc.opt !== 'cur' ? 'checked' : ''}> optimiser toutes les configurations</label><label><input type="radio" name="mco" data-mcopt="cur" ${mc.opt === 'cur' ? 'checked' : ''}> la configuration active seulement</label></div>
+    <div style="overflow:auto;margin-top:8px"><table class="mct" style="width:100%"><tr><th style="text-align:left">Paramètre</th><th style="text-align:left">Élément</th>${Array.from({ length: n }, (_, k) => `<th style="${k === cur ? 'background:var(--sel)' : ''}"><input class="in" data-mcn="${k}" value="${esc(mcName(s, k))}" style="width:100%;font-weight:600;text-align:center" title="Nom de la configuration"><button class="bt" data-mcgo="${k}" style="height:20px;margin-top:2px;width:100%" ${k === cur ? 'disabled' : ''}>${k === cur ? 'active' : 'activer'}</button></th>`).join('')}<th></th></tr>
+      ${mc.ops.map((op, oi) => `<tr><td>${typeSel(op.type, oi)}</td><td>${idxOpts(op.type, op.i).replace('__O__', oi)}</td>${Array.from({ length: n }, (_, k) => cell(op, oi, k)).join('')}<td><button class="x" data-mcact="delop" data-mco="${oi}" title="Supprimer la ligne">✕</button></td></tr>`).join('')}
+      <tr><td colspan="${n + 3}"><button class="bt" data-mcact="addop" title="Ajoute un paramètre qui change d'une configuration à l'autre">+ Paramètre</button> <button class="bt" data-mcact="addvar" title="Ajoute les épaisseurs marquées V dans l'éditeur de lentilles (typique d'un zoom : espaces entre groupes)">+ Épaisseurs variables (V) de l'éditeur</button></td></tr></table></div>
+    <p class="hint" style="margin-top:10px">Chaque ligne est un paramètre qui prend une valeur par configuration (zoom, mise au point, changement de filtre ou de longueur d'onde, température…). L'éditeur de lentilles, le layout et les analyses montrent toujours la <b>configuration active</b> ; une valeur modifiée dans l'éditeur est enregistrée dans cette configuration. Cochez <b>V</b> pour rendre une valeur variable dans une configuration donnée ; l'optimiseur additionne alors les fonctions de mérite de toutes les configurations (un opérande peut être réservé à une configuration, colonne « Config. » de la fonction de mérite). Le tolérancement porte sur la configuration active.</p>`;
+}
+function mcNum(raw) { const t = String(raw).trim().replace(',', '.'); if (/^inf/i.test(t)) return Infinity; const v = parseFloat(t); return isFinite(v) ? v : null; }
+function mcEvent(e) {
+  const t = e.target, s0 = App.sys, cur = s0.mc ? s0.mc.cur | 0 : 0;
+  if (t.dataset.mcv != null) { const oi = +t.dataset.mcv, k = +t.dataset.k, op = s0.mc.ops[oi], D = OE.MCT[op.type], v = D.num ? mcNum(t.value) : t.value.trim();
+    if (D.num && v == null) { toast('Valeur invalide'); renderMC(); return; }
+    commit(s => { OE.mcSync(s); const o = s.mc.ops[oi]; o.v[k] = v; if (k === (s.mc.cur | 0)) D.set(s, o.i, v); }); return; }
+  if (t.dataset.mcvv != null) { const oi = +t.dataset.mcvv, k = +t.dataset.k; commit(s => { const o = s.mc.ops[oi]; o.vv = o.vv || []; while (o.vv.length < s.mc.n) o.vv.push(false); o.vv[k] = t.checked; }); return; }
+  if (t.dataset.mcn != null) { const k = +t.dataset.mcn; commit(s => { s.mc.names = s.mc.names || []; s.mc.names[k] = t.value.trim(); }); return; }
+  if (t.dataset.mcopt) { commit(s => { s.mc.opt = t.dataset.mcopt; }); return; }
+  if (t.dataset.mca) { const oi = +t.dataset.mco; commit(s => { OE.mcSync(s); const o = s.mc.ops[oi]; if (t.dataset.mca === 'type') { o.type = t.value; const D = OE.MCT[o.type]; if (D.s && !(o.i > 0)) o.i = 1; if ((D.f && o.i >= s.fields.length) || (D.w && o.i >= s.wavelengths.length)) o.i = 0; if (!D.var) delete o.vv; } else o.i = +t.value;
+    if (o.type === 'THI' && s.surfaces[o.i] && s.surfaces[o.i].tsolve) { const M = OE.prepare(s); if (M.ok) s.surfaces[o.i].t = M.S[o.i].t; s.surfaces[o.i].tsolve = ''; }
+    const v = OE.MCT[o.type].get(s, o.i); o.v = Array.from({ length: s.mc.n }, () => v); }); return; }
+}
+function mcAction(b) {
+  const a = b.dataset.mcact, nS = App.sys.surfaces.length - 1;
+  if (a === 'addcfg') commit(s => { if (!s.mc) s.mc = { n: 1, cur: 0, ops: [], names: [] }; OE.mcSync(s); const c = s.mc.cur | 0; s.mc.ops.forEach(o => { o.v.push(o.v[c]); if (o.vv) o.vv.push(false); }); s.mc.names = s.mc.names || []; s.mc.names[s.mc.n] = ''; s.mc.n++; OE.mcLoad(s, s.mc.n - 1); });
+  if (a === 'delcfg') commit(s => { if (!s.mc || s.mc.n < 2) return; const k = s.mc.cur | 0; s.mc.ops.forEach(o => { o.v.splice(k, 1); if (o.vv) o.vv.splice(k, 1); }); if (s.mc.names) s.mc.names.splice(k, 1); s.mc.n--; OE.mcLoad(s, Math.min(k, s.mc.n - 1)); if (s.mc.n === 1 && !s.mc.ops.length) delete s.mc; });
+  if (a === 'addop') commit(s => { if (!s.mc) s.mc = { n: 1, cur: 0, ops: [], names: [] }; OE.mcSync(s); OE.mcAddOp(s, 'THI', Math.max(1, Math.min(nS - 1, App.sel))); });
+  if (a === 'addvar') { let k = 0; commit(s => { if (!s.mc) s.mc = { n: 1, cur: 0, ops: [], names: [] }; OE.mcSync(s); s.surfaces.forEach((x, j) => { if (x.vt && !s.mc.ops.some(o => o.type === 'THI' && o.i === j)) { const o = OE.mcAddOp(s, 'THI', j); o.vv = Array.from({ length: s.mc.n }, () => true); x.vt = false; k++; } }); }); toast(k ? `${k} épaisseur(s) ajoutée(s), variables dans chaque configuration` : 'Aucune épaisseur marquée V dans l\'éditeur'); }
+  if (a === 'delop') { const oi = +b.dataset.mco; commit(s => { s.mc.ops.splice(oi, 1); if (s.mc.n === 1 && !s.mc.ops.length) delete s.mc; }); }
+}
+/* ---------------- Calculs en tâche de fond (Web Workers, repli dans la page) ----------------
+   runJob(nom, args, { group, key, want, onProg, onPart }) → Promise ; les tâches sont définies dans jobs.js (JOBS).
+   Les workers sont créés à partir du code source des scripts de la page (moteur + verres + tâches). */
+const BG = { workers: [], queue: [], seq: 0, ok: null, url: null, mainBusy: false, prog: new Map(), done: 0 };
+const bgMax = () => Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1));
+function bgSource() {
+  const t = id => (document.getElementById(id) || {}).textContent || '';
+  return [t('js-glasses'), t('js-glassth'), t('js-engine'), t('js-jobs')].join('\n;\n') + `
+;self.onmessage = async e => { const m = e.data; if (m.ping) { self.postMessage({ pong: 1 }); return; }
+  try { if (m.ug && m.ug.length) OE.addGlasses(m.ug, true); const r = await JOBS[m.name](m.args, (d, n, part) => { self.postMessage({ id: m.id, prog: [d, n], part }); }); self.postMessage({ id: m.id, res: r }); }
+  catch (err) { self.postMessage({ id: m.id, err: String(err && err.message || err) }); } };`;
+}
+/** verres utilisateur (AGF, saisis) à transmettre au worker */
+function bgGlasses(sys) {
+  const out = [], seen = new Set();
+  for (const x of (sys && sys.surfaces) || []) { const r = OE.glassRecord(x.glass); if (r && r.user && !seen.has(r.key)) { seen.add(r.key); try { const c = structuredClone({ ...r }); delete c.ndv; out.push(c); } catch (e) { } } }
+  return out;
+}
+function bgSpawn() {
+  try {
+    if (!BG.url) BG.url = URL.createObjectURL(new Blob([bgSource()], { type: 'text/javascript' }));
+    const w = new Worker(BG.url), W = { w, job: null };
+    w.onmessage = e => bgMsg(W, e.data);
+    w.onerror = e => { if (e.preventDefault) e.preventDefault(); bgFail(W, e.message || 'erreur du worker'); };
+    BG.workers.push(W);
+    if (BG.ok === null && !BG.pinging) { BG.pinging = true; w.postMessage({ ping: 1 }); BG.pingT = setTimeout(() => { if (BG.ok === null) bgDisable(); }, 5000); }
+    return W;
+  } catch (e) { bgDisable(); return null; }
+}
+/** workers indisponibles (politique de sécurité de l'hébergeur…) : tout est calculé dans la page */
+function bgDisable() {
+  if (BG.ok === false) return; BG.ok = false; clearTimeout(BG.pingT);
+  for (const W of BG.workers) { try { W.w.terminate(); } catch (e) { } if (W.job) BG.queue.unshift(W.job); }
+  BG.workers = []; bgPump();
+}
+function bgMsg(W, m) {
+  if (m.pong) { BG.ok = true; clearTimeout(BG.pingT); bgPump(); return; }
+  const j = W.job; if (!j || m.id !== j.id) return;
+  if (m.prog) { BG.prog.set(j.id, m.prog); if (j.onProg) j.onProg(m.prog[0], m.prog[1]); if (m.part && j.onPart) j.onPart(m.part); bgStatus(); return; }
+  W.job = null; BG.prog.delete(j.id); BG.done++;
+  if (m.err) j.reject(new Error(m.err)); else j.resolve(m.res);
+  bgPump();
+}
+function bgFail(W, msg) {
+  if (BG.ok !== true) { bgDisable(); return; }
+  const j = W.job; W.job = null; try { W.w.terminate(); } catch (e) { } BG.workers = BG.workers.filter(x => x !== W);
+  if (j) { BG.prog.delete(j.id); j.reject(new Error(msg)); }
+  bgPump();
+}
+async function bgMain(j) {
+  BG.mainBusy = true; BG.mainJob = j; bgStatus(); let t = performance.now();
+  try {
+    const r = await JOBS[j.name](j.args, async (d, n, part) => {
+      if (j.cancelled) throw Object.assign(new Error('annulé'), { cancel: true });
+      BG.prog.set(j.id, [d, n]); if (j.onProg) j.onProg(d, n); if (part && j.onPart) j.onPart(part);
+      if (performance.now() - t > 60) { bgStatus(); await tick(); t = performance.now(); }
+    });
+    if (j.cancelled) throw Object.assign(new Error('annulé'), { cancel: true });
+    j.resolve(r);
+  } catch (e) { j.reject(e); }
+  finally { BG.prog.delete(j.id); BG.mainBusy = false; BG.mainJob = null; BG.done++; bgPump(); }
+}
+function bgPump() {
+  for (;;) {
+    // tâches devenues inutiles (panneau changé entre-temps)
+    while (BG.queue.length && BG.queue[0].want && !BG.queue[0].want()) { const j = BG.queue.shift(); j.reject(Object.assign(new Error('obsolète'), { stale: true })); }
+    if (!BG.queue.length) break;
+    if (BG.ok === false) { if (BG.mainBusy) break; bgMain(BG.queue.shift()); break; }
+    let W = BG.workers.find(x => !x.job);
+    if (!W && (BG.workers.length < (BG.ok ? bgMax() : 1))) W = bgSpawn();
+    if (BG.ok !== true || !W) break;
+    const j = BG.queue.shift(); W.job = j; j.started = true;
+    W.w.postMessage({ id: j.id, name: j.name, args: j.args, ug: j.ug });
+  }
+  bgStatus();
+}
+function runJob(name, args, o = {}) {
+  return new Promise((resolve, reject) => {
+    const j = { id: ++BG.seq, name, args, ug: bgGlasses(args.sys || (args.B && args.B.base)), resolve, reject, ...o };
+    BG.queue.push(j); bgPump();
+  });
+}
+/** annule les tâches d'un groupe (en attente, dans les workers et dans la page) */
+function bgCancel(group) {
+  const err = () => Object.assign(new Error('annulé'), { cancel: true });
+  BG.queue = BG.queue.filter(j => { if (j.group === group) { j.reject(err()); return false; } return true; });
+  for (const W of [...BG.workers]) if (W.job && W.job.group === group) { const j = W.job; try { W.w.terminate(); } catch (e) { } BG.workers = BG.workers.filter(x => x !== W); BG.prog.delete(j.id); j.reject(err()); }
+  if (BG.mainJob && BG.mainJob.group === group) BG.mainJob.cancelled = true; // arrêt au prochain point d'avancement
+  bgPump();
+}
+function bgStatus() {
+  const el = document.getElementById('bgst'); if (!el) return;
+  const run = BG.workers.filter(W => W.job).length + (BG.mainBusy ? 1 : 0), n = run + BG.queue.length;
+  if (!n) { el.innerHTML = ''; el.title = ''; return; }
+  const pr = [...BG.prog.values()], pc = pr.length ? Math.round(100 * pr.reduce((a, q) => a + q[0] / Math.max(1, q[1]), 0) / pr.length) : 0;
+  el.innerHTML = `<span class="bgspin"></span> ${n} calcul${n > 1 ? 's' : ''} <span class="k">${pc} %</span>`;
+  el.title = BG.ok === false ? 'Calculs dans la page (Web Workers indisponibles ici)' : `Calculs en tâche de fond : ${run} en cours sur ${BG.workers.length} worker(s), ${BG.queue.length} en attente`;
+}
+/* --- analyses calculées en tâche de fond : PT[type].job(p, M) → { name, args, key } ; résultats en cache --- */
+const JCACHE = new Map();
+const sysKey = () => App.sysKey || (App.sysKey = toJSON(App.sys));
+function jobSpec(p, M) { const J = PT[p.type].job(p, M); J.key = J.name + '|' + JSON.stringify(J.args.o || {}) + '|' + sysKey(); J.args.sys = J.args.sys || App.sys; return J; }
+function paneWants(key) { return $$('.pane[data-i]').some(d => { const p = App.panes[+d.dataset.i]; return p && PT[p.type] && PT[p.type].job && App.M && App.M.ok && jobSpec(p, App.M).key === key; }); }
+function rerenderKey(key) { $$('.pane[data-i]').forEach(d => { const pi = +d.dataset.i, p = App.panes[pi]; if (p && PT[p.type] && PT[p.type].job && App.M && App.M.ok && jobSpec(p, App.M).key === key) renderPane(pi); }); }
+/** données d'une analyse : le résultat (ou { err }) s'il est en cache, sinon undefined et lancement du calcul */
+function paneData(p, M) {
+  const J = jobSpec(p, M);
+  if (JCACHE.has(J.key)) return JCACHE.get(J.key);
+  if (!BG.pend) BG.pend = new Map();
+  if (!BG.pend.has(J.key)) {
+    const key = J.key; BG.pend.set(key, 0);
+    runJob(J.name, J.args, { key, group: 'pane', want: () => paneWants(key), onProg: (d, n) => { BG.pend.set(key, d / Math.max(1, n)); drawWaitKey(key); } })
+      .then(r => { JCACHE.set(key, r); }, e => { if (!e.stale && !e.cancel) JCACHE.set(key, { err: e.message }); })
+      .finally(() => { BG.pend.delete(key); while (JCACHE.size > 40) JCACHE.delete(JCACHE.keys().next().value); rerenderKey(key); });
+  }
+  return undefined;
+}
+function drawWait(p, c, w, h, frac) {
+  c.clearRect(0, 0, w, h);
+  text(c, PT[p.type].l, 10, 8, { b: true });
+  const bw = Math.min(260, w - 40), x = (w - bw) / 2, y = h / 2;
+  text(c, `Calcul en tâche de fond… ${Math.round(100 * (frac || 0))} %`, w / 2, y - 22, { align: 'center', col: TH.mut });
+  c.fillStyle = TH.line; c.fillRect(x, y, bw, 6); c.fillStyle = TH.acc; c.fillRect(x, y, bw * Math.min(1, frac || 0), 6);
+  text(c, BG.ok === false ? 'calcul dans la page' : 'l\'interface reste utilisable pendant le calcul', w / 2, y + 14, { align: 'center', col: TH.mut, size: 10 });
+}
+function drawWaitKey(key) {
+  $$('.pane[data-i]').forEach(d => { const p = App.panes[+d.dataset.i]; if (p && PT[p.type] && PT[p.type].job && App.M && App.M.ok && jobSpec(p, App.M).key === key) { const cv = d.querySelector('canvas'); const { c, w, h } = prepCanvas(cv); drawWait(p, c, w, h, BG.pend.get(key)); } });
+}
 function tolCfg() {
   const d = OE.tolDefaults(), s = App.sys; s.tol = { ...d, ...(s.tol || {}) };
   s.tol.types = Object.fromEntries(Object.keys(d.types).map(k => [k, { ...d.types[k], ...((s.tol.types || {})[k] || {}) }]));
@@ -2220,16 +2473,29 @@ function renderTolL() {
 function tolMsg(t) { const e = $('#tmsg'); if (e) e.textContent = t; }
 /** fige la liste détaillée (passe en mode personnalisé) puis applique fn */
 function tolEditList(fn) { commit(s => { const c = tolCfg(); if (!Array.isArray(c.list)) c.list = OE.tolGen(s, c).map(x => ({ ...x })); fn(c.list, c); }); TOL.stale = !!(TOL.sens || TOL.mc || TOL.inv); renderTolL(); renderTolRes(); }
-async function tolPrep(c) { tolMsg('Préparation (système nominal' + (c.comp ? ', mise au point' : '') + ')…'); await tick(); const B = OE.tolBase(App.sys, c.crit, c.comp, tolOpts(c)); return { B, items: OE.tolItems(B.base, c) }; }
+/** découpe [0, n) en lots pour les workers (équilibrage : ~3 lots par worker) */
+function tolChunks(n) { const w = BG.ok === false ? 1 : bgMax(), k = Math.max(1, Math.min(n, w * 3)), out = []; for (let i = 0; i < k; i++) { const a = Math.floor(i * n / k), b = Math.floor((i + 1) * n / k); if (b > a) out.push([a, b]); } return out; }
+const tolErr = e => { if (!e || !e.cancel) { console.error(e); tolMsg('Erreur : ' + (e && e.message)); } };
+async function tolPrep(c) {
+  tolMsg('Préparation (système nominal' + (c.comp ? ', mise au point' : '') + ')…');
+  const B = await runJob('tolBase', { sys: App.sys, crit: c.crit, comp: c.comp, o: tolOpts(c) }, { group: 'tol' });
+  return { B, items: OE.tolItems(B.base, c) };
+}
+/** exécute une tâche de tolérancement répartie sur les workers ; onPart(k, r) à chaque élément terminé */
+async function tolRun(name, n, mk, onPart, label) {
+  let done = 0, tl = 0; const t0 = performance.now();
+  await Promise.all(tolChunks(n).map(([a, b]) => runJob(name, mk(a, b), { group: 'tol', onPart: p => { done++; onPart(p.k, p.r);
+    if (performance.now() - tl > 150) { tl = performance.now(); renderTolRes(); const el = (performance.now() - t0) / 1000; tolMsg(`${label} : ${done} / ${n} · reste ≈ ${Math.ceil(el / done * (n - done))} s${BG.ok ? ` · ${BG.workers.length} calcul(s) en parallèle` : ''}`); } } })));
+}
 async function runSens() {
   if (TOL.running) return; const c = structuredClone(tolCfg()); TOL.running = true; TOL.stale = false; TOL.tabR = 'sens';
-  const { B, items } = await tolPrep(c), rows = [], o = tolOpts(c); let tl = performance.now(), t0 = performance.now();
-  TOL.sens = { B, rows, c, n: items.length, items };
-  for (let i = 0; i < items.length && TOL.running; i++) {
-    rows.push(OE.tolSens(B, items[i], c.crit, c.comp, o));
-    if (performance.now() - tl > 80) { renderTolRes(); const el = (performance.now() - t0) / 1000; tolMsg(`Sensibilité : ${i + 1} / ${items.length} · reste ≈ ${Math.ceil(el / (i + 1) * (items.length - i - 1))} s`); await tick(); tl = performance.now(); }
-  }
-  TOL.running = false; renderTolRes(); tolMsg(`Sensibilité terminée — ${rows.length} tolérances`);
+  try {
+    const { B, items } = await tolPrep(c), o = tolOpts(c), arr = new Array(items.length);
+    TOL.sens = { B, rows: [], c, n: items.length, items };
+    await tolRun('tolSens', items.length, (a, b) => ({ B, items: items.slice(a, b), k0: a, crit: c.crit, comp: c.comp, o }), (k, r) => { arr[k] = r; TOL.sens.rows = arr.filter(Boolean); }, 'Sensibilité');
+    tolMsg(`Sensibilité terminée — ${TOL.sens.rows.length} tolérances`);
+  } catch (e) { tolErr(e); if (e && e.cancel) tolMsg(`Arrêté — ${TOL.sens ? TOL.sens.rows.length : 0} tolérances calculées`); }
+  TOL.running = false; renderTolRes();
 }
 /** dégradation admissible par tolérance pour le calcul inverse */
 function tolDmax(c, nominal, n) {
@@ -2241,32 +2507,31 @@ async function runInv() {
   if (TOL.running) return; const c = structuredClone(tolCfg()); TOL.tabR = 'inv'; renderTolRes();
   if (!(+c.invVal > 0)) { tolMsg('Indiquez d\'abord la cible du calcul inverse (onglet « Tolérances inverses »).'); return; }
   TOL.running = true; TOL.stale = false;
-  const { B, items } = await tolPrep(c), o = tolOpts(c), dmax = tolDmax(c, B.nominal, items.length);
-  if (!(dmax > 0)) { TOL.running = false; tolMsg(`Cible inatteignable : le nominal (${fx(B.nominal, 4)} ${tolUnit(c.crit)}) est déjà ${OE.TOLC[c.crit].up ? 'sous' : 'au-dessus de'} la cible.`); return; }
-  const S = TOL.sens && !TOL.stale && TOL.sens.c.crit === c.crit && TOL.sens.c.comp === c.comp ? TOL.sens : null, rows = [];
-  TOL.inv = { B, rows, c, dmax, n: items.length };
-  let tl = performance.now(), t0 = performance.now();
-  for (let i = 0; i < items.length && TOL.running; i++) {
-    const it = items[i], sr = S && S.rows.find(r => r.it.type === it.type && r.it.j === it.j && r.it.tol === it.tol);
-    const d0 = sr && sr.lo && sr.hi && Math.abs(it.min + it.max) < 1e-12 ? Math.max(sr.lo.d, sr.hi.d) : undefined;
-    const r = OE.tolInverse(B, it, c.crit, c.comp, dmax, { ...o, d0 });
-    rows.push({ it, t: r.t, tr: c.invRound ? OE.niceDown(r.t) : r.t, d: r.d, capped: r.capped });
-    if (performance.now() - tl > 80) { renderTolRes(); const el = (performance.now() - t0) / 1000; tolMsg(`Calcul inverse : ${i + 1} / ${items.length} · reste ≈ ${Math.ceil(el / (i + 1) * (items.length - i - 1))} s`); await tick(); tl = performance.now(); }
-  }
-  TOL.running = false; renderTolRes(); tolMsg(`Calcul inverse terminé — Δ admissible ${fx(dmax, 4)} ${tolUnit(c.crit)} par tolérance`);
+  try {
+    const { B, items } = await tolPrep(c), o = tolOpts(c), dmax = tolDmax(c, B.nominal, items.length);
+    if (!(dmax > 0)) { TOL.running = false; tolMsg(`Cible inatteignable : le nominal (${fx(B.nominal, 4)} ${tolUnit(c.crit)}) est déjà ${OE.TOLC[c.crit].up ? 'sous' : 'au-dessus de'} la cible.`); return; }
+    const S = TOL.sens && !TOL.stale && TOL.sens.c.crit === c.crit && TOL.sens.c.comp === c.comp ? TOL.sens : null, arr = new Array(items.length);
+    const d0 = items.map(it => { const sr = S && S.rows.find(r => r.it.type === it.type && r.it.j === it.j && r.it.tol === it.tol); return sr && sr.lo && sr.hi && Math.abs(it.min + it.max) < 1e-12 ? Math.max(sr.lo.d, sr.hi.d) : undefined; });
+    TOL.inv = { B, rows: [], c, dmax, n: items.length };
+    await tolRun('tolInv', items.length, (a, b) => ({ B, items: items.slice(a, b), d0: d0.slice(a, b), k0: a, crit: c.crit, comp: c.comp, dmax, o }),
+      (k, r) => { arr[k] = { it: items[k], t: r.t, tr: c.invRound ? OE.niceDown(r.t) : r.t, d: r.d, capped: r.capped }; TOL.inv.rows = arr.filter(Boolean); }, 'Calcul inverse');
+    tolMsg(`Calcul inverse terminé — Δ admissible ${fx(dmax, 4)} ${tolUnit(c.crit)} par tolérance`);
+  } catch (e) { tolErr(e); if (e && e.cancel) tolMsg('Arrêté'); }
+  TOL.running = false; renderTolRes();
 }
 async function runMC() {
   if (TOL.running) return; const c = structuredClone(tolCfg()); TOL.running = true; TOL.stale = false; TOL.tabR = 'mc';
-  const { B, items } = await tolPrep(c), n = Math.max(5, Math.min(5000, +c.trials || 200)), o = tolOpts(c);
-  const sd = String(c.seed ?? '').trim(), rnd = sd !== '' ? OE.rng(parseInt(sd, 10) || [...sd].reduce((a, ch) => a * 31 + ch.charCodeAt(0) >>> 0, 7)) : Math.random;
-  const vals = [], foc = [], bore = [], draws = []; TOL.mc = { B, vals, foc, bore, draws, c, n, items };
-  let tl = performance.now(), t0 = performance.now();
-  for (let k = 0; k < n && TOL.running; k++) {
-    const r = OE.tolTrial(B, items, c.crit, c.comp, c.dist, rnd, o);
-    if (isFinite(r.c)) { vals.push(r.c); foc.push(r.dt); bore.push(r.bore); draws.push(r.draws); }
-    if (performance.now() - tl > 120) { renderTolRes(); const el = (performance.now() - t0) / 1000; tolMsg(`Monte-Carlo : ${k + 1} / ${n} · reste ≈ ${Math.ceil(el / (k + 1) * (n - k - 1))} s`); await tick(); tl = performance.now(); }
-  }
-  TOL.running = false; renderTolRes(); tolMsg(`Monte-Carlo terminé — ${vals.length} tirages`);
+  try {
+    const { B, items } = await tolPrep(c), n = Math.max(5, Math.min(5000, +c.trials || 200)), o = tolOpts(c);
+    const sd = String(c.seed ?? '').trim(), rnd = sd !== '' ? OE.rng(parseInt(sd, 10) || [...sd].reduce((a, ch) => a * 31 + ch.charCodeAt(0) >>> 0, 7)) : Math.random;
+    // tirages générés ici, dans l'ordre : même graine = mêmes systèmes, quel que soit le nombre de workers
+    const D = Array.from({ length: n }, () => items.map(it => OE.tolValue(it, OE.tolDraw(c.dist, rnd))));
+    const vals = [], foc = [], bore = [], draws = []; TOL.mc = { B, vals, foc, bore, draws, c, n, items };
+    await tolRun('tolMC', n, (a, b) => ({ B, items, draws: D.slice(a, b), k0: a, crit: c.crit, comp: c.comp, o }),
+      (k, r) => { if (isFinite(r.c)) { vals.push(r.c); foc.push(r.dt); bore.push(r.bore); draws.push(Float64Array.from(D[k])); } }, 'Monte-Carlo');
+    tolMsg(`Monte-Carlo terminé — ${vals.length} tirages`);
+  } catch (e) { tolErr(e); if (e && e.cancel) tolMsg(`Arrêté — ${TOL.mc ? TOL.mc.vals.length : 0} tirages`); }
+  TOL.running = false; renderTolRes();
 }
 const pct = (arr, q) => { if (!arr.length) return NaN; const a = arr.slice().sort((x, y) => x - y), i = Math.min(a.length - 1, Math.max(0, q * (a.length - 1))), lo = Math.floor(i), f = i - lo; return a[lo] * (1 - f) + (a[lo + 1] ?? a[lo]) * f; };
 /** statistiques Monte-Carlo ; « q » = centile dans le sens « pire » (FTM : centiles bas) */
@@ -2438,10 +2703,27 @@ const FS = { handle: null };
 const TOP = (() => { try { return window.top === window; } catch (e) { return false; } })();
 const fileBase = () => (App.sys.title || 'systeme').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w\-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'systeme';
 function sysJSON() { const s = structuredClone(App.sys); if (typeof usedUserGlasses === 'function') { const u = usedUserGlasses(s); if (Object.keys(u).length) s.userGlass = u; } return toJSON(s); }
-function download(name, text, type = 'application/json') {
-  const b = text instanceof Blob ? text : new Blob([text], { type }), a = document.createElement('a');
+/** capacité « downloads » de l'hébergeur claude.ai (null ailleurs) */
+const DLCAP = { ns: undefined, p: null };
+function dlCap() {
+  if (DLCAP.ns !== undefined) return Promise.resolve(DLCAP.ns);
+  if (!DLCAP.p) DLCAP.p = (async () => { try { DLCAP.ns = (!TOP && window.claude && typeof window.claude.use === 'function') ? (await window.claude.use('downloads')) || null : null; } catch (e) { DLCAP.ns = null; } return DLCAP.ns; })();
+  return DLCAP.p;
+}
+const DL_OK = /\.(gif|png|jpe?g|webp|mp4|webm|txt|json|md|docx|pptx|epub|csv|html|svg|pdf|xlsx|zip)$/i;
+async function download(name, text, type = 'application/json') {
+  const b = text instanceof Blob ? text : new Blob([text], { type });
+  const ns = TOP ? null : await dlCap();
+  if (ns) {
+    // extensions hors liste (.zmx, .seq, .agf…) : enregistrées en .txt (à renommer)
+    const fn = DL_OK.test(name) ? name : name + '.txt';
+    try { await ns.save({ filename: fn, data: b }); if (fn !== name) toast(`Enregistré sous ${fn} : retirez « .txt » pour retrouver ${name}`, 5000); return true; }
+    catch (e) { const c = e && e.code; if (c === 'declined') { toast('Téléchargement annulé'); return false; } if (c === 'rate_limited') { toast('Une demande de téléchargement est déjà ouverte'); return false; } }
+  }
+  const a = document.createElement('a');
   a.href = URL.createObjectURL(b); a.download = name; document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  return true;
 }
 async function openFile() {
   if (window.showOpenFilePicker && TOP) {
@@ -2459,7 +2741,7 @@ async function saveFile(as) {
       const w = await FS.handle.createWritable(); await w.write(txt); await w.close(); toast('Enregistré : ' + FS.handle.name); return;
     } catch (e) { if (e.name === 'AbortError') return; }
   }
-  download(fileBase() + '.json', txt); toast('Fichier ' + fileBase() + '.json téléchargé' + (TOP ? '' : ' (si rien ne se passe, utilisez Fichier → Afficher / copier)'), 4000);
+  download(fileBase() + '.json', txt); toast('Fichier ' + fileBase() + '.json téléchargé', 3000);
 }
 function importFile(name, t) { importText(t, name); }
 /** lit un fichier (UTF-8, UTF-16…) puis l'importe */
@@ -2490,6 +2772,9 @@ function openAbout() {
 
 /* ---------------- Initialisation ---------------- */
 function init() {
+  setTimeout(dlCap, 0);
+  document.addEventListener('click', e => { const g = e.target.closest('[data-mcgo]'); if (g && !g.disabled) { const v = g.dataset.mcgo; mcGo(v === 'prev' || v === 'next' ? v : +v); } });
+  document.addEventListener('change', e => { if (e.target.matches('[data-mcsel]')) mcGo(+e.target.value); });
   loadStoredAGF(); rebuildGlassList();
   $('#mSamp').innerHTML = Object.keys(SAMPLES).map(k => `<button data-samp="${esc(k)}">${esc(k)}</button>`).join('');
   load();
@@ -2524,6 +2809,7 @@ function init() {
       case 'asstShow': App.asst = !App.asst; applyAsstPref(); save(); toast(App.asst ? 'Bouton Assistant affiché' : 'Bouton Assistant masqué (Fichier pour le réafficher)'); break;
       case 'glasses': openGlasses(); break;
       case 'sysdata': openSysData(); break;
+      case 'mconf': openMC(); break;
       case 'newpane': newFloatPane(); break;
       case 'qfocus': quickFocusUI(); break;
       case 'qfopt': qfMenu(a); break;
@@ -2556,6 +2842,8 @@ function init() {
     else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); quickFocusUI(); }
     else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'a') { e.preventDefault(); openAssistant(); }
     else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'd') { e.preventDefault(); openSysData(); }
+    else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'm') { e.preventDefault(); openMC(); }
+    else if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'PageUp' || e.key === 'PageDown') && OE.mcOn(App.sys)) { e.preventDefault(); mcGo(e.key === 'PageUp' ? 'prev' : 'next'); }
     else if (e.key === 'Insert') { e.preventDefault(); lde('insA'); }
     else if ((e.ctrlKey || e.metaKey) && e.key === 'Delete') { e.preventDefault(); lde('del'); }
     else if (e.key === 'Delete' && !inInput && !e.target.closest?.('#dlg')) { e.preventDefault(); lde('del'); }

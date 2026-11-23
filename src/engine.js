@@ -1470,18 +1470,23 @@ const OE = (() => {
   }
   const ASPH = ASPK;
   function getVars(sys) {
-    const v = [];
+    const v = [], ctl = (k, i) => mcCtl(sys, k, i);
     sys.surfaces.forEach((s, i) => {
-      if (s.vr) v.push({ si: i, kind: 'c' });
-      if (s.vt && s.tsolve !== 'M') v.push({ si: i, kind: 't' });
-      if (s.vk) v.push({ si: i, kind: 'k' });
+      if (s.vr && !ctl('c', i)) v.push({ si: i, kind: 'c' });
+      if (s.vt && s.tsolve !== 'M' && !ctl('t', i)) v.push({ si: i, kind: 't' });
+      if (s.vk && !ctl('k', i)) v.push({ si: i, kind: 'k' });
       for (const a of ASPH) if (s['v' + a]) v.push({ si: i, kind: a });
       if (s.vg && !isMirror(s) && parseModel(s.glass)) { v.push({ si: i, kind: 'nd' }); v.push({ si: i, kind: 'vd' }); }
     });
+    // variables de la multi-configuration : une par configuration cochée
+    if (mcOn(sys)) sys.mc.ops.forEach((op, oi) => { const T = MCT[op.type]; if (!T || !T.var || !Array.isArray(op.vv)) return; for (let k = 0; k < sys.mc.n; k++) if (op.vv[k]) v.push({ si: op.i, kind: T.var, mc: oi, cfg: k }); });
     return v;
   }
-  function getVal(sys, v) { const s = sys.surfaces[v.si]; if (v.kind === 'nd' || v.kind === 'vd') return (parseModel(s.glass) || {})[v.kind]; return v.kind === 'c' ? curv(s) : v.kind === 't' ? s.t : v.kind === 'k' ? (s.k || 0) : (+s[v.kind] || 0); }
+  function getVal(sys, v) {
+    if (v.mc != null && v.cfg !== (sys.mc.cur | 0)) { const x = +sys.mc.ops[v.mc].v[v.cfg]; return v.kind === 'c' ? (Math.abs(x) > 1e12 || !isFinite(x) ? 0 : 1 / x) : x; }
+    const s = sys.surfaces[v.si]; if (v.kind === 'nd' || v.kind === 'vd') return (parseModel(s.glass) || {})[v.kind]; return v.kind === 'c' ? curv(s) : v.kind === 't' ? s.t : v.kind === 'k' ? (s.k || 0) : (+s[v.kind] || 0); }
   function setVal(sys, v, x) {
+    if (v.mc != null) { const op = sys.mc.ops[v.mc]; op.v[v.cfg] = v.kind === 'c' ? (Math.abs(x) < 1e-12 ? Infinity : 1 / x) : x; if (v.cfg !== (sys.mc.cur | 0)) return; }
     const s = sys.surfaces[v.si];
     if (v.kind === 'nd' || v.kind === 'vd') { const m = parseModel(s.glass) || { nd: 1.5, vd: 60 }; m[v.kind] = v.kind === 'nd' ? Math.min(2.2, Math.max(1.35, x)) : Math.min(100, Math.max(15, x)); s.glass = fmtModel(m.nd, m.vd); return; }
     if (v.kind === 'c') s.r = Math.abs(x) < 1e-12 ? Infinity : 1 / x; else if (v.kind === 't') s.t = x; else if (v.kind === 'k') s.k = x; else s[v.kind] = x;
@@ -1526,7 +1531,19 @@ const OE = (() => {
     return { list };
   }
   /** résidus de la fonction de mérite (critère image + opérandes) ; parts = valeur et part de chaque opérande */
+  /** résidus de la fonction de mérite ; en multi-configuration (mc.opt ≠ 'cur') : somme sur toutes les configurations */
   function residuals(sys) {
+    if (!mcOn(sys) || sys.mc.opt === 'cur') return residuals1(sys, null);
+    const f = [], byOp = new Map(); let img2 = 0, M = null;
+    for (let k = 0; k < sys.mc.n; k++) {
+      const r = residuals1(k === (sys.mc.cur | 0) ? sys : mcApply(sys, k), k); if (!r) return null;
+      for (const v of r.f) f.push(v); img2 += r.img2;
+      if (k === (sys.mc.cur | 0)) M = r.M;
+      for (const p of r.parts) { const op = (sys.merit.ops || [])[p.i], own = op && +op.cfg ? +op.cfg - 1 === k : k === (sys.mc.cur | 0); if (own) byOp.set(p.i, p); else if (byOp.has(p.i)) byOp.get(p.i).r2 += p.r2; else byOp.set(p.i, { ...p, val: null, ok: null }); }
+    }
+    return { f, M, img2, parts: [...byOp.values()].sort((a, b) => a.i - b.i) };
+  }
+  function residuals1(sys, cfg) {
     const M = prepare(sys);
     if (!M.ok) return null;
     const f = [];
@@ -1560,6 +1577,7 @@ const OE = (() => {
     const parts = [];
     (mf.ops || []).forEach((op, oi) => {
       const w = +op.weight || 0, tg = +op.target || 0, def = OPS[op.type]; if (!def) return;
+      if (cfg != null && +op.cfg && +op.cfg - 1 !== cfg) return;
       const cmp = op.cmp || def.kind, o = opValue(M, op), n0 = f.length;
       const res = v => cmp === 'ge' ? Math.max(0, tg - v) : cmp === 'le' ? Math.max(0, v - tg) : v - tg;
       let shown = o.val;
@@ -1642,8 +1660,8 @@ const OE = (() => {
   const tolWorse = (kind, c, nom) => TOLC[kind] && TOLC[kind].up ? nom - c : c - nom;
   /** fige les solves (épaisseurs calculées) pour que le compensateur soit numérique */
   function tolFreeze(sys) {
-    const M = prepare(sys), s = structuredClone(sys);
-    if (M.ok) s.surfaces.forEach((x, j) => { x.t = M.S[j].t; x.tsolve = ''; });
+    const M = prepare(sys), s = structuredClone(sys); delete s.mc;
+    if (M.ok) s.surfaces.forEach((x, j) => { if (x.tsolve) x.t = M.S[j].t; x.tsolve = ''; }); // épaisseurs saisies conservées (la dilatation thermique est réappliquée par prepare)
     return s;
   }
   /** la tolérance « type » a-t-elle un sens sur la surface j ? */
@@ -1877,6 +1895,166 @@ const OE = (() => {
     });
   }
   /** balayage en température : focale, défocalisation (foyer paraxial − plan image), RMS spot et front d'onde au plan image fixe */
+  /* ---------------- Multi-configuration (zoom) ----------------
+   * sys.mc = { n, cur, names: [], ops: [{ type, i, v: [valeur par config], vv: [variable par config] }], opt: 'all' | 'cur' }
+   * Le système principal porte toujours les valeurs de la configuration courante ; mcSync les recopie dans ops[].v[cur].
+   */
+  const MCT = {
+    THI: { l: 'Épaisseur', u: 'mm', s: 1, get: (S, i) => S.surfaces[i] && S.surfaces[i].t, set: (S, i, x) => { const q = S.surfaces[i]; if (q) { q.t = +x; if (q.tsolve === 'M') q.tsolve = ''; } }, num: 1, zmx: 'THIC', cv: 'THI', var: 't' },
+    RAD: { l: 'Rayon', u: 'mm', s: 1, get: (S, i) => S.surfaces[i] && S.surfaces[i].r, set: (S, i, x) => { if (S.surfaces[i]) S.surfaces[i].r = +x; }, num: 1, cv: 'RDY', var: 'c' },
+    CNC: { l: 'Conique', s: 1, get: (S, i) => S.surfaces[i] && (S.surfaces[i].k || 0), set: (S, i, x) => { if (S.surfaces[i]) S.surfaces[i].k = +x; }, num: 1, zmx: 'CONN', cv: 'K', var: 'k' },
+    GLA: { l: 'Verre', s: 1, get: (S, i) => S.surfaces[i] && (S.surfaces[i].glass || ''), set: (S, i, x) => { if (S.surfaces[i]) S.surfaces[i].glass = String(x || ''); }, zmx: 'GLSS', cv: 'GLA' },
+    SD: { l: '½ diamètre', u: 'mm', s: 1, get: (S, i) => S.surfaces[i] && S.surfaces[i].sd, set: (S, i, x) => { const q = S.surfaces[i]; if (q) { q.sd = +x; q.sdFixed = true; } }, num: 1, zmx: 'SDIA', cv: 'CIR' },
+    DX: { l: 'Décentrement X', u: 'mm', s: 1, get: (S, i) => S.surfaces[i] && (S.surfaces[i].dx || 0), set: (S, i, x) => { if (S.surfaces[i]) S.surfaces[i].dx = +x; }, num: 1, cv: 'XDE' },
+    DY: { l: 'Décentrement Y', u: 'mm', s: 1, get: (S, i) => S.surfaces[i] && (S.surfaces[i].dy || 0), set: (S, i, x) => { if (S.surfaces[i]) S.surfaces[i].dy = +x; }, num: 1, cv: 'YDE' },
+    TX: { l: 'Bascule α', u: '°', s: 1, get: (S, i) => S.surfaces[i] && (S.surfaces[i].tx || 0), set: (S, i, x) => { if (S.surfaces[i]) S.surfaces[i].tx = +x; }, num: 1, cv: 'ADE' },
+    TY: { l: 'Bascule β', u: '°', s: 1, get: (S, i) => S.surfaces[i] && (S.surfaces[i].ty || 0), set: (S, i, x) => { if (S.surfaces[i]) S.surfaces[i].ty = +x; }, num: 1, cv: 'BDE' },
+    APE: { l: 'Ouverture (valeur)', get: S => S.aperture.value, set: (S, i, x) => { S.aperture.value = +x; }, num: 1, zmx: 'APER' },
+    FY: { l: 'Champ Y', f: 1, get: (S, i) => S.fields[i] && S.fields[i].y, set: (S, i, x) => { if (S.fields[i]) S.fields[i].y = +x; }, num: 1, zmx: 'YFIE' },
+    FX: { l: 'Champ X', f: 1, get: (S, i) => S.fields[i] && (S.fields[i].x || 0), set: (S, i, x) => { if (S.fields[i]) S.fields[i].x = +x; }, num: 1, zmx: 'XFIE' },
+    WL: { l: 'Longueur d\'onde', u: 'µm', w: 1, get: (S, i) => S.wavelengths[i] && S.wavelengths[i].um, set: (S, i, x) => { if (S.wavelengths[i]) S.wavelengths[i].um = +x; }, num: 1, zmx: 'WAVE' },
+    WW: { l: 'Poids λ', w: 1, get: (S, i) => S.wavelengths[i] && (S.wavelengths[i].w ?? 1), set: (S, i, x) => { if (S.wavelengths[i]) S.wavelengths[i].w = +x; }, num: 1, zmx: 'WLWT', cv: 'WTW' },
+    TEM: { l: 'Température', u: '°C', get: S => (S.env && S.env.T != null ? S.env.T : 20), set: (S, i, x) => { S.env = { ...(S.env || {}), T: +x }; }, num: 1, zmx: 'TEMP', cv: 'TEM' },
+    PRE: { l: 'Pression', u: 'atm', get: S => (S.env && S.env.P != null ? S.env.P : 1), set: (S, i, x) => { S.env = { ...(S.env || {}), P: +x }; }, num: 1, zmx: 'PRES', cv: 'PRE' },
+  };
+  const mcOn = sys => !!(sys && sys.mc && sys.mc.n > 1 && Array.isArray(sys.mc.ops));
+  /** recopie les valeurs du système (configuration courante) dans la table multi-configuration */
+  function mcSync(sys) {
+    if (!sys || !sys.mc || !Array.isArray(sys.mc.ops)) return sys;
+    const mc = sys.mc, k = Math.min(Math.max(0, mc.cur | 0), (mc.n || 1) - 1); mc.cur = k;
+    for (const op of mc.ops) { const T = MCT[op.type]; if (!T) continue; if (!Array.isArray(op.v)) op.v = []; while (op.v.length < mc.n) op.v.push(op.v.length ? op.v[op.v.length - 1] : T.get(sys, op.i)); op.v.length = mc.n; const v = T.get(sys, op.i); if (v !== undefined) op.v[k] = v; }
+    return sys;
+  }
+  /** passe le système (en place) sur la configuration k */
+  function mcSet(sys, k) { if (!sys.mc) return sys; mcSync(sys); return mcLoad(sys, k); }
+  /** charge les valeurs de la configuration k dans le système (sans recopier d'abord la configuration courante) */
+  function mcLoad(sys, k) {
+    k = Math.min(Math.max(0, k | 0), sys.mc.n - 1);
+    for (const op of sys.mc.ops) { const T = MCT[op.type]; if (T && op.v && op.v[k] !== undefined && op.v[k] !== null && op.v[k] !== '') T.set(sys, op.i, op.v[k]); }
+    sys.mc.cur = k; return sys;
+  }
+  /** copie du système dans la configuration k */
+  const mcApply = (sys, k) => mcSet(structuredClone(sys), k);
+  /** le paramètre (type de variable, surface) est-il piloté par la multi-configuration ? */
+  const mcCtl = (sys, kind, si) => mcOn(sys) && sys.mc.ops.some(op => MCT[op.type] && MCT[op.type].var === kind && op.i === si);
+  /** ajoute une ligne de multi-configuration (valeurs initialisées à la valeur actuelle) */
+  function mcAddOp(sys, type, i) {
+    const T = MCT[type]; if (!T) return null; if (!sys.mc) sys.mc = { n: 1, cur: 0, ops: [], names: [] };
+    // une épaisseur pilotée par la multi-configuration ne peut plus être résolue (solve M) : valeur résolue figée
+    if (type === 'THI' && sys.surfaces[i] && sys.surfaces[i].tsolve) { const M = prepare(sys); if (M.ok) sys.surfaces[i].t = M.S[i].t; sys.surfaces[i].tsolve = ''; }
+    const v = T.get(sys, i); const op = { type, i: i | 0, v: Array.from({ length: sys.mc.n }, () => v) }; sys.mc.ops.push(op); return op;
+  }
+  /** résumé par configuration (paraxial, qualité) */
+  function mcSummary(sys) {
+    const out = []; if (!sys.mc) return out;
+    for (let k = 0; k < sys.mc.n; k++) {
+      const M = prepare(mcApply(sys, k)); if (!M.ok) { out.push({ k, ok: false }); continue; }
+      const sp = M.sys.fields.map((_, i) => spot(M, i, 15).rms * 1e3), wf = M.sys.fields.map((_, i) => { const w = wavefront(M, i, M.pw, 32); return w.ok ? w.rms : NaN; });
+      out.push({ k, ok: true, efl: M.par.efl, wfno: M.par.wfno, bfl: M.par.imgDist, ttl: M.par.ttl, imgH: M.par.imgH, fmax: M.par.fmax, spot: Math.max(...sp), wfe: Math.max(...wf.filter(isFinite)), M });
+    }
+    return out;
+  }
+
+  /* ---------------- FTM through-focus, FTM selon le champ ---------------- */
+  /** champs internes répartis de 0 au champ max selon Y (facteurs de vignetage interpolés) ; u = abscisse affichée */
+  function fieldSweep(M, n = 11) {
+    const F = M.sys.fields, r = F.map(f => Math.hypot(f.x || 0, f.y || 0)), rm = Math.max(...r, 0), order = r.map((v, i) => [v, i]).sort((a, b) => a[0] - b[0]);
+    const vk = ['vuy', 'vly', 'vux', 'vlx'], img = M.ftype === 'pim' || M.ftype === 'rim', out = [];
+    for (let k = 0; k < n; k++) {
+      const y = n === 1 ? rm : rm * k / (n - 1), f = { x: 0, y };
+      let a = order[0], b = order[order.length - 1];
+      for (let q = 0; q < order.length - 1; q++) if (y >= order[q][0] && y <= order[q + 1][0]) { a = order[q]; b = order[q + 1]; break; }
+      const t = b[0] > a[0] ? Math.min(1, Math.max(0, (y - a[0]) / (b[0] - a[0]))) : 0;
+      for (const key of vk) { const va = +F[a[1]][key] || 0, vb = +F[b[1]][key] || 0; if (va || vb) f[key] = va + t * (vb - va); }
+      let u = y; if (img) { const c = ray(M, M.pw, f, 0, 0, { noVig: true }); u = c.vig ? NaN : Math.hypot(c.x, c.y); }
+      out.push({ f, u });
+    }
+    return { pts: out, unit: img ? 'mm (image)' : M.objInf ? '°' : 'mm (objet)', img };
+  }
+  /** FTM (T, S) à une fréquence en fonction de la défocalisation, pour chaque champ ; meilleur foyer = max de la moyenne (T+S)/2 */
+  async function throughFocus(sys, o = {}, prog) {
+    const fz = tolFreeze(sys), N = fz.surfaces.length - 1, t0 = fz.surfaces[N - 1].t, M0 = prepare(fz);
+    if (!M0.ok) return null;
+    const dof = M0.ctxs[M0.pw].lmm * M0.par.wfno * M0.par.wfno, freq = +o.freq || 30, half = +o.half || Math.max(8 * dof, 1.4 * Math.abs(bestFocus(fz, 'WFE', focusStep(fz)).dt || 0)), n = Math.max(5, Math.min(61, o.n | 0 || 21)), Np = o.N || 32;
+    const dz = Array.from({ length: n }, (_, k) => -half + 2 * half * k / (n - 1)), nf = fz.fields.length;
+    const T = Array.from({ length: nf }, () => []), S = Array.from({ length: nf }, () => []), DL = [];
+    for (let k = 0; k < n; k++) {
+      const s = structuredClone(fz); s.surfaces[N - 1].t = t0 + dz[k];
+      const M = prepare(s); let dl = 0;
+      for (let i = 0; i < nf; i++) {
+        if (!M.ok) { T[i].push(NaN); S[i].push(NaN); continue; }
+        const r = mtf(M, i, { freqs: [freq], N: Np }); T[i].push(r.T[0]); S[i].push(r.S[0]); dl = Math.max(dl, r.DL[0]);
+      }
+      DL.push(dl);
+      if (prog) await prog(k + 1, n);
+    }
+    const W = fz.fields.map(f => f.w ?? 1), Wt = W.reduce((a, b) => a + b, 0) || 1;
+    const avg = dz.map((_, k) => W.reduce((a, w, i) => a + w * (T[i][k] + S[i][k]) / 2, 0) / Wt);
+    let kb = 0; avg.forEach((v, k) => { if (v > avg[kb]) kb = k; });
+    let best = dz[kb];
+    if (kb > 0 && kb < n - 1) { const a = avg[kb - 1], b = avg[kb], c = avg[kb + 1], den = a - 2 * b + c; if (den < 0) best = dz[kb] + 0.5 * (a - c) / den * (dz[1] - dz[0]); }
+    return { dz, T, S, DL, avg, best, bestV: avg[kb], freq, half, t0 };
+  }
+  /** FTM (T, S) à quelques fréquences en fonction du champ */
+  async function mtfField(sys, o = {}, prog) {
+    const M = prepare(sys); if (!M.ok) return null;
+    const freqs = (o.freqs && o.freqs.length ? o.freqs : [10, 30, 50]).map(Number).filter(v => v > 0), sw = fieldSweep(M, o.n || 11), Np = o.N || 32;
+    const T = freqs.map(() => []), S = freqs.map(() => []), DL = freqs.map(() => []);
+    for (let k = 0; k < sw.pts.length; k++) {
+      const r = mtf(M, sw.pts[k].f, { freqs, N: Np });
+      freqs.forEach((_, q) => { T[q].push(r.T[q]); S[q].push(r.S[q]); DL[q].push(r.DL[q]); });
+      if (prog) await prog(k + 1, sw.pts.length);
+    }
+    return { u: sw.pts.map(p => p.u), unit: sw.unit, freqs, T, S, DL, defF: sys.fields.map(f => Math.hypot(f.x || 0, f.y || 0)), img: sw.img };
+  }
+
+  /* ---------------- Éclairement relatif, grille de distorsion ---------------- */
+  /** aire du faisceau dans l'espace des cosinus directeurs image (rayons non vignetés, pupille découpée en n×n mailles) */
+  function beamArea(M, f, wi, n = 40) {
+    const P = []; let cos = NaN;
+    for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) { const r = ray(M, wi, f, -1 + 2 * i / n, -1 + 2 * j / n); P.push(r.vig ? null : [r.L, r.M]); }
+    const c = ray(M, wi, f, 0, 0); if (!c.vig) cos = Math.abs(c.N);
+    const h = 2 / n, obs = M.obs || 0; let A = 0;
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      const a = P[j * (n + 1) + i], b = P[j * (n + 1) + i + 1], d = P[(j + 1) * (n + 1) + i], e = P[(j + 1) * (n + 1) + i + 1];
+      if (!a || !b || !d || !e) continue;
+      // fraction de la maille dans la pupille (4×4 sous-points)
+      let fr = 0; for (let q = 0; q < 16; q++) { const x = -1 + (i + ((q & 3) + 0.5) / 4) * h, y = -1 + (j + ((q >> 2) + 0.5) / 4) * h, rr = Math.hypot(x, y); if (rr <= 1 && rr >= obs) fr++; }
+      if (!fr) continue;
+      const ar = Math.abs((b[0] - a[0]) * (d[1] - a[1]) - (b[1] - a[1]) * (d[0] - a[0])) / 2 + Math.abs((b[0] - e[0]) * (d[1] - e[1]) - (b[1] - e[1]) * (d[0] - e[0])) / 2;
+      A += ar * fr / 16;
+    }
+    return { A, cos };
+  }
+  /** éclairement relatif (aire du faisceau image dans l'espace des cosinus directeurs, rapportée à l'axe) en fonction du champ */
+  async function relIllum(sys, o = {}, prog) {
+    const M = prepare(sys); if (!M.ok) return null;
+    const sw = fieldSweep(M, o.n || 21), wi = o.wi ?? M.pw, ng = o.grid || 40, A = [], C = [];
+    for (let k = 0; k < sw.pts.length; k++) { const b = beamArea(M, sw.pts[k].f, wi, ng); A.push(b.A); C.push(b.cos); if (prog) await prog(k + 1, sw.pts.length); }
+    const a0 = A[0] || 1, c0 = C[0] || 1;
+    return { u: sw.pts.map(p => p.u), unit: sw.unit, ri: A.map(v => v / a0), cos4: C.map(v => (v / c0) ** 4), img: sw.img, wl: M.wls[wi] };
+  }
+  /** grille de distorsion : rayons principaux réels vs grille idéale (paraxiale) ; diag = le coin de la grille correspond au champ max */
+  function distGrid(M, o = {}) {
+    const n = Math.max(3, o.n | 0 || 11), F = M.sys.fields, rm = Math.max(...F.map(f => Math.hypot(f.x || 0, f.y || 0)), 1e-9), hs = o.diag === false ? rm : rm / Math.SQRT2, k = M.par.unitImgH, wi = o.wi ?? M.pw;
+    const ideal = (x, y) => M.objInf ? [k * Math.tan(x * DEG), k * Math.tan(y * DEG)] : [k * x, k * y];
+    const c0 = ray(M, wi, { x: 0, y: 0 }, 0, 0, { noVig: true }), ox = c0.vig ? 0 : c0.x, oy = c0.vig ? 0 : c0.y;
+    const R = [], I = []; let dmax = 0, dAt = null;
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      const fx = -hs + 2 * hs * i / (n - 1), fy = -hs + 2 * hs * j / (n - 1), c = ray(M, wi, { x: fx, y: fy }, 0, 0, { noVig: true }), q = ideal(fx, fy);
+      I.push(q); const p = c.vig ? null : [c.x - ox, c.y - oy]; R.push(p);
+      const ri = Math.hypot(q[0], q[1]);
+      if (p && ri > 1e-12) { const d = 100 * (Math.hypot(p[0], p[1]) - ri) / ri; if (Math.abs(d) > Math.abs(dmax)) { dmax = d; dAt = [fx, fy]; } }
+    }
+    return { n, R, I, dmax, dAt, hs, unit: M.objInf ? '°' : 'mm' };
+  }
+  /** tirage Monte-Carlo à valeurs imposées (tirages générés à part, pour le calcul parallèle reproductible) */
+  function tolTrialD(B, items, kind, comp, draws, opts = {}) {
+    const s = structuredClone(B.base); items.forEach((it, k) => tolApply(s, it, draws[k]));
+    const r = tolEval(s, kind, comp, B.h0, opts);
+    return { c: r.c, dt: r.dt, bore: Math.hypot(r.bx - B.bore[0], r.by - B.bore[1]) };
+  }
+
   function thermalScan(sys, o = {}) {
     const T1 = o.T1 ?? -20, T2 = o.T2 ?? 60, n = o.n || 9, out = { T: [], efl: [], dz: [], spot: [], wfe: [], fi: o.fi || 0 };
     for (let i = 0; i < n; i++) {
@@ -1891,9 +2069,9 @@ const OE = (() => {
     return out;
   }
 
-  return { DEG, fiberInfo, binPSF, detMTF, extSource, binImage, imageSim, polPupil, polOut, POLSTATES, TOLT, TOLC, LT, quickFocus, wlSel, opValue, parseModel, fmtModel, glassNearest, glassPool, toModel, subTry, tolBase, tolDefaults, tolFreeze, tolItems, tolGen, tolApplicable, tolLabel, tolApply, tolWorse, tolSens, tolInverse, tolTrial, tolRebuild, tolValue, niceDown, rng, mtfAt, compensate, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
+  return { MCT, mcOn, mcSync, mcSet, mcLoad, mcApply, mcCtl, mcAddOp, mcSummary, fieldSweep, throughFocus, mtfField, beamArea, relIllum, distGrid, tolTrialD, DEG, fiberInfo, binPSF, detMTF, extSource, binImage, imageSim, polPupil, polOut, POLSTATES, TOLT, TOLC, LT, quickFocus, wlSel, opValue, parseModel, fmtModel, glassNearest, glassPool, toModel, subTry, tolBase, tolDefaults, tolFreeze, tolItems, tolGen, tolApplicable, tolLabel, tolApply, tolWorse, tolSens, tolInverse, tolTrial, tolRebuild, tolValue, niceDown, rng, mtfAt, compensate, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
     wavefront, zernFit, ZN37, psf, psfGrid, mtf, mtfGeo, pupilScale, otfAC, mtfOne, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
-    OPS, getVars, residuals, meritOf, optStep, pupilGrid, indices, paraxial,
+    OPS, getVars, getVal, setVal, residuals, meritOf, optStep, pupilGrid, indices, paraxial,
     ASPK, FTYPES, vigMap, modelN, aimMode, setVignetting, convertFields, thermalScan, glassTherm, nAir, envN, envCtx, isSolid };
 })();
 if (typeof module !== 'undefined') module.exports = OE;

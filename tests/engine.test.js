@@ -191,4 +191,37 @@ const P = []; OE.ray(M, 1, 20, 0, 1, { pts: P }); near('Visée réelle sur diaph
   near('Zernike Z37 : résidu nul', f37.rmsRes, 0, 1e-12); near('Zernike Z16 : résidu = ordres 7 et 11 non ajustés', f16.rmsRes > 0.01 ? 1 : 0, 1, 0);
   const M = OE.prepare(S['Triplet de Cooke f=50 F/5']()), wf = OE.wavefront(M, 2, M.pw, 64, false), z = OE.zernFit(wf, 16);
   near('Zernike Z16 ≡ ajustement interne du front d\'onde (hors piston)', Math.max(...z.c.slice(1).map((v, k) => Math.abs(v - wf.zern[k + 1]))), 0, 1e-9); }
-console.log(fail ? `${fail} échec(s)` : 'Tous les tests passent'); process.exit(fail ? 1 : 0);
+// Multi-configuration, FTM through-focus / selon le champ, éclairement relatif, grille de distorsion, Monte-Carlo à tirages imposés
+(async () => {
+  const c = S['Triplet de Cooke f=50 F/5'](), N = c.surfaces.length - 1;
+  OE.mcAddOp(c, 'THI', N - 1); OE.mcAddOp(c, 'WL', 1); c.mc.n = 2; OE.mcSync(c); c.mc.ops[0].v[1] = c.mc.ops[0].v[0] + 0.3; c.mc.ops[1].v[1] = 0.6;
+  const c1 = OE.mcApply(c, 1);
+  near('Multi-config : épaisseur de la config 2', c1.surfaces[N - 1].t - c.surfaces[N - 1].t, 0.3, 1e-12);
+  near('Multi-config : config 1 inchangée après aller-retour', OE.mcApply(c1, 0).surfaces[N - 1].t, c.surfaces[N - 1].t, 1e-12);
+  c.merit = { image: 'SPOT', ops: [{ type: 'EFL', target: 50, weight: 1, cfg: 2 }] };
+  const r = OE.residuals(c), r0 = OE.residuals({ ...structuredClone(c), mc: { ...c.mc, opt: 'cur' } });
+  near('Multi-config : résidus = somme des configurations', r.f.length, 2 * r0.f.length - 1, 0);
+  c.surfaces[N - 2].vt = false; c.mc.ops[0].vv = [false, true];
+  near('Multi-config : variable par configuration', OE.getVars(c).filter(v => v.mc != null).length, 1, 0);
+  const z = IO.parseZMX(IO.toZMX(c).text).sys, q = IO.parseSeq(IO.toSeq(c).text).sys;
+  near('Multi-config : aller-retour Zemax (MCE)', z.mc.ops[0].v[1] - c.mc.ops[0].v[1], 0, 1e-9); near('Multi-config : aller-retour CODE V (ZOO)', q.mc.ops[0].v[1] - c.mc.ops[0].v[1], 0, 1e-9);
+  const t = S['Triplet de Cooke f=50 F/5'](), M = OE.prepare(t);
+  const tf = await OE.throughFocus(t, { freq: 30, n: 11, half: 0.05 }), m0 = OE.mtf(M, 0, { freqs: [30], N: 32 });
+  near('Through-focus : défocalisation nulle = FTM au plan image', tf.T[0][5], m0.T[0], 1e-9);
+  const mf = await OE.mtfField(t, { freqs: [30], n: 5 });
+  near('FTM selon le champ : champ 0 = FTM sur l\'axe', mf.T[0][0], m0.T[0], 1e-9); near('FTM selon le champ : bord = dernier champ', mf.T[0][4], OE.mtf(M, 2, { freqs: [30], N: 32 }).T[0], 1e-9);
+  const ri = await OE.relIllum(t, { n: 5 });
+  near('Éclairement relatif : 1 sur l\'axe', ri.ri[0], 1, 1e-12); near('Éclairement relatif : décroissant', ri.ri.every((v, k) => !k || v <= ri.ri[k - 1] + 1e-9) ? 1 : 0, 1, 0);
+  const par = S['Miroir parabolique f/4 (Newton)'](); par.fields = [{ x: 0, y: 0 }, { x: 0, y: 0.5 }];
+  const rp = await OE.relIllum(par, { n: 3 }); near('Éclairement relatif : ≈ cos⁴ pour un miroir sans vignetage', Math.abs(rp.ri[2] - rp.cos4[2]) < 0.02 ? 1 : 0, 1, 0);
+  const dg = OE.distGrid(M, { n: 5 }), fc = OE.fieldCurves(M, 30);
+  near('Grille de distorsion : centre sans distorsion', Math.hypot(dg.R[12][0], dg.R[12][1]), 0, 1e-12);
+  near('Grille de distorsion : bord Y = courbe de distorsion', OE.distGrid(M, { n: 3, diag: false }).R[7][1] / OE.distGrid(M, { n: 3, diag: false }).I[7][1] * 100 - 100, fc.dist[fc.dist.length - 1], 1e-6);
+  const B = OE.tolBase(t, 'WFE', true), items = OE.tolItems(B.base, OE.tolDefaults()).slice(0, 6), rnd = OE.rng(7), rnd2 = OE.rng(7);
+  const a1 = OE.tolTrial(B, items, 'WFE', true, 'normal', rnd), D = items.map(it => OE.tolValue(it, OE.tolDraw('normal', rnd2)));
+  near('Monte-Carlo : tirages imposés ≡ tirage direct', OE.tolTrialD(B, items, 'WFE', true, D).c, a1.c, 1e-12);
+  const J = require('../src/jobs.js'); global.OE = OE; const jm = await J.mtf({ sys: t, o: { N: 32 } });
+  near('Tâche « mtf » ≡ OE.mtf', jm.res[1].T[40], OE.mtf(M, 1, { fmax: jm.fmax, N: 32 }).T[40], 1e-12);
+  console.log(fail ? `${fail} échec(s)` : 'Tous les tests passent'); process.exit(fail ? 1 : 0);
+})();
+

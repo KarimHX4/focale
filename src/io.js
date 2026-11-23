@@ -88,7 +88,6 @@ const IO = (() => {
   const SEQ_SILENT = new Set(['GO', 'INI', 'SPH', 'CON', 'END', 'INS', 'SAV', 'UID', 'DER', 'DOR', 'GCH', 'GLB', 'CAT', 'DDM', 'CUM', 'THM', 'RDM;LEN', 'VIE', 'PLO', 'WRL', 'OUT', 'EVA', 'WRI', 'IN', 'CA', 'APE', 'DEL', 'AUT', 'MFR', 'IFR', 'NBR', 'XOF', 'YOF', 'XRA', 'YRA', 'COL', 'DES', 'TOW', 'LIB', 'PTH', 'DIN', 'GBL', 'NUM', 'STR', 'VAR', 'FIL', 'FRZ', 'FIX', 'CLR', 'CFG']);
   /** commandes reconnues mais non modélisées : une remarque par commande */
   const SEQ_UNSUP = {
-    ZOO: 'Système zoom / multi-configuration (ZOO) : seule la position 1 est importée',
     PIK: 'Reprises (PIK) non prises en charge : valeurs courantes conservées',
     PUY: 'Solve CODE V (PUY/PUX/PUC/PCY…) non pris en charge : valeur courante conservée', PUX: 'Solve CODE V (PUY/PUX/PUC/PCY…) non pris en charge : valeur courante conservée',
     PUC: 'Solve CODE V (PUY/PUX/PUC/PCY…) non pris en charge : valeur courante conservée', PCY: 'Solve CODE V (PUY/PUX/PUC/PCY…) non pris en charge : valeur courante conservée',
@@ -102,10 +101,24 @@ const IO = (() => {
     ADX: 'Décentrement d\'ouverture (ADX/ADY) ignoré', ADY: 'Décentrement d\'ouverture (ADX/ADY) ignoré',
     AFC: 'Mode afocal non pris en charge', AFO: 'Mode afocal non pris en charge', WID: 'Mode grand angle (WID) : utilisez la visée réelle des rayons',
   };
+  /** valeurs de multi-configuration exprimées en longueur (mise à l'échelle des unités) */
+  const MC_LEN = new Set(['THI', 'RAD', 'SD', 'DX', 'DY']);
+  function mcScale(sys, k) { if (!sys.mc) return; for (const op of sys.mc.ops) if (MC_LEN.has(op.type) || (op.type === 'APE' && ['EPD', 'STOP'].includes(sys.aperture.type))) op.v = op.v.map(v => typeof v === 'number' && isFinite(v) ? v * k : v); }
+  /** construit sys.mc à partir d'entrées { type, i, k (position, base 0), v } ; cur = configuration dont les valeurs sont celles du système */
+  function mcBuild(sys, ent, n, cur, W, src) {
+    if (!ent.length || n < 2) return;
+    const ops = new Map();
+    for (const e of ent) { const key = e.type + '|' + e.i; if (!ops.has(key)) ops.set(key, { type: e.type, i: e.i, v: new Array(n).fill(undefined) }); if (e.k >= 0 && e.k < n) ops.get(key).v[e.k] = e.v; }
+    sys.mc = { n, cur: Math.min(Math.max(0, cur), n - 1), ops: [...ops.values()], names: [] };
+    for (const op of sys.mc.ops) { const T = E.MCT[op.type], base = T.get(sys, op.i); op.v = op.v.map(v => v === undefined ? base : v); }
+    E.mcLoad(sys, sys.mc.cur);
+    W.push(`Multi-configuration importée (${src}) : ${n} configurations, ${sys.mc.ops.length} paramètre(s) — menu Configs`);
+  }
   const isSurfQ = t => /^S(\d+|O|I)$/i.test(t || '');
   const isItemQ = t => /^[WFZ]\d+$/i.test(t || '');
   function parseSeq(txt) {
     const W = [], sys = baseSys(), note = m => { if (!W.includes(m)) W.push(m); };
+    const zoo = { n: 0, ent: [] };
     let wl = [], wtw = [], fy = [], fxs = [], wtf = [], vig = { vuy: [], vly: [], vux: [], vlx: [] }, ftype = 'ang', cur = null, rdn = false, scale = null, ddm = null, prv = null, pwl = [], spsT = null, rect = new Map();
     const stmts = String(txt).split(/\r?\n/).map(l => l.replace(/!.*$/, '')).join('\n').split(/[;\n]/);
     const setList = (arr, a) => { // « CMD v1 v2 … » ou « CMD Wk v » / « CMD Fk v »
@@ -118,6 +131,17 @@ const IO = (() => {
       if (u === 'SO') return sys.surfaces[0];
       if (u === 'SI') return sys.surfaces.length > 1 ? sys.surfaces[sys.surfaces.length - 1] : null;
       return sys.surfaces[+u.slice(1)] || null;
+    };
+    const CV2MC = { THI: 'THI', RDY: 'RAD', CUY: 'RAD', K: 'CNC', GLA: 'GLA', GL1: 'GLA', CIR: 'SD', XDE: 'DX', YDE: 'DY', ADE: 'TX', BDE: 'TY', EPD: 'APE', FNO: 'APE', NAO: 'APE', NA: 'APE', YAN: 'FY', YOB: 'FY', YIM: 'FY', YRI: 'FY', XAN: 'FX', XOB: 'FX', XIM: 'FX', XRI: 'FX', WL: 'WL', WTW: 'WW', TEM: 'TEM', PRE: 'PRE' };
+    /** valeur(s) zoomée(s) : pos = position (base 0) ou null = une valeur par position */
+    const zooAdd = (c, sf, fi, vals, pos) => {
+      const type = CV2MC[c]; if (!type) return false; const D = E.MCT[type];
+      let i = 0; if (D.s) { if (!sf) return false; i = sf; } else if (D.f || D.w) i = fi ?? 0;
+      const conv = v => { if (type === 'GLA') return mapGlass(String(v).replace(/^['"]|['"]$/g, ''), NaN, NaN, W, 'zoom'); let x = num(v); if (!isFinite(x)) return undefined; if (c === 'CUY') x = x ? 1 / x : Infinity; if (c === 'RDY' && !x) x = Infinity; if (type === 'WL') x /= 1000; if (type === 'PRE') x /= 760; return x; };
+      const L = vals.map(conv).filter(v => v !== undefined);
+      if (pos != null) { if (L.length) zoo.ent.push({ type, sf: D.s ? i : null, i: D.s ? -1 : i, k: pos, v: L[0] }); zoo.n = Math.max(zoo.n, pos + 1); }
+      else { L.forEach((v, k) => zoo.ent.push({ type, sf: D.s ? i : null, i: D.s ? -1 : i, k, v })); zoo.n = Math.max(zoo.n, L.length); }
+      return true;
     };
     for (let st of stmts) {
       st = st.trim(); if (!st) continue;
@@ -132,12 +156,24 @@ const IO = (() => {
           continue; }
         continue;
       }
-      if (cmd === 'ZOO' || cmd === 'PIK') { note(SEQ_UNSUP[cmd]); continue; }
+      if (cmd === 'PIK') { note(SEQ_UNSUP[cmd]); continue; }
+      if (cmd === 'POS') continue;
+      if (cmd === 'ZOO') { // « ZOO n » (nombre de positions) ou « ZOO THI S5 v1 v2 … » (paramètre zoomé)
+        if (a.length === 1 && isFinite(num(a[0]))) { zoo.n = Math.max(zoo.n, num(a[0]) | 0); continue; }
+        const c2 = (a[0] || '').toUpperCase(); let rest = a.slice(1), sq = null, fq = null;
+        while (rest.length && (isSurfQ(rest[0]) || /^[FW]\d+$/i.test(rest[0]))) { const t0 = rest.shift(); if (isSurfQ(t0)) sq = surfAt(t0); else fq = +t0.slice(1) - 1; }
+        const vals = q ? [q[0]] : rest; if (!zooAdd(c2, sq || cur, fq, vals, null)) note(`Paramètre zoomé « ZOO ${c2} » non pris en charge`);
+        continue; }
       if (SEQ_SILENT.has(cmd)) continue;
       // qualificatif de surface explicite : « THI S3 5 », « CIR S2 10 », « SLB S4 'texte' », « STO S3 »…
       let tgt = cur;
       if (!['S', 'SO', 'SI'].includes(cmd) && isSurfQ(a[0])) { tgt = surfAt(a[0]); a = a.slice(1); if (!tgt) continue; }
       const n = i => num(a[i]);
+      { // qualificatif de position de zoom : « THI S5 Z2 12.5 », « YAN F2 Z3 10 »
+        let fq = null, zq = null, rest = a.slice();
+        while (rest.length && /^[FWZ]\d+$/i.test(rest[0])) { const t0 = rest.shift(); if (/^Z/i.test(t0)) zq = +t0.slice(1) - 1; else fq = +t0.slice(1) - 1; }
+        if (zq != null) { if (!zooAdd(cmd, tgt, fq, q ? [q[0]] : rest, zq)) note(`Commande « ${cmd} » en position de zoom non prise en charge`); continue; }
+      }
       switch (cmd) {
         case 'PRV': prv = true; pwl = []; break;
         case 'TIT': case 'TITLE': sys.title = q ? (q[1] ?? q[2]) : a.join(' '); break;
@@ -229,8 +265,9 @@ const IO = (() => {
     sys.fields = Array.from({ length: nf }, (_, i) => { const f = { x: fxs[i] || 0, y: fy[i] || 0, w: wtf[i] ?? 1 }; for (const k of ['vuy', 'vly', 'vux', 'vlx']) if (vig[k][i]) f[k] = vig[k][i]; return f; });
     if (Object.values(vig).some(v => v.some(x => x))) note('Facteurs de vignetage (VUY, VLY, VUX, VLX) importés');
     if (!sys.surfaces.some(s => s.stop)) { sys.surfaces[1].stop = true; W.push('Pas de diaphragme (STO) : surface 1 utilisée'); }
+    if (zoo.ent.length) { zoo.ent.forEach(e => { if (e.sf) e.i = sys.surfaces.indexOf(e.sf); }); mcBuild(sys, zoo.ent.filter(e => e.i >= 0), Math.max(2, zoo.n), 0, W, 'ZOO CODE V'); }
     const sc = scale ?? ddm ?? 1;
-    if (sc !== 1) { scaleSys(sys, sc, ftype); W.push(`Unités converties en mm (×${sc})`); }
+    if (sc !== 1) { scaleSys(sys, sc, ftype); mcScale(sys, sc); W.push(`Unités converties en mm (×${sc})`); }
     sys.ftype = ftype;
     fixFields(sys, ftype, W);
     if (sys.env && (sys.env.T != null || sys.env.P != null)) { if (Math.abs((sys.env.T ?? 20) - 20) < 1e-9 && Math.abs((sys.env.P ?? 1) - 1) < 1e-9) delete sys.env; else note(`Environnement importé : ${sys.env.T ?? 20} °C, ${+(sys.env.P ?? 1).toFixed(5)} atm (prescription à 20 °C)`); }
@@ -256,6 +293,7 @@ const IO = (() => {
     sys.fields = sys.fields.map(f => ({ ...f, x: f.x * k, y: f.y * k }));
   }
 
+  const cv0 = (s, objInf) => E.FTYPES[E.FTYPES[s.ftype] ? s.ftype : (objInf ? 'ang' : 'obj')].cv;
   function toSeq(s) {
     const W = [], S = s.surfaces, N = S.length - 1, L = [], TS = solvedT(s);
     const objInf = !isFinite(S[0].t) || Math.abs(S[0].t) > 1e10;
@@ -305,6 +343,17 @@ const IO = (() => {
     if (s.apod && s.apod.type === 'gauss') L.push(`PUI ${fmtN(s.apod.I ?? 0.135)}`);
     if (priv.size) { L.push('PRV', 'PWL ' + wls.map(l => (l * 1000).toFixed(4)).join(' ')); for (const [nm, ns] of priv) L.push(`'${nm}' ${ns.map(v => v.toFixed(6)).join(' ')}`); L.push('END'); W.push(`${priv.size} verre(s) fictif(s) ou importé(s) exporté(s) en verres privés PRV`); }
     if ((ap.obscuration || 0) > 0) W.push('Obstruction centrale non exportée');
+    if (E.mcOn(s)) { // multi-configuration → positions de zoom CODE V
+      const mc = E.mcSync(structuredClone(s)).mc, zl = [`ZOO ${mc.n}`];
+      for (const op of mc.ops) {
+        const D = E.MCT[op.type], cv = op.type === 'APE' ? ({ EPD: 'EPD', FNO: 'FNO', NA: 'NAO', NAI: 'NA' })[ap.type] : op.type === 'FY' ? cv0(s, objInf) : op.type === 'FX' ? 'X' + cv0(s, objInf).slice(1) : op.type === 'WL' ? 'WL' : D.cv;
+        if (!cv) { W.push(`Multi-configuration : paramètre « ${D.l} » non exporté vers CODE V`); continue; }
+        const qual = D.s ? (op.i === 0 ? 'SO' : op.i === N ? 'SI' : 'S' + op.i) : D.f ? 'F' + (op.i + 1) : D.w ? 'W' + (op.i + 1) : '';
+        const val = v => op.type === 'GLA' ? (gl(v) || 'AIR') : op.type === 'WL' ? (v * 1000).toFixed(4) : op.type === 'PRE' ? fmtN(v * 760) : op.type === 'RAD' ? r(v) : fmtN(v);
+        zl.push(`ZOO ${cv} ${qual} ${op.v.map(val).join(' ')}`.replace(/\s+/g, ' '));
+      }
+      body.push(...zl); W.push(`${mc.n} configurations exportées en positions de zoom CODE V (ZOO) : à vérifier dans CODE V`);
+    }
     return { text: [...L, ...body, 'GO'].join('\n'), warnings: W };
   }
 
@@ -313,11 +362,19 @@ const IO = (() => {
      ===================================================================== */
   function parseZMX(txt) {
     const W = [], sys = baseSys(), raw = [];
+    const mce = { n: 0, cur: 1, ent: [] }, ZM = { THIC: 'THI', CRVT: 'RAD', CONN: 'CNC', GLSS: 'GLA', SDIA: 'SD', APER: 'APE', YFIE: 'FY', XFIE: 'FX', WAVE: 'WL', WLWT: 'WW', TEMP: 'TEM', PRES: 'PRE' };
     let cur = null, unit = 1, ftype = 0, nf = null, nw = null, xf = [], yf = [], fw = [], wavm = [], wavl = [], wwgt = [], pwav = 1, floa = false, vdx = [], vdy = [], vcx = [], vcy = [];
     for (const line of String(txt).split(/\r?\n/)) {
       const tl = line.trim(); if (!tl) continue;
       const t = tl.split(/\s+/), cmd = t[0].toUpperCase();
       if (cmd === 'SURF') { cur = { n: +t[1], type: 'STANDARD', parm: {}, xdat: {} }; raw.push(cur); continue; }
+      if (cmd === 'MNUM') { mce.n = +t[1] || 0; mce.cur = +t[2] || 1; continue; }
+      if (cmd === 'MOFF') { const m = tl.match(/"([^"]*)"/); if (m && m[1].trim()) (mce.names = mce.names || [])[+t[2] - 1] = m[1].trim(); continue; }
+      if (ZM[cmd] && mce.n > 1 && t.length >= 4) { // ligne de l'éditeur multi-configuration : TYPE int1 config valeur …
+        const type = ZM[cmd], D = E.MCT[type], k = +t[2] - 1; let v = t[3];
+        if (type === 'GLA') v = /^"?\s*"?$/.test(v) ? '' : mapGlass(v.replace(/"/g, ''), NaN, NaN, W, 'multi-configuration');
+        else { v = num(v); if (type === 'RAD') v = v ? 1 / v : Infinity; }
+        mce.ent.push({ type, i: D.s ? +t[1] : D.f || D.w ? +t[1] - 1 : 0, k, v }); continue; }
       if (cur) {
         switch (cmd) {
           case 'TYPE': cur.type = (t[1] || 'STANDARD').toUpperCase(); continue;
@@ -408,6 +465,7 @@ const IO = (() => {
       else W.push('Ouverture « Float by stop size » sans demi-diamètre de diaphragme : EPD = 10 mm par défaut');
     }
     sys.surfaces.forEach(s => delete s._cb);
+    if (mce.ent.length) { mcBuild(sys, mce.ent.filter(e => !E.MCT[e.type].s || (e.i >= 0 && e.i < sys.surfaces.length)), mce.n, mce.cur - 1, W, 'Zemax MCE'); if (sys.mc && mce.names) sys.mc.names = Array.from({ length: sys.mc.n }, (_, k) => mce.names[k] || ''); if (unit !== 1) mcScale(sys, unit); }
     return { sys, warnings: W };
   }
 
@@ -425,8 +483,10 @@ const IO = (() => {
       if (o.kind === 'cat') { cats.add(o.cat); if (o.user) W.push(`Verre ${o.name} : catalogue ${o.cat} à installer dans OpticStudio`); return `GLAS ${o.name} 0 0 ${fmtN(o.nd)} ${fmtN(o.vd)} 0 0 0 0 0 0`; }
       return `GLAS ___BLANK 1 0 ${fmtN(o.nd)} ${fmtN(o.vd)} 0 0 0 0 0 0`;
     };
+    const zmap = [], ztmap = [];
     S.forEach((x, i) => {
       const t = i === N ? 0 : TS[i], dec = i > 0 && i < N && isDec(x);
+      zmap[i] = zs.length + (dec ? 1 : 0); ztmap[i] = zs.length + (dec ? (x.dmode === 'DEC' ? 1 : 2) : 0);
       const surf = { type: 'STANDARD', curv: isFinite(x.r) && x.r ? 1 / x.r : 0, disz: t, glas: glasLine(x.glass), sd: x.sd, fixed: x.sdFixed, coni: x.k, parm: {}, stop: x.stop, comm: x.comment || '' };
       if (E.ASPK.some(a => x[a])) { surf.type = 'EVENASPH'; surf.parm = { 1: 0, 2: x.a4 || 0, 3: x.a6 || 0, 4: x.a8 || 0, 5: x.a10 || 0, 6: x.a12 || 0, 7: x.a14 || 0, 8: x.a16 || 0 }; if (x.a18 || x.a20) W.push(`S${i} : coefficients A18, A20 non exportés (EVENASPH s'arrête à r¹⁶)`); }
       if (x.tce != null && x.tce !== '') surf.tce = +x.tce;
@@ -473,6 +533,17 @@ const IO = (() => {
       if (z.fixed && z.sd > 0) out.push(`  CLAP 0 ${fmtN(z.sd)} 0`);
       if (z.tce) out.push(`  TCE ${fmtN(z.tce)}`);
     });
+    if (E.mcOn(s)) { // éditeur multi-configuration OpticStudio
+      const mc = E.mcSync(structuredClone(s)).mc; out.push(`MNUM ${mc.n} ${(mc.cur | 0) + 1}`);
+      for (let k = 0; k < mc.n; k++) out.push(`MOFF 0 ${k + 1} "${String(mc.names && mc.names[k] || '').replace(/"/g, "'")}" 0 0 0 1 1 0 0.0 ""`);
+      for (const op of mc.ops) {
+        const D = E.MCT[op.type]; if (!D.zmx && op.type !== 'RAD') { W.push(`Multi-configuration : paramètre « ${D.l} » non exporté vers Zemax`); continue; }
+        const code = op.type === 'RAD' ? 'CRVT' : D.zmx, int1 = D.s ? (op.type === 'THI' ? ztmap[op.i] : zmap[op.i]) : D.f || D.w ? op.i + 1 : 0;
+        op.v.forEach((v, k) => { const val = op.type === 'RAD' ? fmtN(isFinite(v) && v ? 1 / v : 0) : op.type === 'GLA' ? (glassOut(v).kind === 'air' ? '""' : glassOut(v).kind === 'mirror' ? 'MIRROR' : glassOut(v).name || '___BLANK') : fmtN(v);
+          out.push(`${code} ${int1} ${k + 1} ${val} 0 0 0 1 1 0 0.0 ""`); });
+      }
+      W.push(`${mc.n} configurations exportées dans l'éditeur multi-configuration Zemax (MNUM / ${mc.ops.length} opérande(s))`);
+    }
     if (S.some(x => x.tsolve === 'M')) W.push('Solve de mise au point exporté comme épaisseur fixe');
     if ((ap.obscuration || 0) > 0) W.push('Obstruction centrale non exportée');
     if (s.rayAiming) W.push('Visée réelle des rayons : à réactiver dans OpticStudio (System Explorer → Ray Aiming)');

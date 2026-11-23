@@ -4,8 +4,8 @@
    ===================================================================== */
 const RPT_DEF = {
   title: 'Rapport de conception optique', author: '', notes: '',
-  sec: { cover: true, system: true, presc: true, layout: true, perf: true, seidel: true, panes: false, det: true, src: true, tol: true },
-  an: { spot: true, mtf: true, field: true, wfe: false, psf: false, rayfan: false, opdfan: false, zern: false, ee: false, footprint: false, chrom: false, polar: false, detector: false, source: false, imgsim: false, glass: false },
+  sec: { cover: true, system: true, presc: true, mc: true, layout: true, perf: true, seidel: true, panes: false, det: true, src: true, tol: true },
+  an: { spot: true, mtf: true, field: true, tfmtf: false, mtffield: false, relillum: false, distgrid: false, thermal: false, wfe: false, psf: false, rayfan: false, opdfan: false, zern: false, ee: false, footprint: false, chrom: false, polar: false, detector: false, source: false, imgsim: false, glass: false },
   perField: false,
 };
 function rptCfg() {
@@ -15,7 +15,7 @@ function rptCfg() {
   return App.rpt;
 }
 function rptSave() { try { localStorage.setItem('focale.rpt', JSON.stringify(App.rpt)); } catch (e) { } }
-const RPT_SEC = [['cover', 'Page de garde et notes'], ['system', 'Données du système et paraxial'], ['presc', 'Prescription (surfaces)'], ['layout', 'Layout 2D'], ['perf', 'Performances par champ'],
+const RPT_SEC = [['cover', 'Page de garde et notes'], ['system', 'Données du système et paraxial'], ['presc', 'Prescription (surfaces)'], ['mc', 'Multi-configuration (si définie)'], ['layout', 'Layout 2D'], ['perf', 'Performances par champ'],
   ['seidel', 'Coefficients de Seidel'], ['panes', 'Fenêtres d\'analyse ouvertes (avec leurs réglages)'], ['det', 'Détecteur (si actif)'], ['src', 'Source / fibre (si définie)'], ['tol', 'Tolérancement (si calculé)']];
 function openReport() {
   const c = rptCfg(), an = Object.keys(RPT_DEF.an).filter(k => PT[k]);
@@ -185,6 +185,30 @@ async function genReport() {
       const dec = M.S.map((s, i) => [i, s]).filter(([, s]) => isDec(s));
       if (dec.length) { h2('Décentrements et bascules'); const w6 = (CW - 90) / 6; table([{ t: '#', w: 40 }, { t: 'Mode', w: 50 }, ...['X (mm)', 'Y (mm)', 'Z (mm)', 'α (°)', 'β (°)', 'γ (°)'].map(t => ({ t, w: w6, a: 'right', mono: true }))], dec.map(([i, s]) => [i, s.dmode || 'DEC', fmt(s.dx, 6), fmt(s.dy, 6), fmt(s.dz, 6), fmt(s.tx, 6), fmt(s.ty, 6), fmt(s.tz, 6)])); }
     }
+    // ---------------- multi-configuration ----------------
+    if (cf.sec.mc && OE.mcOn(sys)) {
+      await step('Multi-configuration…'); h1('Multi-configuration');
+      const n = sys.mc.n, cur = sys.mc.cur | 0, nm = k => mcName(sys, k), wc = Math.max(48, (CW - 150) / n);
+      para(`${n} configurations ; la configuration active (« ${nm(cur)} ») est celle des autres sections du rapport.${sys.mc.opt !== 'cur' ? ' Optimisation sur toutes les configurations.' : ''}`, { size: 9 });
+      h2('Paramètres par configuration');
+      const el = op => { const D = OE.MCT[op.type]; return D.s ? `S${op.i}` : D.f ? `champ ${op.i + 1}` : D.w ? `λ${op.i + 1}` : '—'; };
+      table([{ t: 'Paramètre', w: 100 }, { t: 'Élément', w: 50 }, ...Array.from({ length: n }, (_, k) => ({ t: nm(k), w: wc, a: 'right', mono: true }))],
+        sys.mc.ops.map(op => [OE.MCT[op.type].l + (OE.MCT[op.type].u ? ` (${OE.MCT[op.type].u})` : ''), el(op), ...op.v.map(v => v === Infinity ? 'Infini' : typeof v === 'number' ? fmt(v, 6) : String(v))]), { size: n > 6 ? 7.5 : 8.5 });
+      const S = OE.mcSummary(sys);
+      h2('Synthèse par configuration');
+      const rowS = (l, f) => [l, ...S.map(o => o.ok ? f(o) : '—')];
+      table([{ t: 'Grandeur', w: 150 }, ...Array.from({ length: n }, (_, k) => ({ t: nm(k), w: wc, a: 'right', mono: true }))],
+        [rowS('Focale (EFL), mm', o => fx(o.efl, 3)), rowS('F/# de travail', o => fx(o.wfno, 3)), rowS('Champ max', o => fmt(o.fmax, 4)), rowS('Hauteur image, mm', o => fx(o.imgH, 3)), rowS('Tirage (BFL), mm', o => fx(o.bfl, 3)), rowS('Longueur totale, mm', o => fx(o.ttl, 2)), rowS('Spot RMS max, µm', o => fx(o.spot, 2)), rowS('WFE RMS max, λ', o => fx(o.wfe, 3))], { size: n > 6 ? 7.5 : 8.5 });
+      const sv = { sys: App.sys, M: App.M };
+      try {
+        App.view = { ...App.view, auto: true }; App.mode = '2d';
+        for (let k = 0; k < n; k++) {
+          App.sys = OE.mcApply(sv.sys, k); App.M = OE.prepare(App.sys); if (!App.M.ok) continue;
+          const cv = rptCanvas((c, w, h) => drawLayout({ c, w, h }), 780, 250);
+          image(cv, `Layout — ${nm(k)} : EFL ${fx(App.M.par.efl, 2)} mm, F/${fx(App.M.par.wfno, 2)}.`);
+        }
+      } finally { App.sys = sv.sys; App.M = sv.M; App.sysKey = null; }
+    }
     // ---------------- layout ----------------
     if (cf.sec.layout) {
       await step('Layout…'); h1('Layout');
@@ -215,10 +239,12 @@ async function genReport() {
       if (pp.type === 'zern') { const wf = OE.wavefront(M, pp.fi || 0, pp.wi ?? M.pw, 64, false), z = OE.zernFit(wf, +pp.nz || 16); h2(title, 80, true);
         table([{ t: 'Terme', w: 50 }, { t: 'n', w: 30, a: 'right' }, { t: 'Aberration', w: CW - 260 }, { t: 'Coef. (λ)', w: 90, a: 'right', mono: true }, { t: 'RMS (λ)', w: 90, a: 'right', mono: true }], z.c.map((v, i) => [`Z${i + 1}`, z.order[i], z.names[i], (v >= 0 ? '+' : '') + v.toFixed(5), i ? z.rmsTerm[i].toFixed(5) : '—']));
         kv([['RMS total (piston retiré)', `${fx(z.rmsTot, 5)} λ`], [`Résidu au-delà de Z${z.nz} (RMS / PV)`, `${fx(z.rmsRes, 5)} λ / ${fx(z.pvRes, 4)} λ`]]); return; }
-      if (pp.type === 'presc') return;
+      if (PT[pp.type].html) return;
       if (pp.type === 'imgsim') simSync(pp, M);
+      let data;
+      if (PT[pp.type].job) { const J = jobSpec(pp, M); data = JCACHE.get(J.key); if (!data) { data = await runJob(J.name, J.args, { onProg: (d, n) => msg(`Analyse : ${title}… ${Math.round(100 * d / Math.max(1, n))} %`) }); JCACHE.set(J.key, data); } }
       const tall = ['spot', 'rayfan', 'opdfan'].includes(pp.type) && sys.fields.length > 2;
-      const cv = rptCanvas((c, w, h) => R[pp.type](pp, M, c, w, h), 780, tall ? 560 : 430);
+      const cv = rptCanvas((c, w, h) => R[pp.type](pp, M, c, w, h, data), 780, tall ? 560 : 430);
       h2(title, CW * cv.height / cv.width + 6, true); image(cv);
     };
     const anKeys = Object.keys(cf.an).filter(k => cf.an[k] && PT[k]);

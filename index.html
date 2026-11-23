@@ -207,6 +207,12 @@ table.lde{border-collapse:separate;border-spacing:0;width:max-content;min-width:
 footer{display:flex;align-items:center;gap:14px;padding:0 10px;background:var(--panel);border-top:1px solid var(--line);font-size:11.5px;color:var(--mut);white-space:nowrap;overflow:hidden}
 footer .err{color:var(--err);font-weight:600}
 footer .k{font-family:var(--mono);color:var(--fg)}
+footer #bgst{display:inline-flex;align-items:center;gap:5px;color:var(--acc)}
+.bgspin{width:10px;height:10px;border:2px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:bgsp .8s linear infinite;display:inline-block}
+@keyframes bgsp{to{transform:rotate(360deg)}}
+.mcbar{display:inline-flex;align-items:center;gap:2px}.mcbar select{height:26px;max-width:150px;border:1px solid var(--acc);border-radius:6px;background:var(--acc2);color:var(--fg);font-weight:600}.mcbar .tb{padding:0 6px}
+.lde input.mcc{box-shadow:inset 3px 0 0 #a855f7;color:#a855f7;font-weight:600}
+.mct td,.mct th{padding:3px 4px;border-bottom:1px solid var(--line);vertical-align:middle}.mct select{max-width:180px}
 /* modal */
 .modal{position:fixed;inset:0;display:none;z-index:100;pointer-events:none}
 .modal.open{display:block}
@@ -305,6 +311,8 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
   <button class="tb" data-act="redo" title="Rétablir (Ctrl+Y)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 000 10h3"/></svg></button>
   <div class="sep"></div>
   <button class="tb" data-act="sysdata" title="Données système (CODE V) : pupille, longueurs d'onde, champs et vignetage, température et pression, matériaux — Ctrl+Maj+D"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>Système</button>
+  <button class="tb" data-act="mconf" title="Multi-configuration (zoom, mise au point…) — Ctrl+Maj+M"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="7" height="7" rx="1"/><rect x="14" y="4" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17.5h7M17.5 14v7"/></svg>Configs</button>
+  <span id="mcbar" class="mcbar" style="display:none"></span>
   <div class="sep"></div>
   <button class="tb pri" data-act="optim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20l6-8 4 4 8-11"/><circle cx="21" cy="5" r="1.5" fill="currentColor"/></svg>Optimiser</button>
   <button class="tb" data-act="tol" title="Sensibilités et Monte-Carlo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20h18"/><path d="M6 20V10M10 20V4M14 20V8M18 20v-6"/></svg>Tolérancer</button>
@@ -369,8 +377,8 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 <div class="toast" id="toast"></div>
 <input type="file" id="fileIn" accept=".json,.zmx,.seq,.txt,.agf" style="display:none">
 <div class="drop" id="drop">Déposez un fichier .zmx, .seq, .json ou .agf</div>
-<script>const FOCALE_VERSION = '924c0ab0';</script>
-<script>
+<script>const FOCALE_VERSION = 'a69f5270';</script>
+<script id="js-engine">
 'use strict';
 /* =====================================================================
    FOCALE — moteur optique (tracé séquentiel réel + paraxial + diffraction)
@@ -1843,18 +1851,23 @@ const OE = (() => {
   }
   const ASPH = ASPK;
   function getVars(sys) {
-    const v = [];
+    const v = [], ctl = (k, i) => mcCtl(sys, k, i);
     sys.surfaces.forEach((s, i) => {
-      if (s.vr) v.push({ si: i, kind: 'c' });
-      if (s.vt && s.tsolve !== 'M') v.push({ si: i, kind: 't' });
-      if (s.vk) v.push({ si: i, kind: 'k' });
+      if (s.vr && !ctl('c', i)) v.push({ si: i, kind: 'c' });
+      if (s.vt && s.tsolve !== 'M' && !ctl('t', i)) v.push({ si: i, kind: 't' });
+      if (s.vk && !ctl('k', i)) v.push({ si: i, kind: 'k' });
       for (const a of ASPH) if (s['v' + a]) v.push({ si: i, kind: a });
       if (s.vg && !isMirror(s) && parseModel(s.glass)) { v.push({ si: i, kind: 'nd' }); v.push({ si: i, kind: 'vd' }); }
     });
+    // variables de la multi-configuration : une par configuration cochée
+    if (mcOn(sys)) sys.mc.ops.forEach((op, oi) => { const T = MCT[op.type]; if (!T || !T.var || !Array.isArray(op.vv)) return; for (let k = 0; k < sys.mc.n; k++) if (op.vv[k]) v.push({ si: op.i, kind: T.var, mc: oi, cfg: k }); });
     return v;
   }
-  function getVal(sys, v) { const s = sys.surfaces[v.si]; if (v.kind === 'nd' || v.kind === 'vd') return (parseModel(s.glass) || {})[v.kind]; return v.kind === 'c' ? curv(s) : v.kind === 't' ? s.t : v.kind === 'k' ? (s.k || 0) : (+s[v.kind] || 0); }
+  function getVal(sys, v) {
+    if (v.mc != null && v.cfg !== (sys.mc.cur | 0)) { const x = +sys.mc.ops[v.mc].v[v.cfg]; return v.kind === 'c' ? (Math.abs(x) > 1e12 || !isFinite(x) ? 0 : 1 / x) : x; }
+    const s = sys.surfaces[v.si]; if (v.kind === 'nd' || v.kind === 'vd') return (parseModel(s.glass) || {})[v.kind]; return v.kind === 'c' ? curv(s) : v.kind === 't' ? s.t : v.kind === 'k' ? (s.k || 0) : (+s[v.kind] || 0); }
   function setVal(sys, v, x) {
+    if (v.mc != null) { const op = sys.mc.ops[v.mc]; op.v[v.cfg] = v.kind === 'c' ? (Math.abs(x) < 1e-12 ? Infinity : 1 / x) : x; if (v.cfg !== (sys.mc.cur | 0)) return; }
     const s = sys.surfaces[v.si];
     if (v.kind === 'nd' || v.kind === 'vd') { const m = parseModel(s.glass) || { nd: 1.5, vd: 60 }; m[v.kind] = v.kind === 'nd' ? Math.min(2.2, Math.max(1.35, x)) : Math.min(100, Math.max(15, x)); s.glass = fmtModel(m.nd, m.vd); return; }
     if (v.kind === 'c') s.r = Math.abs(x) < 1e-12 ? Infinity : 1 / x; else if (v.kind === 't') s.t = x; else if (v.kind === 'k') s.k = x; else s[v.kind] = x;
@@ -1899,7 +1912,19 @@ const OE = (() => {
     return { list };
   }
   /** résidus de la fonction de mérite (critère image + opérandes) ; parts = valeur et part de chaque opérande */
+  /** résidus de la fonction de mérite ; en multi-configuration (mc.opt ≠ 'cur') : somme sur toutes les configurations */
   function residuals(sys) {
+    if (!mcOn(sys) || sys.mc.opt === 'cur') return residuals1(sys, null);
+    const f = [], byOp = new Map(); let img2 = 0, M = null;
+    for (let k = 0; k < sys.mc.n; k++) {
+      const r = residuals1(k === (sys.mc.cur | 0) ? sys : mcApply(sys, k), k); if (!r) return null;
+      for (const v of r.f) f.push(v); img2 += r.img2;
+      if (k === (sys.mc.cur | 0)) M = r.M;
+      for (const p of r.parts) { const op = (sys.merit.ops || [])[p.i], own = op && +op.cfg ? +op.cfg - 1 === k : k === (sys.mc.cur | 0); if (own) byOp.set(p.i, p); else if (byOp.has(p.i)) byOp.get(p.i).r2 += p.r2; else byOp.set(p.i, { ...p, val: null, ok: null }); }
+    }
+    return { f, M, img2, parts: [...byOp.values()].sort((a, b) => a.i - b.i) };
+  }
+  function residuals1(sys, cfg) {
     const M = prepare(sys);
     if (!M.ok) return null;
     const f = [];
@@ -1933,6 +1958,7 @@ const OE = (() => {
     const parts = [];
     (mf.ops || []).forEach((op, oi) => {
       const w = +op.weight || 0, tg = +op.target || 0, def = OPS[op.type]; if (!def) return;
+      if (cfg != null && +op.cfg && +op.cfg - 1 !== cfg) return;
       const cmp = op.cmp || def.kind, o = opValue(M, op), n0 = f.length;
       const res = v => cmp === 'ge' ? Math.max(0, tg - v) : cmp === 'le' ? Math.max(0, v - tg) : v - tg;
       let shown = o.val;
@@ -2015,8 +2041,8 @@ const OE = (() => {
   const tolWorse = (kind, c, nom) => TOLC[kind] && TOLC[kind].up ? nom - c : c - nom;
   /** fige les solves (épaisseurs calculées) pour que le compensateur soit numérique */
   function tolFreeze(sys) {
-    const M = prepare(sys), s = structuredClone(sys);
-    if (M.ok) s.surfaces.forEach((x, j) => { x.t = M.S[j].t; x.tsolve = ''; });
+    const M = prepare(sys), s = structuredClone(sys); delete s.mc;
+    if (M.ok) s.surfaces.forEach((x, j) => { if (x.tsolve) x.t = M.S[j].t; x.tsolve = ''; }); // épaisseurs saisies conservées (la dilatation thermique est réappliquée par prepare)
     return s;
   }
   /** la tolérance « type » a-t-elle un sens sur la surface j ? */
@@ -2250,6 +2276,166 @@ const OE = (() => {
     });
   }
   /** balayage en température : focale, défocalisation (foyer paraxial − plan image), RMS spot et front d'onde au plan image fixe */
+  /* ---------------- Multi-configuration (zoom) ----------------
+   * sys.mc = { n, cur, names: [], ops: [{ type, i, v: [valeur par config], vv: [variable par config] }], opt: 'all' | 'cur' }
+   * Le système principal porte toujours les valeurs de la configuration courante ; mcSync les recopie dans ops[].v[cur].
+   */
+  const MCT = {
+    THI: { l: 'Épaisseur', u: 'mm', s: 1, get: (S, i) => S.surfaces[i] && S.surfaces[i].t, set: (S, i, x) => { const q = S.surfaces[i]; if (q) { q.t = +x; if (q.tsolve === 'M') q.tsolve = ''; } }, num: 1, zmx: 'THIC', cv: 'THI', var: 't' },
+    RAD: { l: 'Rayon', u: 'mm', s: 1, get: (S, i) => S.surfaces[i] && S.surfaces[i].r, set: (S, i, x) => { if (S.surfaces[i]) S.surfaces[i].r = +x; }, num: 1, cv: 'RDY', var: 'c' },
+    CNC: { l: 'Conique', s: 1, get: (S, i) => S.surfaces[i] && (S.surfaces[i].k || 0), set: (S, i, x) => { if (S.surfaces[i]) S.surfaces[i].k = +x; }, num: 1, zmx: 'CONN', cv: 'K', var: 'k' },
+    GLA: { l: 'Verre', s: 1, get: (S, i) => S.surfaces[i] && (S.surfaces[i].glass || ''), set: (S, i, x) => { if (S.surfaces[i]) S.surfaces[i].glass = String(x || ''); }, zmx: 'GLSS', cv: 'GLA' },
+    SD: { l: '½ diamètre', u: 'mm', s: 1, get: (S, i) => S.surfaces[i] && S.surfaces[i].sd, set: (S, i, x) => { const q = S.surfaces[i]; if (q) { q.sd = +x; q.sdFixed = true; } }, num: 1, zmx: 'SDIA', cv: 'CIR' },
+    DX: { l: 'Décentrement X', u: 'mm', s: 1, get: (S, i) => S.surfaces[i] && (S.surfaces[i].dx || 0), set: (S, i, x) => { if (S.surfaces[i]) S.surfaces[i].dx = +x; }, num: 1, cv: 'XDE' },
+    DY: { l: 'Décentrement Y', u: 'mm', s: 1, get: (S, i) => S.surfaces[i] && (S.surfaces[i].dy || 0), set: (S, i, x) => { if (S.surfaces[i]) S.surfaces[i].dy = +x; }, num: 1, cv: 'YDE' },
+    TX: { l: 'Bascule α', u: '°', s: 1, get: (S, i) => S.surfaces[i] && (S.surfaces[i].tx || 0), set: (S, i, x) => { if (S.surfaces[i]) S.surfaces[i].tx = +x; }, num: 1, cv: 'ADE' },
+    TY: { l: 'Bascule β', u: '°', s: 1, get: (S, i) => S.surfaces[i] && (S.surfaces[i].ty || 0), set: (S, i, x) => { if (S.surfaces[i]) S.surfaces[i].ty = +x; }, num: 1, cv: 'BDE' },
+    APE: { l: 'Ouverture (valeur)', get: S => S.aperture.value, set: (S, i, x) => { S.aperture.value = +x; }, num: 1, zmx: 'APER' },
+    FY: { l: 'Champ Y', f: 1, get: (S, i) => S.fields[i] && S.fields[i].y, set: (S, i, x) => { if (S.fields[i]) S.fields[i].y = +x; }, num: 1, zmx: 'YFIE' },
+    FX: { l: 'Champ X', f: 1, get: (S, i) => S.fields[i] && (S.fields[i].x || 0), set: (S, i, x) => { if (S.fields[i]) S.fields[i].x = +x; }, num: 1, zmx: 'XFIE' },
+    WL: { l: 'Longueur d\'onde', u: 'µm', w: 1, get: (S, i) => S.wavelengths[i] && S.wavelengths[i].um, set: (S, i, x) => { if (S.wavelengths[i]) S.wavelengths[i].um = +x; }, num: 1, zmx: 'WAVE' },
+    WW: { l: 'Poids λ', w: 1, get: (S, i) => S.wavelengths[i] && (S.wavelengths[i].w ?? 1), set: (S, i, x) => { if (S.wavelengths[i]) S.wavelengths[i].w = +x; }, num: 1, zmx: 'WLWT', cv: 'WTW' },
+    TEM: { l: 'Température', u: '°C', get: S => (S.env && S.env.T != null ? S.env.T : 20), set: (S, i, x) => { S.env = { ...(S.env || {}), T: +x }; }, num: 1, zmx: 'TEMP', cv: 'TEM' },
+    PRE: { l: 'Pression', u: 'atm', get: S => (S.env && S.env.P != null ? S.env.P : 1), set: (S, i, x) => { S.env = { ...(S.env || {}), P: +x }; }, num: 1, zmx: 'PRES', cv: 'PRE' },
+  };
+  const mcOn = sys => !!(sys && sys.mc && sys.mc.n > 1 && Array.isArray(sys.mc.ops));
+  /** recopie les valeurs du système (configuration courante) dans la table multi-configuration */
+  function mcSync(sys) {
+    if (!sys || !sys.mc || !Array.isArray(sys.mc.ops)) return sys;
+    const mc = sys.mc, k = Math.min(Math.max(0, mc.cur | 0), (mc.n || 1) - 1); mc.cur = k;
+    for (const op of mc.ops) { const T = MCT[op.type]; if (!T) continue; if (!Array.isArray(op.v)) op.v = []; while (op.v.length < mc.n) op.v.push(op.v.length ? op.v[op.v.length - 1] : T.get(sys, op.i)); op.v.length = mc.n; const v = T.get(sys, op.i); if (v !== undefined) op.v[k] = v; }
+    return sys;
+  }
+  /** passe le système (en place) sur la configuration k */
+  function mcSet(sys, k) { if (!sys.mc) return sys; mcSync(sys); return mcLoad(sys, k); }
+  /** charge les valeurs de la configuration k dans le système (sans recopier d'abord la configuration courante) */
+  function mcLoad(sys, k) {
+    k = Math.min(Math.max(0, k | 0), sys.mc.n - 1);
+    for (const op of sys.mc.ops) { const T = MCT[op.type]; if (T && op.v && op.v[k] !== undefined && op.v[k] !== null && op.v[k] !== '') T.set(sys, op.i, op.v[k]); }
+    sys.mc.cur = k; return sys;
+  }
+  /** copie du système dans la configuration k */
+  const mcApply = (sys, k) => mcSet(structuredClone(sys), k);
+  /** le paramètre (type de variable, surface) est-il piloté par la multi-configuration ? */
+  const mcCtl = (sys, kind, si) => mcOn(sys) && sys.mc.ops.some(op => MCT[op.type] && MCT[op.type].var === kind && op.i === si);
+  /** ajoute une ligne de multi-configuration (valeurs initialisées à la valeur actuelle) */
+  function mcAddOp(sys, type, i) {
+    const T = MCT[type]; if (!T) return null; if (!sys.mc) sys.mc = { n: 1, cur: 0, ops: [], names: [] };
+    // une épaisseur pilotée par la multi-configuration ne peut plus être résolue (solve M) : valeur résolue figée
+    if (type === 'THI' && sys.surfaces[i] && sys.surfaces[i].tsolve) { const M = prepare(sys); if (M.ok) sys.surfaces[i].t = M.S[i].t; sys.surfaces[i].tsolve = ''; }
+    const v = T.get(sys, i); const op = { type, i: i | 0, v: Array.from({ length: sys.mc.n }, () => v) }; sys.mc.ops.push(op); return op;
+  }
+  /** résumé par configuration (paraxial, qualité) */
+  function mcSummary(sys) {
+    const out = []; if (!sys.mc) return out;
+    for (let k = 0; k < sys.mc.n; k++) {
+      const M = prepare(mcApply(sys, k)); if (!M.ok) { out.push({ k, ok: false }); continue; }
+      const sp = M.sys.fields.map((_, i) => spot(M, i, 15).rms * 1e3), wf = M.sys.fields.map((_, i) => { const w = wavefront(M, i, M.pw, 32); return w.ok ? w.rms : NaN; });
+      out.push({ k, ok: true, efl: M.par.efl, wfno: M.par.wfno, bfl: M.par.imgDist, ttl: M.par.ttl, imgH: M.par.imgH, fmax: M.par.fmax, spot: Math.max(...sp), wfe: Math.max(...wf.filter(isFinite)), M });
+    }
+    return out;
+  }
+
+  /* ---------------- FTM through-focus, FTM selon le champ ---------------- */
+  /** champs internes répartis de 0 au champ max selon Y (facteurs de vignetage interpolés) ; u = abscisse affichée */
+  function fieldSweep(M, n = 11) {
+    const F = M.sys.fields, r = F.map(f => Math.hypot(f.x || 0, f.y || 0)), rm = Math.max(...r, 0), order = r.map((v, i) => [v, i]).sort((a, b) => a[0] - b[0]);
+    const vk = ['vuy', 'vly', 'vux', 'vlx'], img = M.ftype === 'pim' || M.ftype === 'rim', out = [];
+    for (let k = 0; k < n; k++) {
+      const y = n === 1 ? rm : rm * k / (n - 1), f = { x: 0, y };
+      let a = order[0], b = order[order.length - 1];
+      for (let q = 0; q < order.length - 1; q++) if (y >= order[q][0] && y <= order[q + 1][0]) { a = order[q]; b = order[q + 1]; break; }
+      const t = b[0] > a[0] ? Math.min(1, Math.max(0, (y - a[0]) / (b[0] - a[0]))) : 0;
+      for (const key of vk) { const va = +F[a[1]][key] || 0, vb = +F[b[1]][key] || 0; if (va || vb) f[key] = va + t * (vb - va); }
+      let u = y; if (img) { const c = ray(M, M.pw, f, 0, 0, { noVig: true }); u = c.vig ? NaN : Math.hypot(c.x, c.y); }
+      out.push({ f, u });
+    }
+    return { pts: out, unit: img ? 'mm (image)' : M.objInf ? '°' : 'mm (objet)', img };
+  }
+  /** FTM (T, S) à une fréquence en fonction de la défocalisation, pour chaque champ ; meilleur foyer = max de la moyenne (T+S)/2 */
+  async function throughFocus(sys, o = {}, prog) {
+    const fz = tolFreeze(sys), N = fz.surfaces.length - 1, t0 = fz.surfaces[N - 1].t, M0 = prepare(fz);
+    if (!M0.ok) return null;
+    const dof = M0.ctxs[M0.pw].lmm * M0.par.wfno * M0.par.wfno, freq = +o.freq || 30, half = +o.half || Math.max(8 * dof, 1.4 * Math.abs(bestFocus(fz, 'WFE', focusStep(fz)).dt || 0)), n = Math.max(5, Math.min(61, o.n | 0 || 21)), Np = o.N || 32;
+    const dz = Array.from({ length: n }, (_, k) => -half + 2 * half * k / (n - 1)), nf = fz.fields.length;
+    const T = Array.from({ length: nf }, () => []), S = Array.from({ length: nf }, () => []), DL = [];
+    for (let k = 0; k < n; k++) {
+      const s = structuredClone(fz); s.surfaces[N - 1].t = t0 + dz[k];
+      const M = prepare(s); let dl = 0;
+      for (let i = 0; i < nf; i++) {
+        if (!M.ok) { T[i].push(NaN); S[i].push(NaN); continue; }
+        const r = mtf(M, i, { freqs: [freq], N: Np }); T[i].push(r.T[0]); S[i].push(r.S[0]); dl = Math.max(dl, r.DL[0]);
+      }
+      DL.push(dl);
+      if (prog) await prog(k + 1, n);
+    }
+    const W = fz.fields.map(f => f.w ?? 1), Wt = W.reduce((a, b) => a + b, 0) || 1;
+    const avg = dz.map((_, k) => W.reduce((a, w, i) => a + w * (T[i][k] + S[i][k]) / 2, 0) / Wt);
+    let kb = 0; avg.forEach((v, k) => { if (v > avg[kb]) kb = k; });
+    let best = dz[kb];
+    if (kb > 0 && kb < n - 1) { const a = avg[kb - 1], b = avg[kb], c = avg[kb + 1], den = a - 2 * b + c; if (den < 0) best = dz[kb] + 0.5 * (a - c) / den * (dz[1] - dz[0]); }
+    return { dz, T, S, DL, avg, best, bestV: avg[kb], freq, half, t0 };
+  }
+  /** FTM (T, S) à quelques fréquences en fonction du champ */
+  async function mtfField(sys, o = {}, prog) {
+    const M = prepare(sys); if (!M.ok) return null;
+    const freqs = (o.freqs && o.freqs.length ? o.freqs : [10, 30, 50]).map(Number).filter(v => v > 0), sw = fieldSweep(M, o.n || 11), Np = o.N || 32;
+    const T = freqs.map(() => []), S = freqs.map(() => []), DL = freqs.map(() => []);
+    for (let k = 0; k < sw.pts.length; k++) {
+      const r = mtf(M, sw.pts[k].f, { freqs, N: Np });
+      freqs.forEach((_, q) => { T[q].push(r.T[q]); S[q].push(r.S[q]); DL[q].push(r.DL[q]); });
+      if (prog) await prog(k + 1, sw.pts.length);
+    }
+    return { u: sw.pts.map(p => p.u), unit: sw.unit, freqs, T, S, DL, defF: sys.fields.map(f => Math.hypot(f.x || 0, f.y || 0)), img: sw.img };
+  }
+
+  /* ---------------- Éclairement relatif, grille de distorsion ---------------- */
+  /** aire du faisceau dans l'espace des cosinus directeurs image (rayons non vignetés, pupille découpée en n×n mailles) */
+  function beamArea(M, f, wi, n = 40) {
+    const P = []; let cos = NaN;
+    for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) { const r = ray(M, wi, f, -1 + 2 * i / n, -1 + 2 * j / n); P.push(r.vig ? null : [r.L, r.M]); }
+    const c = ray(M, wi, f, 0, 0); if (!c.vig) cos = Math.abs(c.N);
+    const h = 2 / n, obs = M.obs || 0; let A = 0;
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      const a = P[j * (n + 1) + i], b = P[j * (n + 1) + i + 1], d = P[(j + 1) * (n + 1) + i], e = P[(j + 1) * (n + 1) + i + 1];
+      if (!a || !b || !d || !e) continue;
+      // fraction de la maille dans la pupille (4×4 sous-points)
+      let fr = 0; for (let q = 0; q < 16; q++) { const x = -1 + (i + ((q & 3) + 0.5) / 4) * h, y = -1 + (j + ((q >> 2) + 0.5) / 4) * h, rr = Math.hypot(x, y); if (rr <= 1 && rr >= obs) fr++; }
+      if (!fr) continue;
+      const ar = Math.abs((b[0] - a[0]) * (d[1] - a[1]) - (b[1] - a[1]) * (d[0] - a[0])) / 2 + Math.abs((b[0] - e[0]) * (d[1] - e[1]) - (b[1] - e[1]) * (d[0] - e[0])) / 2;
+      A += ar * fr / 16;
+    }
+    return { A, cos };
+  }
+  /** éclairement relatif (aire du faisceau image dans l'espace des cosinus directeurs, rapportée à l'axe) en fonction du champ */
+  async function relIllum(sys, o = {}, prog) {
+    const M = prepare(sys); if (!M.ok) return null;
+    const sw = fieldSweep(M, o.n || 21), wi = o.wi ?? M.pw, ng = o.grid || 40, A = [], C = [];
+    for (let k = 0; k < sw.pts.length; k++) { const b = beamArea(M, sw.pts[k].f, wi, ng); A.push(b.A); C.push(b.cos); if (prog) await prog(k + 1, sw.pts.length); }
+    const a0 = A[0] || 1, c0 = C[0] || 1;
+    return { u: sw.pts.map(p => p.u), unit: sw.unit, ri: A.map(v => v / a0), cos4: C.map(v => (v / c0) ** 4), img: sw.img, wl: M.wls[wi] };
+  }
+  /** grille de distorsion : rayons principaux réels vs grille idéale (paraxiale) ; diag = le coin de la grille correspond au champ max */
+  function distGrid(M, o = {}) {
+    const n = Math.max(3, o.n | 0 || 11), F = M.sys.fields, rm = Math.max(...F.map(f => Math.hypot(f.x || 0, f.y || 0)), 1e-9), hs = o.diag === false ? rm : rm / Math.SQRT2, k = M.par.unitImgH, wi = o.wi ?? M.pw;
+    const ideal = (x, y) => M.objInf ? [k * Math.tan(x * DEG), k * Math.tan(y * DEG)] : [k * x, k * y];
+    const c0 = ray(M, wi, { x: 0, y: 0 }, 0, 0, { noVig: true }), ox = c0.vig ? 0 : c0.x, oy = c0.vig ? 0 : c0.y;
+    const R = [], I = []; let dmax = 0, dAt = null;
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      const fx = -hs + 2 * hs * i / (n - 1), fy = -hs + 2 * hs * j / (n - 1), c = ray(M, wi, { x: fx, y: fy }, 0, 0, { noVig: true }), q = ideal(fx, fy);
+      I.push(q); const p = c.vig ? null : [c.x - ox, c.y - oy]; R.push(p);
+      const ri = Math.hypot(q[0], q[1]);
+      if (p && ri > 1e-12) { const d = 100 * (Math.hypot(p[0], p[1]) - ri) / ri; if (Math.abs(d) > Math.abs(dmax)) { dmax = d; dAt = [fx, fy]; } }
+    }
+    return { n, R, I, dmax, dAt, hs, unit: M.objInf ? '°' : 'mm' };
+  }
+  /** tirage Monte-Carlo à valeurs imposées (tirages générés à part, pour le calcul parallèle reproductible) */
+  function tolTrialD(B, items, kind, comp, draws, opts = {}) {
+    const s = structuredClone(B.base); items.forEach((it, k) => tolApply(s, it, draws[k]));
+    const r = tolEval(s, kind, comp, B.h0, opts);
+    return { c: r.c, dt: r.dt, bore: Math.hypot(r.bx - B.bore[0], r.by - B.bore[1]) };
+  }
+
   function thermalScan(sys, o = {}) {
     const T1 = o.T1 ?? -20, T2 = o.T2 ?? 60, n = o.n || 9, out = { T: [], efl: [], dz: [], spot: [], wfe: [], fi: o.fi || 0 };
     for (let i = 0; i < n; i++) {
@@ -2264,15 +2450,15 @@ const OE = (() => {
     return out;
   }
 
-  return { DEG, fiberInfo, binPSF, detMTF, extSource, binImage, imageSim, polPupil, polOut, POLSTATES, TOLT, TOLC, LT, quickFocus, wlSel, opValue, parseModel, fmtModel, glassNearest, glassPool, toModel, subTry, tolBase, tolDefaults, tolFreeze, tolItems, tolGen, tolApplicable, tolLabel, tolApply, tolWorse, tolSens, tolInverse, tolTrial, tolRebuild, tolValue, niceDown, rng, mtfAt, compensate, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
+  return { MCT, mcOn, mcSync, mcSet, mcLoad, mcApply, mcCtl, mcAddOp, mcSummary, fieldSweep, throughFocus, mtfField, beamArea, relIllum, distGrid, tolTrialD, DEG, fiberInfo, binPSF, detMTF, extSource, binImage, imageSim, polPupil, polOut, POLSTATES, TOLT, TOLC, LT, quickFocus, wlSel, opValue, parseModel, fmtModel, glassNearest, glassPool, toModel, subTry, tolBase, tolDefaults, tolFreeze, tolItems, tolGen, tolApplicable, tolLabel, tolApply, tolWorse, tolSens, tolInverse, tolTrial, tolRebuild, tolValue, niceDown, rng, mtfAt, compensate, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
     wavefront, zernFit, ZN37, psf, psfGrid, mtf, mtfGeo, pupilScale, otfAC, mtfOne, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
-    OPS, getVars, residuals, meritOf, optStep, pupilGrid, indices, paraxial,
+    OPS, getVars, getVal, setVal, residuals, meritOf, optStep, pupilGrid, indices, paraxial,
     ASPK, FTYPES, vigMap, modelN, aimMode, setVignetting, convertFields, thermalScan, glassTherm, nAir, envN, envCtx, isSolid };
 })();
 if (typeof module !== 'undefined') module.exports = OE;
 
 </script>
-<script>
+<script id="js-glasses">
 /* Catalogues de verres — base refractiveindex.info (domaine public, CC0 1.0), d'après les catalogues SCHOTT, OHARA, CDGM et HOYA.
    Format : [nom, catalogue, formule RII (2 = Sellmeier, 3 = polynôme), coefficients, λmin, λmax (µm), nd, νd, statut]. Fichier généré. */
 const GLASSDB = {
@@ -3316,7 +3502,7 @@ const GLASSDB = {
 if (typeof module !== 'undefined') module.exports = GLASSDB;
 
 </script>
-<script>
+<script id="js-glassth">
 /* Données thermiques des verres — refractiveindex.info (CC0), d'après les catalogues fabricants.
    Par verre : [D0, D1, D2, E0, E1, λTK (µm), CTE (/K, −30…+70 °C), dn/dT disponible (1/0)] — formule de Schott pour dn/dT absolu. Fichier généré. */
 const GLASSTH = {
@@ -3326,6 +3512,56 @@ const GLASSTH = {
   "HOYA": {"BAC4":[9.31e-6,1.09e-8,-5.68e-11,4.67e-7,7.99e-10,0.248,5.3e-6,1],"BACD11":[3.66577e-6,0,0,0,0,0,6.6e-6,1],"BACD14":[1.22123e-6,0,0,0,0,0,6e-6,1],"BACD15":[2.9692e-6,0,0,0,0,0,6.1e-6,1],"BACD16":[1.98676e-6,0,0,0,0,0,6e-6,1],"BACD18":[1.93796e-6,0,0,0,0,0,6.9e-6,1],"BACD2":[5.25891e-6,0,0,0,0,0,6.3e-6,1],"BACD4":[2.40941e-6,0,0,0,0,0,6.6e-6,1],"BACD5":[3.09e-6,1.25e-8,-4.95e-11,5.43e-7,5.6e-10,1.57e-9,5.5e-6,1],"BACED5":[4.34101e-6,0,0,0,0,0,7.2e-6,1],"BAF10":[6.13489e-6,0,0,0,0,0,7.2e-6,1],"BAF11":[5.78791e-6,0,0,0,0,0,7.2e-6,1],"BAFD7":[6.07532e-6,0,0,0,0,0,6.8e-6,1],"BAFD8":[5.56908e-6,0,0,0,0,0,7.1e-6,1],"BSC7":[3.25479e-6,0,0,0,0,0,7.6e-6,1],"E-ADF10":[9.22096e-6,0,0,0,0,0,4.7e-6,1],"E-ADF50":[1.08065e-5,0,0,0,0,0,5.1e-6,1],"E-BACD10":[2.77178e-6,0,0,0,0,0,6.7e-6,1],"E-BACED20":[3.63335e-6,0,0,0,0,0,7e-6,1],"E-BAF8":[4.14929e-6,0,0,0,0,0,8e-6,1],"E-C3":[-3.24608e-6,0,0,0,0,0,9.9e-6,1],"E-CF6":[-1.62453e-6,0,0,0,0,0,8.2e-6,1],"E-F1":[5.90235e-7,0,0,0,0,0,8.6e-6,1],"E-F2":[1.38841e-6,0,0,0,0,0,8.3e-6,1],"E-F3":[3.40553e-6,0,0,0,0,0,7.7e-6,1],"E-F5":[2.63967e-6,0,0,0,0,0,8e-6,1],"E-F8":[2.25928e-6,0,0,0,0,0,8.2e-6,1],"E-FD1":[-3.50033e-7,0,0,0,0,0,9.2e-6,1],"E-FD10":[-3.45505e-7,0,0,0,0,0,9e-6,1],"E-FD13":[-3.40517e-7,0,0,0,0,0,9.1e-6,1],"E-FD15":[5.36799e-7,0,0,0,0,0,8.7e-6,1],"E-FD2":[0,0,0,0,0,0,8.8e-6,0],"E-FD4":[1.675e-7,0,0,0,0,0,8.7e-6,1],"E-FD5":[-1.84917e-7,0,0,0,0,0,8.9e-6,1],"E-FD7":[3.8611e-7,0,0,0,0,0,8.7e-6,1],"E-FD8":[-1.08706e-6,0,0,0,0,0,9.3e-6,1],"E-FDS1":[-4.37e-6,1.1e-8,-2.29e-11,1.06e-6,1.516e-9,0.311,6e-6,1],"E-FDS1-W":[-4.37e-6,1.1e-8,-2.29e-11,1.06e-6,1.516e-9,0.311,6e-6,1],"E-FDS2":[2.17e-7,1.14e-8,-3.07e-11,1.84e-6,2.48e-9,0.308,7.9e-6,1],"E-FDS3":[1.98e-6,1.44e-8,-3.95e-11,2.17e-6,2.05e-9,0.302,6.8e-6,1],"E-FEL1":[1.32417e-6,0,0,0,0,0,7.9e-6,1],"E-FEL2":[0,0,0,0,0,0,8.2e-6,0],"E-FEL6":[-2.49277e-6,0,0,0,0,0,8.6e-6,1],"E-FL5":[1.75e-6,1.66e-8,-9.67e-11,6.44e-7,4.37e-10,0.264,7.9e-6,1],"E-FL6":[3.42721e-6,0,0,0,0,0,6.7e-6,1],"E-LAF7":[3.20779e-6,0,0,0,0,0,6.8e-6,1],"FC5":[-6.6046e-6,0,0,0,0,0,9.3e-6,1],"FCD1":[-1.92e-5,-8.39e-9,5.31e-12,3.68e-7,4.15e-10,-0.143,1.32e-5,1],"FCD10":[-1.866e-5,0,0,0,0,0,1.34e-5,1],"FCD100":[-2.11e-5,-8.57e-9,2.98e-11,2.78e-7,2.18e-10,0.201,1.39e-5,1],"FCD10A":[-2.04e-5,-8.81e-9,1.3e-11,3.44e-7,7.67e-11,0.154,1.33e-5,1],"FCD1B":[-1.75e-5,-5.28e-9,2.39e-11,3.52e-7,1.97e-10,0.186,1.29e-5,1],"FCD505":[-1.88e-5,4.93e-9,5.59e-11,5.35e-7,4.25e-10,1.81e-8,1.15e-5,1],"FCD515":[-1.58e-5,3.73e-9,-1.83e-11,3.66e-7,1.72e-10,0.169,1.11e-5,1],"FCD705":[-1.64e-5,-6.43e-10,1.97e-11,3.83e-7,2.95e-10,0.0771,1.22e-5,1],"FD110":[-1.29676e-6,0,0,0,0,0,9.1e-6,1],"FD140":[8.31157e-7,0,0,0,0,0,8.4e-6,1],"FD225":[-1.09e-5,4.1e-9,-1.04e-11,1.01e-6,1.33e-9,0.307,9.6e-6,1],"FD60":[-5.29e-6,9.6e-9,-5.1e-11,1.06e-6,1.34e-9,0.282,8.8e-6,1],"FD60-W":[-5.29e-6,9.6e-9,-5.1e-11,1.06e-6,1.34e-9,0.282,8.8e-6,1],"FDS16-W":[2.97e-6,1.37e-8,-4.94e-11,1.36e-6,1.86e-9,0.333,4.1e-6,1],"FDS18":[-2.60984e-6,0,0,0,0,0,5.7e-6,1],"FDS18-W":[-2.60984e-6,0,0,0,0,0,5.7e-6,1],"FDS24":[-3.37e-6,7.78e-9,-2.33e-11,1.13e-6,1.32e-9,0.275,7.8e-6,1],"FDS90":[-4.62e-6,1.29e-8,-2.11e-11,1.04e-6,1.27e-9,0.296,8.7e-6,1],"FDS90(P)":[-4.62e-6,1.29e-8,-2.11e-11,1.04e-6,1.27e-9,0.296,8.7e-6,1],"FDS90-SG":[-4.62e-6,1.29e-8,-2.11e-11,1.04e-6,1.27e-9,0.296,8.7e-6,1],"FF5":[-1.23666e-6,0,0,0,0,0,8.6e-6,1],"FF8":[-3.67e-6,1.1e-8,-3.23e-11,7.57e-7,9.89e-10,0.306,6.1e-6,1],"LAC10":[2.44934e-6,0,0,0,0,0,7.4e-6,1],"LAC12":[-1.10512e-6,0,0,0,0,0,7.7e-6,1],"LAC13":[7.22553e-6,0,0,0,0,0,5.3e-6,1],"LAC14":[3.05e-6,1.07e-8,-2.21e-11,4.35e-7,4.49e-10,0.185,5.6e-6,1],"LAC7":[9.52599e-7,0,0,0,0,0,6.9e-6,1],"LAC8":[4.58776e-6,0,0,0,0,0,5.9e-6,1],"LAC9":[6.88596e-6,0,0,0,0,0,5.8e-6,1],"LACL60":[3.28907e-6,0,0,0,0,0,6e-6,1],"LAF2":[2.21119e-6,0,0,0,0,0,7.2e-6,1],"LAF3":[-1.75538e-7,0,0,0,0,0,8e-6,1],"LBC3N":[-1.94562e-5,0,0,0,0,0,1.24e-5,1],"M-BACD12":[3.36e-6,1.02e-8,-4.81e-11,6.1e-7,6.81e-10,4.77e-9,6.9e-6,1],"M-BACD15":[7.12968e-6,0,0,0,0,0,6.3e-6,1],"M-BACD5N":[3.33e-6,1.01e-8,-4.77e-11,6.07e-7,6.78e-10,8.15e-9,6.6e-6,1],"M-FCD1":[-1.75e-5,-5.28e-9,2.39e-11,3.52e-7,1.97e-10,0.186,1.29e-5,1],"M-FCD500":[-1.78e-5,-4.97e-9,7.88e-11,4.91e-7,3.43e-10,4.41e-8,1.24e-5,1],"M-FD80":[-8.15303e-6,0,0,0,0,0,1.15e-5,1],"M-FDS1":[1.83621e-6,0,0,0,0,0,8.8e-6,1],"M-FDS2":[2.17e-7,1.14e-8,-3.07e-11,1.84e-6,2.48e-9,0.308,7.9e-6,1],"M-FDS910":[-2.80707e-6,0,0,0,0,0,9.5e-6,1],"M-LAC130":[3.06e-6,7.53e-9,-3.42e-11,7.88e-7,1.05e-9,4.45e-10,6.5e-6,1],"M-LAC14":[4.13857e-6,0,0,0,0,0,6.5e-6,1],"M-LAC8":[5.47002e-6,0,0,0,0,0,6.3e-6,1],"M-LAF81":[1.72608e-6,0,0,0,0,0,8.9e-6,1],"M-NBF1":[1.12394e-5,0,0,0,0,0,5.7e-6,1],"M-NBFD10":[8.48661e-6,0,0,0,0,0,6.1e-6,1],"M-NBFD130":[1.03293e-5,0,0,0,0,0,5.8e-6,1],"M-PCD4":[-1.08e-5,2.42e-9,1.57e-11,7.21e-7,4.29e-10,1.46e-9,8.7e-6,1],"M-PCD51":[-5.75e-6,4.33e-9,-1.7e-11,3.99e-7,4.04e-10,0.175,8.9e-6,1],"M-TAC60":[5.37872e-6,0,0,0,0,0,6.2e-6,1],"M-TAC80":[4.67546e-6,0,0,0,0,0,6.1e-6,1],"M-TAF1":[3.46184e-6,0,0,0,0,0,7.6e-6,1],"M-TAF101":[4.69243e-6,0,0,0,0,0,5.9e-6,1],"M-TAF105":[4.74e-6,9.55e-9,-5.15e-11,6.48e-7,3.61e-10,0.166,5.7e-6,1],"M-TAF31":[7.66932e-6,0,0,0,0,0,6.2e-6,1],"M-TAF401":[8.39412e-6,0,0,0,0,0,6.1e-6,1],"M-TAFD305":[5.25e-6,1.17e-8,-4.51e-11,1.25e-6,1.27e-9,0.0455,6e-6,1],"M-TAFD307":[7.80622e-6,0,0,0,0,0,6.7e-6,1],"M-TAFD405":[8.14588e-6,0,0,0,0,0,6e-6,1],"M-TAFD51":[7.04481e-6,0,0,0,0,0,6.4e-6,1],"MC-BACD12":[3.36e-6,1.02e-8,-4.81e-11,6.1e-7,6.81e-10,4.77e-9,6.9e-6,1],"MC-BACD5N":[3.33e-6,1.01e-8,-4.77e-11,6.07e-7,6.78e-10,8.15e-9,6.6e-6,1],"MC-FCD1-M20":[-1.75e-5,-5.28e-9,2.39e-11,3.52e-7,1.97e-10,0.186,1.29e-5,1],"MC-FCD500-20":[-1.78e-5,-4.97e-9,7.88e-11,4.91e-7,3.43e-10,4.41e-8,1.24e-5,1],"MC-FDS2":[2.17e-7,1.14e-8,-3.07e-11,1.84e-6,2.48e-9,0.308,7.9e-6,1],"MC-FDS910-50":[-2.8056e-6,0,0,0,0,0,9.5e-6,1],"MC-LAC130":[3.06e-6,7.53e-9,-3.42e-11,7.88e-7,1.05e-9,4.45e-10,6.5e-6,1],"MC-NBF1":[1.12394e-5,0,0,0,0,0,5.7e-6,1],"MC-NBFD135":[9.98837e-6,0,0,0,0,0,6.2e-6,1],"MC-PCD4-40":[-1.08e-5,2.42e-9,1.57e-11,7.21e-7,4.29e-10,1.46e-9,8.7e-6,1],"MC-PCD51-70":[-5.75e-6,4.33e-9,-1.7e-11,3.99e-7,4.04e-10,0.175,8.9e-6,1],"MC-TAF1":[3.46184e-6,0,0,0,0,0,7.6e-6,1],"MC-TAF101-100":[4.69243e-6,0,0,0,0,0,5.9e-6,1],"MC-TAF105":[4.74e-6,9.55e-9,-5.15e-11,6.48e-7,3.61e-10,0.166,5.7e-6,1],"MC-TAF31-15":[7.66812e-6,0,0,0,0,0,6.2e-6,1],"MC-TAF401":[8.39412e-6,0,0,0,0,0,6.1e-6,1],"MC-TAFD305":[5.25e-6,1.17e-8,-4.51e-11,1.25e-6,1.27e-9,0.0455,6e-6,1],"MC-TAFD307":[7.80622e-6,0,0,0,0,0,6.7e-6,1],"MC-TAFD51-50":[7.04123e-6,0,0,0,0,0,6.4e-6,1],"MP-BACD12":[3.36e-6,1.02e-8,-4.81e-11,6.1e-7,6.81e-10,4.77e-9,6.9e-6,1],"MP-BACD15":[7.12968e-6,0,0,0,0,0,6.3e-6,1],"MP-BACD5N":[3.33e-6,1.01e-8,-4.77e-11,6.07e-7,6.78e-10,8.15e-9,6.6e-6,1],"MP-FCD1-M20":[-1.75e-5,-5.28e-9,2.39e-11,3.52e-7,1.97e-10,0.186,1.29e-5,1],"MP-FCD500-20":[-1.78e-5,-4.97e-9,7.88e-11,4.91e-7,3.43e-10,4.41e-8,1.24e-5,1],"MP-FD80":[-8.15303e-6,0,0,0,0,0,1.15e-5,1],"MP-FDS1":[1.83621e-6,0,0,0,0,0,8.8e-6,1],"MP-FDS2":[2.17e-7,1.14e-8,-3.07e-11,1.84e-6,2.48e-9,0.308,7.9e-6,1],"MP-FDS910-50":[-2.8056e-6,0,0,0,0,0,9.5e-6,1],"MP-LAC130":[3.06e-6,7.53e-9,-3.42e-11,7.88e-7,1.05e-9,4.45e-10,6.5e-6,1],"MP-LAC14-80":[4.13456e-6,0,0,0,0,0,6.5e-6,1],"MP-LAC8-30":[5.46808e-6,0,0,0,0,0,6.3e-6,1],"MP-LAF81":[1.72608e-6,0,0,0,0,0,8.9e-6,1],"MP-NBF1":[1.12394e-5,0,0,0,0,0,5.7e-6,1],"MP-NBFD10-20":[8.48492e-6,0,0,0,0,0,6.1e-6,1],"MP-NBFD130":[1.03293e-5,0,0,0,0,0,5.8e-6,1],"MP-PCD4-40":[-1.08e-5,2.42e-9,1.57e-11,7.21e-7,4.29e-10,1.46e-9,8.7e-6,1],"MP-PCD51-70":[-5.75e-6,4.33e-9,-1.7e-11,3.99e-7,4.04e-10,0.175,8.9e-6,1],"MP-TAC60-90":[5.37335e-6,0,0,0,0,0,6.2e-6,1],"MP-TAC80-60":[4.67223e-6,0,0,0,0,0,6.1e-6,1],"MP-TAF101-100":[4.69243e-6,0,0,0,0,0,5.9e-6,1],"MP-TAF105":[4.74e-6,9.55e-9,-5.15e-11,6.48e-7,3.61e-10,0.166,5.7e-6,1],"MP-TAF31-15":[7.66812e-6,0,0,0,0,0,6.2e-6,1],"MP-TAF401":[8.39412e-6,0,0,0,0,0,6.1e-6,1],"MP-TAFD305":[5.25e-6,1.17e-8,-4.51e-11,1.25e-6,1.27e-9,0.0455,6e-6,1],"MP-TAFD307":[7.80622e-6,0,0,0,0,0,6.7e-6,1],"MP-TAFD405":[8.14588e-6,0,0,0,0,0,6e-6,1],"MP-TAFD51-50":[7.04123e-6,0,0,0,0,0,6.4e-6,1],"NBF1":[1.08987e-5,0,0,0,0,0,5.3e-6,1],"NBFD10":[7.46689e-6,0,0,0,0,0,5.9e-6,1],"NBFD11":[1.08807e-5,0,0,0,0,0,5.7e-6,1],"NBFD12":[1.05628e-5,0,0,0,0,0,5.7e-6,1],"NBFD13":[6.67424e-6,0,0,0,0,0,5.7e-6,1],"NBFD15":[2.02e-6,7.39e-9,-1.85e-11,7.78e-7,6.81e-10,0.268,7.1e-6,1],"NBFD15-W":[2.02e-6,7.39e-9,-1.85e-11,7.78e-7,6.81e-10,0.268,7.1e-6,1],"NBFD3":[1.16184e-5,0,0,0,0,0,5.3e-6,1],"PCD4":[-8.93e-6,1.28e-8,-1.34e-11,5.36e-7,-8.84e-11,2.93e-9,8.7e-6,1],"PCD40":[-1.08e-5,2.42e-9,1.57e-11,7.21e-7,4.29e-10,1.46e-9,1.03e-5,1],"PCD51":[-5.75e-6,4.33e-9,-1.7e-11,3.99e-7,4.04e-10,0.175,8.9e-6,1],"TAC2":[9.22223e-6,0,0,0,0,0,5.2e-6,1],"TAC4":[9.29549e-6,0,0,0,0,0,5.2e-6,1],"TAC6":[5.21116e-6,0,0,0,0,0,6e-6,1],"TAC8":[1.78e-6,1.02e-8,-2.66e-11,4.13e-7,1.53e-10,0.202,5.6e-6,1],"TAF1":[3.76e-6,9.56e-9,-3.12e-11,5.1e-7,3.46e-10,0.216,5.6e-6,1],"TAF2":[5.63294e-6,0,0,0,0,0,6e-6,1],"TAF3":[2.15e-6,9.33e-9,-4.33e-11,5.57e-7,5.72e-10,0.209,5.9e-6,1],"TAF3D":[1.82e-6,8.49e-9,-3.35e-11,6.91e-7,6.18e-10,0.156,6.1e-6,1],"TAF4":[5.51099e-6,0,0,0,0,0,5.8e-6,1],"TAF5":[4.56416e-6,0,0,0,0,0,6.3e-6,1],"TAFD25":[-2.77e-7,7.51e-9,-2.95e-11,1.02e-6,9.45e-10,0.245,7e-6,1],"TAFD30":[2.21e-6,9.96e-9,-3.19e-11,8.4e-7,2.81e-10,0.184,6.5e-6,1],"TAFD32":[2.82e-7,8.11e-9,-2.84e-11,9.6e-7,9.61e-10,0.141,6.8e-6,1],"TAFD33":[1.04e-6,9.9e-9,-5.86e-11,9.55e-7,8.81e-10,0.159,6.8e-6,1],"TAFD35":[1.96e-6,1.04e-8,-2.57e-11,8.88e-7,9.73e-10,0.239,6.8e-6,1],"TAFD37":[1.06e-6,9.55e-9,-8.39e-12,7.47e-7,7.08e-10,0.249,7e-6,1],"TAFD37A":[6.28e-7,8.14e-9,-5.08e-11,8.44e-7,7.6e-10,0.225,7e-6,1],"TAFD40":[-1.53e-6,7.62e-9,-3.12e-11,1.08e-6,1.19e-9,0.287,7.2e-6,1],"TAFD45":[8.36e-7,9.08e-9,-4.59e-11,9.61e-7,1.39e-9,0.246,7e-6,1],"TAFD55":[-4.17e-7,8.97e-9,-4.73e-11,1.05e-6,8.82e-10,0.262,7.3e-6,1],"TAFD5F":[2.79e-6,8.81e-9,-2.5e-11,7.25e-7,7.24e-10,0.197,6.2e-6,1],"TAFD5G":[2.22e-6,9.37e-9,-5.94e-11,8.37e-7,7.86e-10,0.157,6.3e-6,1],"TAFD65":[-6.69e-7,9.68e-9,-3.75e-11,1.14e-6,1.22e-9,0.264,7.3e-6,1]},
 };
 if (typeof module !== 'undefined') module.exports = GLASSTH;
+
+</script>
+<script id="js-jobs">
+'use strict';
+/* =====================================================================
+   FOCALE — calculs longs exécutables en tâche de fond (Web Worker) ou, à défaut, dans la page.
+   Chaque tâche : async (args, prog) → résultat clonable ; prog(fait, total, partiel?) signale l'avancement
+   (et peut lever une exception pour interrompre le calcul dans la page).
+   ===================================================================== */
+const JOBS = {
+  /** FTM (diffraction ou géométrique) de tous les champs du système */
+  async mtf(a, prog) {
+    const M = OE.prepare(a.sys); if (!M.ok) throw new Error('Système invalide');
+    const F = M.sys.fields, o = a.o || {};
+    const sc = F.map(f => M.wls.map((_, wi) => { const q = OE.pupilScale(M, f, wi); return { dM: q.dM, dL: q.dL }; }));
+    const fmax = o.fmax || Math.max(...sc.flatMap(r => r.map((q, wi) => Math.max(q.dM, q.dL) / M.ctxs[wi].lmm)));
+    const res = [];
+    for (let i = 0; i < F.length; i++) {
+      const r = o.geo ? OE.mtfGeo(M, i, { fmax, dl: o.dl !== false }) : OE.mtf(M, i, { fmax, N: o.N || 64 });
+      res.push({ f: r.f, T: r.T, S: r.S, DL: r.DL }); if (prog) await prog(i + 1, F.length);
+    }
+    return { res, sc, fmax };
+  },
+  thermal: async (a, prog) => { if (prog) await prog(0, 1); return OE.thermalScan(a.sys, a.o); },
+  tfmtf: (a, prog) => OE.throughFocus(a.sys, a.o, prog),
+  mtffield: (a, prog) => OE.mtfField(a.sys, a.o, prog),
+  relillum: (a, prog) => OE.relIllum(a.sys, a.o, prog),
+  mcsum: async a => OE.mcSummary(a.sys).map(o => { const r = { ...o }; delete r.M; return r; }),
+  /** tolérancement : système nominal compensé */
+  tolBase: async a => OE.tolBase(a.sys, a.crit, a.comp, a.o),
+  /** sensibilités d'une liste d'éléments */
+  async tolSens(a, prog) {
+    const out = [];
+    for (let i = 0; i < a.items.length; i++) { const r = OE.tolSens(a.B, a.items[i], a.crit, a.comp, a.o); out.push(r); if (prog) await prog(i + 1, a.items.length, { k: a.k0 + i, r }); }
+    return out;
+  },
+  /** tolérances inverses d'une liste d'éléments (d0 : dégradation déjà connue par la sensibilité) */
+  async tolInv(a, prog) {
+    const out = [];
+    for (let i = 0; i < a.items.length; i++) { const r = OE.tolInverse(a.B, a.items[i], a.crit, a.comp, a.dmax, { ...a.o, d0: a.d0[i] }); out.push(r); if (prog) await prog(i + 1, a.items.length, { k: a.k0 + i, r }); }
+    return out;
+  },
+  /** tirages Monte-Carlo à valeurs imposées */
+  async tolMC(a, prog) {
+    const out = [];
+    for (let i = 0; i < a.draws.length; i++) { const r = OE.tolTrialD(a.B, a.items, a.crit, a.comp, a.draws[i], a.o); out.push(r); if (prog) await prog(i + 1, a.draws.length, { k: a.k0 + i, r }); }
+    return out;
+  },
+};
+if (typeof module !== 'undefined') module.exports = JOBS;
 
 </script>
 <script>
@@ -3346,7 +3582,7 @@ const HELP = [
 
   { id: 'interface', t: 'L\'interface', h: `
 <ul>
-<li><b>Barre du haut</b> : fichiers, exemples, annuler/rétablir, <b>Système</b> (Données système façon CODE V, Ctrl+Maj+D), optimisation, tolérancement, <b>+ Fenêtre</b> (analyse supplémentaire flottante), nombre de fenêtres d'analyse de la grille (1, 2, 4, 6), thème clair/sombre (sombre au premier lancement, puis le dernier choix est retenu), aide.</li>
+<li><b>Barre du haut</b> : fichiers, exemples, annuler/rétablir, <b>Système</b> (Données système façon CODE V, Ctrl+Maj+D), <b>Configs</b> (multi-configuration, Ctrl+Maj+M ; le sélecteur ◀ Config ▶ apparaît dès qu'il y a plusieurs configurations), optimisation, tolérancement, <b>+ Fenêtre</b> (analyse supplémentaire flottante), nombre de fenêtres d'analyse de la grille (1, 2, 4, 6), thème clair/sombre (sombre au premier lancement, puis le dernier choix est retenu), aide.</li>
 <li><b>Panneau de gauche</b> : bouton <b>⚙ Données système…</b>, propriétés de la <b>surface sélectionnée</b> (type d'élément, forme, décentrements), puis ouverture, champs, longueurs d'onde et données paraxiales.</li>
 <li><b>Éditeur de lentilles</b> (centre, en haut) : une ligne par surface.</li>
 <li><b>Layout</b> (centre, en bas) : coupe 2D ou vue 3D. <b>Rayons</b> : nombre de rayons tracés par champ — n'importe quel entier de 3 à 100 tapé au clavier (Entrée), flèches ou molette, ou valeur courante par le bouton ▾ (3, 5, 7, 11, 15, 21, 31, 51) ; mémorisé. Molette = zoom, glisser = déplacer (3D : rotation ; Maj+glisser = déplacer), clic = sélectionner une surface, double-clic = ajuster. En 3D, chaque lentille est dessinée comme un volume de verre translucide : ses deux dioptres sont reliés par la tranche (silhouette), avec la collerette plane quand les demi-diamètres diffèrent ; l'élément sélectionné est cerclé d'orange, les miroirs sont grisés, le diaphragme apparaît comme une lame annulaire et le plan image comme un disque.</li>
@@ -3429,6 +3665,15 @@ const HELP = [
 <li>Verres sans données (verres modèles nd/νd) : dn/dT et CTE pris égaux à 0 (avertissement) ; saisissez-les dans l'onglet Matériaux.</li></ul>
 <h4>Analyse thermique</h4><p>Type d'analyse « Analyse thermique » : défocalisation (foyer paraxial − plan image), variation de focale, WFE RMS et spot RMS au plan image fixe pour un champ, de T1 à T2 (9 températures).</p>` },
 
+  { id: 'multiconfig', t: 'Multi-configuration (zoom)', h: `
+<p>Plusieurs <b>configurations</b> d'un même système : positions d'un zoom, mises au point, changement de filtre, de longueur d'onde, de champ ou de température (équivalent de l'éditeur multi-configuration de Zemax et des positions de zoom CODE V). Bouton <b>Configs</b> de la barre d'outils (Ctrl+Maj+M).</p>
+<ul><li><b>+ Configuration</b> ajoute une configuration, copie de la configuration active ; <b>− Supprimer</b> retire la configuration active. Chaque configuration peut être nommée (en-tête de colonne).</li>
+<li><b>+ Paramètre</b> ajoute une ligne : épaisseur, rayon, conique, verre, demi-diamètre (fixé), décentrement X/Y, bascule α/β d'une surface ; valeur d'ouverture ; champ X/Y ; longueur d'onde et poids ; température ; pression. Une valeur par configuration. Une épaisseur résolue (solve M) ajoutée à la multi-configuration est figée à sa valeur résolue. <b>+ Épaisseurs variables (V) de l'éditeur</b> transforme en une fois les épaisseurs marquées V (espaces entre groupes d'un zoom) en lignes variables dans chaque configuration.</li>
+<li>Le <b>sélecteur ◀ Config ▶</b> de la barre d'outils (ou Ctrl+Maj+Page préc./suiv., ou un clic dans la fenêtre « Multi-configuration : synthèse ») change la configuration active. L'éditeur de lentilles, le layout, les analyses et les données système montrent toujours la configuration active ; les valeurs pilotées par la multi-configuration sont repérées en violet dans l'éditeur (infobulle : valeurs de toutes les configurations), et une valeur modifiée dans l'éditeur est enregistrée dans la configuration active.</li>
+<li><b>Optimisation</b> : cochez <b>V</b> dans une cellule pour rendre cette valeur variable dans cette configuration (les cases V de l'éditeur sont ignorées pour un paramètre piloté). Par défaut la fonction de mérite <b>additionne toutes les configurations</b> (critère image de chacune + opérandes) ; colonne <b>Config.</b> de la fonction de mérite : un opérande peut être réservé à une configuration (par exemple EFL = 25 en config 1, EFL = 75 en config 3). Option « la configuration active seulement ».</li>
+<li>Le <b>tolérancement</b> porte sur la configuration active. Le <b>rapport PDF</b> ajoute une section Multi-configuration : tableau des paramètres, synthèse par configuration et layout de chaque configuration.</li>
+<li>Import / export : <b>Zemax</b> (MNUM, MOFF pour les noms, opérandes THIC, CRVT, CONN, GLSS, SDIA, APER, YFIE/XFIE, WAVE, WLWT, TEMP, PRES) et <b>CODE V</b> (positions de zoom : <code>ZOO 3</code>, <code>ZOO THI S6 10 20 30</code> ou <code>THI S6 Z2 20</code>). À l'export, numérotation des surfaces Zemax recalculée en présence de coordinate breaks.</li></ul>` },
+
   { id: 'verres', t: 'Verres et catalogues', h: `
 <p>Plus de 1000 verres <b>Schott, Ohara, CDGM et Hoya</b> (base refractiveindex.info, domaine public), plus silice fondue et CaF₂. Bouton <b>Verres…</b> (ou clic droit sur une surface › Choisir le verre) : recherche et filtre par fabricant. Un clic <b>surligne</b> le verre choisi et affiche en bas de la fenêtre la demande de confirmation (verre, nd, νd, surface visée et verre actuel) : <b>Valider</b> l'affecte, <b>Annuler</b> abandonne (Entrée dans la recherche valide aussi). Le verre actuel de la surface est repéré par « · actuel ». La fenêtre reste ouverte : sélectionnez une autre surface dans l'éditeur pour continuer.</p>
 <ul>
@@ -3441,7 +3686,7 @@ const HELP = [
 </ul>` },
 
   { id: 'analyses', t: 'Analyses', h: `
-<p>Le menu de chaque fenêtre est rangé en groupes : <b>Image et aberrations</b> (spot, ray fan, OPD fan, carte WFE, Zernike), <b>Diffraction</b> (PSF, FTM, énergie encerclée), <b>Système</b> (courbure de champ et distorsion, Seidel, chromatisme, footprint, analyse thermique, polarisation), <b>Capteur et simulation</b> (détecteur, source étendue, simulation d'image) et <b>Données et outils</b> (carte des verres, prescription et synthèse : vues de référence tenues à jour en permanence).</p>
+<p>Le menu de chaque fenêtre est rangé en groupes : <b>Image et aberrations</b> (spot, ray fan, OPD fan, carte WFE, Zernike), <b>Diffraction</b> (PSF, FTM, FTM through-focus, FTM selon le champ, énergie encerclée), <b>Système</b> (courbure de champ et distorsion, grille de distorsion, éclairement relatif, Seidel, chromatisme, footprint, analyse thermique, polarisation, synthèse multi-configuration), <b>Capteur et simulation</b> (détecteur, source étendue, simulation d'image) et <b>Données et outils</b> (carte des verres, prescription et synthèse : vues de référence tenues à jour en permanence).</p>
 <table class="ht"><tr><th>Analyse</th><th>Description</th></tr>
 <tr><td>Diagramme de spot</td><td>Impacts des rayons dans le plan image (grille de pupille), par champ, couleur = longueur d'onde. RMS et GEO par rapport au barycentre (ou au rayon principal), cercle d'Airy 1,22·λ·F/#.</td></tr>
 <tr><td>Ray fan</td><td>Aberration transverse εy(Py) (tangentiel) et εx(Px) (sagittal) par rapport au rayon principal.</td></tr>
@@ -3453,16 +3698,23 @@ const HELP = [
 <b>Diffraction</b> (par défaut) : autocorrélation directe de la pupille complexe (méthode de Hopkins, comme CODE V), calculée exactement à chaque fréquence (décalage fractionnaire de la pupille, donc pas d'interpolation de la courbe) ; échantillonnage du front d'onde 32 à 256 (64 suffit en général : écart < 0,01 avec 256). Fréquences mesurées sur la surface image avec l'ouverture <b>réelle</b> de chaque champ : fc = ΔM/λ (tangentiel) et ΔL/λ (sagittal), ΔM et ΔL étant les écarts de cosinus directeurs des rayons de bord de pupille — l'équivalent des « X and Y F-numbers » de CODE V, affichés en haut du graphe (F/# réels T/S). Polychromatique : somme pondérée des OTF <b>complexes</b>, chacune déphasée de la position de son rayon principal, puis module — le chromatisme latéral réduit donc la FTM (même définition que CODE V et OpticStudio). Limite de diffraction sur la même pupille (obstruction, vignetage, apodisation).
 <b>Géométrique</b> : transformée de Fourier des impacts de rayons (|Σ e^{−2πi f y}| / N en tangentiel, en x en sagittal), toutes λ pondérées autour du rayon principal de référence, multipliée par défaut par la FTM d'une pupille parfaite (case « × diffraction »). Rapide et adaptée aux systèmes très aberrants (front d'onde ≫ λ), optimiste sinon.
 Écarts résiduels possibles avec CODE V : CODE V intègre en coordonnées pupillaires canoniques de Hopkins (ici : grille régulière dans la pupille d'entrée, identique à faible ouverture et petit champ), et la FTM dépend de la mise au point et du vignetage (VUY…VLX) exactement comme dans CODE V.</td></tr>
+<tr><td>FTM through-focus</td><td>FTM tangentielle et sagittale de chaque champ à <b>une fréquence</b> (champ « f », 30 cy/mm par défaut) en fonction de la défocalisation du plan image, plus la moyenne pondérée (T+S)/2 sur les champs (orange) et la limite de diffraction. Le <b>meilleur foyer</b> est le maximum de cette moyenne (interpolation parabolique) ; <b>Appliquer le meilleur foyer</b> déplace le plan image d'autant (épaisseur avant l'image, impossible si un solve M la pilote). Étendue « ± µm » : automatique (au moins 8·λ·F#² et englobant le meilleur foyer en front d'onde) ou imposée. Échantillonnage de la pupille 32×32 (rapide) à 128×128.</td></tr>
+<tr><td>FTM selon le champ</td><td>FTM T (trait plein) et S (tirets) à quelques fréquences (jusqu'à six, séparées par des virgules) pour 11 champs régulièrement répartis de l'axe au champ maximal (facteurs de vignetage interpolés entre les champs définis, repérés par des triangles). Abscisse : unité des champs ; pour des champs en hauteur image, hauteur image réelle. En pointillés : limite de diffraction.</td></tr>
 <tr><td>Énergie encerclée</td><td>Fraction d'énergie dans un cercle : diffraction (λ primaire) et géométrique (polychromatique), rayon à 80 %.</td></tr>
 <tr><td>Footprint</td><td>Empreinte des faisceaux de chaque champ sur une surface, comparée au demi-diamètre (dimensionnement des optiques et montures).</td></tr>
 <tr><td>Courbure de champ &amp; distorsion</td><td>Foyers tangentiel et sagittal en fonction du champ, distorsion en %.</td></tr>
+<tr><td>Grille de distorsion</td><td>Grille carrée de champs (7×7 à 21×21) : position réelle du rayon principal (trait plein) comparée à la grille idéale paraxiale (y = f·tan θ, ou grandissement × hauteur objet ; pointillés). Distorsion maximale (radiale, en %) et champ où elle est atteinte. « Coins = champ max » : la diagonale de la grille correspond au champ maximal (capteur rectangulaire) ; décoché, c'est le bord. « Écarts ×10 » amplifie les écarts pour les rendre visibles. Le centre de la grille est ramené sur le rayon principal de l'axe (systèmes décentrés).</td></tr>
+<tr><td>Éclairement relatif</td><td>Éclairement de l'image en fonction du champ, rapporté à l'axe, calculé comme OpticStudio et CODE V : aire du faisceau image dans l'espace des cosinus directeurs (pupille découpée en 40×40 mailles, rayons vignetés exclus). Inclut donc le vignetage (ouvertures fixées et facteurs VUY…VLX), les aberrations de pupille et l'obliquité ; la courbe cos⁴ θ′ du rayon principal sert de repère. Calculé à la longueur d'onde choisie dans l'en-tête.</td></tr>
 <tr><td>Seidel</td><td>Coefficients du 3ᵉ ordre par surface (sphérique, coma, astigmatisme, Petzval, distorsion, chromatismes axial et latéral) et équivalents W040, W131…</td></tr>
 <tr><td>Décalage focal chromatique</td><td>Position du foyer paraxial en fonction de λ.</td></tr>
 <tr><td>Carte des verres</td><td>Diagramme nd / νd des catalogues, verres utilisés en orange.</td></tr>
 <tr><td>Polarisation</td><td>Voir la rubrique dédiée.</td></tr>
 <tr><td>Simulation d'image</td><td>Voir la rubrique dédiée.</td></tr>
 <tr><td>Prescription</td><td>Tableau des surfaces, performances par champ, données paraxiales.</td></tr>
-<tr><td>Analyse thermique</td><td>Défocalisation, Δ focale, WFE et spot RMS en fonction de la température (bornes réglables dans l'en-tête). Voir <i>Données système</i>.</td></tr></table>
+<tr><td>Analyse thermique</td><td>Défocalisation, Δ focale, WFE et spot RMS en fonction de la température (bornes réglables dans l'en-tête). Voir <i>Données système</i>.</td></tr>
+<tr><td>Multi-configuration : synthèse</td><td>Tableau focale, F/#, champ, hauteur image, tirage, longueur, spot et WFE maximaux pour chaque configuration ; un clic sur une configuration l'active. Voir <i>Multi-configuration</i>.</td></tr></table>
+<h4>Calculs en tâche de fond</h4>
+<p>Les analyses longues — <b>FTM</b>, FTM through-focus, FTM selon le champ, éclairement relatif, analyse thermique — et tout le <b>tolérancement</b> (sensibilités, tolérances inverses, Monte-Carlo) sont calculés dans des <b>Web Workers</b>, en parallèle sur plusieurs cœurs du processeur (jusqu'à 4) : l'interface reste fluide, on peut continuer à éditer pendant le calcul. La fenêtre concernée affiche une barre de progression, et la barre d'état un indicateur « n calculs · % ». Les résultats sont gardés en mémoire : revenir à un système déjà calculé est immédiat. Un calcul devenu inutile (système modifié entre-temps) est abandonné. Si l'hébergement interdit les workers, les mêmes calculs se font dans la page, par petites tranches. Le Monte-Carlo reste reproductible avec une graine, quel que soit le nombre de cœurs. Fermer la fenêtre de tolérancement n'interrompt plus le calcul (bouton Arrêter pour cela).</p>
 <p>Le bouton <b>?</b> de chaque fenêtre d'analyse ouvre directement la ligne correspondante de cette aide. Chaque fenêtre d'analyse se détache avec <b>⧉</b> (fenêtre flottante redimensionnable) ; <b>+ Fenêtre</b> en ajoute d'autres.</p>` },
 
   { id: 'polarisation', t: 'Polarisation', h: `
@@ -3513,11 +3765,11 @@ const HELP = [
   { id: 'rapport', t: 'Rapports PDF', h: `
 <p>Bouton <b>Rapport</b> (ou <i>Fichier → Rapport PDF…</i>) : composez le rapport puis cliquez sur <b>Générer le PDF</b>.</p>
 <ul><li><b>Titre, auteur, notes</b> : repris en page de garde (avec date, version de Focale et chiffres clés) et dans les pieds de page.</li>
-<li><b>Sections</b> : données du système et paraxiales, prescription (avec asphères et décentrements), layout 2D, performances par champ (spot, front d'onde, Strehl, vignetage), coefficients de Seidel, détecteur, source / fibre, tolérancement (résultats déjà calculés : sensibilités, RSS, Monte-Carlo avec histogramme).</li>
+<li><b>Sections</b> : données du système et paraxiales, prescription (avec asphères et décentrements), multi-configuration (paramètres, synthèse et layout de chaque configuration), layout 2D, performances par champ (spot, front d'onde, Strehl, vignetage), coefficients de Seidel, détecteur, source / fibre, tolérancement (résultats déjà calculés : sensibilités, RSS, Monte-Carlo avec histogramme).</li>
 <li><b>Analyses</b> : cochez celles à inclure ; « un graphique par champ » les répète pour chaque champ. « Fenêtres d'analyse ouvertes » reprend exactement vos fenêtres avec leurs réglages.</li>
 <li><b>Mise en page</b> : page de garde avec bandeau, cartes de chiffres clés (focale, F/#, champ, spectre, longueur) et <b>sommaire avec numéros de page</b> (analyses en sous-entrées) ; sections numérotées, tableaux à en-tête bleu et ligne Σ mise en évidence, données encadrées sur deux colonnes, figures numérotées avec légende, pagination en pied de page. La section Performances commence par quatre cartes (spot RMS max, rayon d'Airy, WFE RMS max, Strehl min) dont le repère passe au vert quand le critère de Maréchal est atteint (WFE ≤ 0,0714 λ, Strehl ≥ 0,8). Le tableau des asphères affiche tous les coefficients utilisés, jusqu'à A20.</li>
 <li>Les graphiques sont rendus en haute résolution sur fond blanc (même en mode nuit) ; textes et tableaux sont vectoriels et sélectionnables. Le PDF (A4) est créé dans le navigateur, sans connexion.</li></ul>
-<p class="hint">Vos choix sont mémorisés pour le prochain rapport. Dans la version hébergée sur claude.ai, le téléchargement peut être bloqué : utilisez le site GitHub Pages ou l'application installée.</p>` },
+<p class="hint">Vos choix sont mémorisés pour le prochain rapport. Dans la version hébergée sur claude.ai, chaque téléchargement (PDF, JSON, images, CSV, exports) passe par une fenêtre de confirmation de Claude ; les formats que claude.ai n'accepte pas (.zmx, .seq, .agf) sont enregistrés avec « .txt » ajouté au nom : retirez-le après téléchargement.</p>` },
 
   { id: 'optimisation', t: 'Optimisation', h: `
 <p>Méthode des <b>moindres carrés amortis</b> (Levenberg-Marquardt) avec Jacobien numérique, comme l'optimisation locale de Zemax ou CODE V. Bouton <b>Optimiser</b> (Ctrl+Maj+O) ; la fenêtre se déplace et se redimensionne, et l'on peut continuer à travailler dans l'éditeur.</p>
@@ -3527,6 +3779,7 @@ const HELP = [
 <li>Une épaisseur pilotée par le solve M ne peut pas être variable.</li></ul>
 <h4>Fonction de mérite</h4>
 <ul><li><b>Critère de qualité image</b> : spot RMS (par rapport au barycentre), front d'onde RMS ou aucun ; quadrature de Gauss 3 anneaux × 8 bras sur tous les champs pondérés.</li>
+<li><b>Multi-configuration</b> : la fonction de mérite additionne toutes les configurations (ou la seule configuration active, au choix dans la fenêtre Multi-configuration) ; la colonne <b>Config.</b> réserve un opérande à une configuration, et les valeurs cochées V dans la fenêtre Multi-configuration deviennent des variables propres à chaque configuration.</li>
 <li><b>Longueurs d'onde du critère</b> : toutes (pondérées), la <b>λ centrale</b> (la plus proche du milieu de la bande), la λ primaire ou une λ donnée. Exemple : variable sur la dernière épaisseur + critère sur la λ centrale = mise au point à cette longueur d'onde. Les opérandes de chromatisme utilisent toujours toutes les λ.</li>
 <li><b>Opérandes</b>, chacun avec une contrainte <b>=</b>, <b>≥</b> ou <b>≤</b> (une contrainte d'inégalité ne pèse que si elle est violée) :
 <table class="ht"><tr><th>Code</th><th>Grandeur</th></tr>
@@ -3573,6 +3826,7 @@ const HELP = [
 <ul><li><b>Sensibilité</b> : chaque tolérance seule, à sa borne min puis max ; dégradation (Δ &gt; 0 = pire), part cumulée de la dégradation RSS, dérive de visée (déplacement du rayon principal du 1ᵉʳ champ) et mouvement du compensateur. Estimation RSS de la performance : nominal ± √ΣΔ².</li>
 <li><b>Tolérances inverses</b> (Zemax « Inverse Limit ») : pour chaque tolérance, la valeur ± qui produit une dégradation donnée. Soit une Δ max par tolérance, soit un <b>budget</b> : critère visé après fabrication, la marge étant répartie en RSS (Δ = |cible − nominal|/√n). Valeurs arrondies vers le bas (1 · 1,5 · 2 · 2,5 · 3 · 4 · 5 · 6 · 8 × 10ⁿ), signalées « à resserrer » ou « peut être élargie », et applicables d'un clic à la liste détaillée.</li>
 <li><b>Monte-Carlo</b> : toutes les tolérances tirées simultanément entre leurs bornes (gaussienne tronquée, uniforme, parabolique — extrêmes favorisés — ou extrêmes seulement), avec une <b>graine</b> pour des tirages reproductibles. Résultats : moyenne, écart-type, centiles (50 à 98 %), meilleur et pire, <b>rendement</b> par rapport à une spécification, course du compensateur, dérive de visée, histogramme et fonction de répartition, principaux contributeurs (corrélation). Les tirages pire, médian et meilleur se <b>chargent dans l'éditeur</b> pour être analysés (Ctrl+Z pour revenir).</li></ul>
+<p>Les calculs sont répartis sur plusieurs cœurs (Web Workers) et tournent en tâche de fond : on peut fermer la fenêtre ou continuer à éditer ; <b>Arrêter</b> interrompt le calcul en gardant les résultats déjà obtenus. Avec une multi-configuration, le tolérancement porte sur la configuration active.</p>
 <p>« Exporter CSV » copie tous les résultats (y compris chaque tirage Monte-Carlo et ses valeurs) ; le rapport PDF reprend les trois analyses.</p>` },
 
   { id: 'assistant', t: 'Assistant (langage naturel)', h: `
@@ -3606,6 +3860,7 @@ const HELP = [
 <tr><td>Système</td><td>NAME, UNIT (mm, cm, in, m → mm), ENPD / FNUM / OBNA / FLOA, FTYP (angle, hauteur objet, hauteur image paraxiale ou réelle, type conservé), XFLN/YFLN/FWGN, vignetage VDXN/VDYN/VCXN/VCYN, WAVM ou WAVL/WWGT, PWAV, ENVD (température, pression).</td></tr>
 <tr><td>Surfaces</td><td>STANDARD, EVENASPH (PARM 2…8 → A4…A16), TCE (CTE de l'entretoise), COORDBRK (décentrements et bascules), PARAXIAL (lentille idéale), DGRATING (réseau, traits/µm et ordre). CURV, DISZ, CONI, DIAM, CLAP (demi-diamètre fixe), STOP, COMM.</td></tr>
 <tr><td>Verres</td><td>Noms de catalogue (Schott, Ohara, CDGM, Hoya, MISC), MIRROR, ___BLANK (modèle nd/νd). Un verre inconnu est remplacé par son modèle nd/νd (signalé).</td></tr>
+<tr><td>Multi-configuration</td><td>MNUM, MOFF (noms des configurations), THIC, CRVT, CONN, GLSS, SDIA, APER, YFIE/XFIE, WAVE, WLWT, TEMP, PRES ; à l'export, numéros de surface recalculés si des coordinate breaks sont créés.</td></tr>
 <tr><td>Export</td><td>Décentrements → paires de COORDBRK (DEC : un CB ; DAR : CB + retour en ordre inverse ; pliage BEN : CB + CB de même bascule). Verres fictifs → ___BLANK. Solves → épaisseurs fixes.</td></tr></table>
 <h4>CODE V (.seq)</h4>
 <table class="ht"><tr><th>Élément</th><th>Correspondance</th></tr>
@@ -3613,7 +3868,8 @@ const HELP = [
 <tr><td>Surfaces</td><td>SO, S, STO, SI, RDM/RDN, RDY/CUY/THI/GLA/GL1, K, <b>A…J</b> (A4 à A20), CIR (CIR EDG ignoré : bord mécanique), REFL et RMD REFL, PIM, XDE…CDE, DAR, BEN (REV → DAR), GRT/GRO/GRS/GRX/GRY (réseau), <b>SLB</b> (étiquette → commentaire), SPS XYP + SCO (polynôme XY, à vérifier), CCY/THC/KC/AC…DC 0 (variables), GLC 0 (verre fictif variable), TCE.</td></tr>
 <tr><td>Qualificatifs</td><td>Les commandes qui désignent une surface explicitement sont appliquées à cette surface : <code>THI S7 4</code>, <code>CIR S2 10</code>, <code>SLB S4 'L2'</code>, <code>STO S3</code>, <code>CCY S1 0</code>…</td></tr>
 <tr><td>Ignorées sans remarque</td><td>UID, DER, DOR, GCH, GLB, CAT, INI, GO, CUM, THM, VIE, PLO, WRL, EVA… (identifiants, incréments de dérivée, préférences, affichage : sans effet sur l'optique).</td></tr>
-<tr><td>Signalées (non modélisées)</td><td>ZOO (zoom : position 1 importée), PIK (reprises), PUY/PUX/PUC/PCY (solves : valeur courante gardée), CUX/RDX/CYL/XTO/YTO (toriques : profil Y), DIF/HOE/HCO… (surfaces diffractives : phase ignorée), RET, RED, REX/REY (rectangle → cercle circonscrit), ADX/ADY, CIR HOL/OBS, GL2, TEM Sk (température par surface), SPS ODD/ZRN/ZFR/QBF/QCN (base conique seule), mode afocal.</td></tr>
+<tr><td>Zoom</td><td><b>ZOO</b> : nombre de positions (<code>ZOO 3</code>), paramètres zoomés (<code>ZOO THI S6 10 20 30</code>, <code>ZOO YAN F2 10 15 20</code>, <code>ZOO WL W1 486 550 656</code>…) et qualificatif de position (<code>THI S6 Z2 20</code>) → multi-configuration (épaisseur, rayon, conique, verre, demi-diamètre, décentrements, ouverture, champs, longueurs d'onde et poids, température, pression).</td></tr>
+<tr><td>Signalées (non modélisées)</td><td>PIK (reprises), PUY/PUX/PUC/PCY (solves : valeur courante gardée), CUX/RDX/CYL/XTO/YTO (toriques : profil Y), DIF/HOE/HCO… (surfaces diffractives : phase ignorée), RET, RED, REX/REY (rectangle → cercle circonscrit), ADX/ADY, CIR HOL/OBS, GL2, TEM Sk (température par surface), SPS ODD/ZRN/ZFR/QBF/QCN (base conique seule), mode afocal.</td></tr>
 <tr><td>Verres</td><td>NOM_CATALOGUE (NBK7_SCHOTT, SBSL7_OHARA…), codes 6 chiffres, <b>verres fictifs CODE V</b> <code>743972.448504</code> (→ modèle nd/νd 1,743972 / 44,8504), forme <code>1.62:36.4</code>, <b>verres privés PRV</b> (PWL + indices → loi de Cauchy). À l'export, verres modèles → code de verre fictif CODE V, verres importés → verres privés PRV.</td></tr></table>
 <p class="hint">Exportés aussi : type de champ, vignetage, température et pression, commentaires (SLB), A12…A20 (E…J ; A18 et A20 non disponibles vers Zemax). Non exportés (signalés) : lentille idéale en CODE V, polariseurs et lames d'onde, surfaces XY et Zernike, obstruction centrale, orientation non nulle des traits d'un réseau vers Zemax. Les conventions de bascule sont supposées identiques (rotations main droite) : vérifiez les systèmes décentrés après conversion.</p>
 <p class="hint">Les fichiers <b>.len</b> de CODE V sont binaires (format propriétaire) : dans CODE V, tapez <code>WRL C:\chemin\nom.seq</code> pour écrire la séquence texte, puis importez le .seq.</p>
@@ -3623,7 +3879,7 @@ const HELP = [
 <table class="ht"><tr><th>Touches</th><th>Action</th></tr>
 <tr><td>F1</td><td>Aide</td></tr><tr><td>Ctrl+Z / Ctrl+Y</td><td>Annuler / rétablir</td></tr>
 <tr><td>Ctrl+O / Ctrl+S / Ctrl+Maj+S</td><td>Ouvrir / enregistrer / enregistrer sous</td></tr>
-<tr><td>Ctrl+Maj+O</td><td>Optimisation</td></tr><tr><td>Ctrl+Maj+F</td><td>Quick focus (meilleur foyer)</td></tr><tr><td>Ctrl+Maj+A</td><td>Assistant (langage naturel)</td></tr><tr><td>Ctrl+Maj+D</td><td>Données système (CODE V)</td></tr><tr><td>Inser / Suppr (ou Ctrl+Suppr)</td><td>Insérer / supprimer une surface</td></tr><tr><td>Clic droit (éditeur)</td><td>Menu de la surface (supprimer, insérer, verre…)</td></tr>
+<tr><td>Ctrl+Maj+O</td><td>Optimisation</td></tr><tr><td>Ctrl+Maj+F</td><td>Quick focus (meilleur foyer)</td></tr><tr><td>Ctrl+Maj+A</td><td>Assistant (langage naturel)</td></tr><tr><td>Ctrl+Maj+D</td><td>Données système (CODE V)</td></tr><tr><td>Ctrl+Maj+M</td><td>Multi-configuration</td></tr><tr><td>Ctrl+Maj+Page préc. / suiv.</td><td>Configuration précédente / suivante</td></tr><tr><td>Inser / Suppr (ou Ctrl+Suppr)</td><td>Insérer / supprimer une surface</td></tr><tr><td>Clic droit (éditeur)</td><td>Menu de la surface (supprimer, insérer, verre…)</td></tr>
 <tr><td>Entrée, Tab, ↑ ↓, Échap</td><td>Navigation dans l'éditeur</td></tr><tr><td>Échap</td><td>Fermer une fenêtre, réduire une analyse agrandie</td></tr></table>` },
 
   { id: 'conventions', t: 'Conventions et unités', h: `
@@ -3640,7 +3896,7 @@ const HELP = [
 <ul><li>Tracé séquentiel uniquement (pas de lumière parasite ni de chemins multiples).</li>
 <li>Calcul paraxial sans décentrements, formes libres ni réseaux.</li>
 <li>Pas de traitements multicouches (Fresnel non traité ou antireflet parfait).</li>
-<li>Pas de zoom / multi-configuration, de mode afocal, de surfaces toriques ni diffractives (signalés à l'import CODE V).</li>
+<li>Pas de mode afocal, de surfaces toriques ni diffractives (signalés à l'import CODE V). Multi-configuration : pas de reprises (pickups) entre configurations ni de solves différents par configuration ; tolérancement sur la configuration active.</li>
 <li>Environnement : une seule température pour tout le système (pas de gradients ni de températures par élément).</li>
 <li>Simulation d'image : PSF interpolée sur une grille 5×5, éclairement relatif simplifié ; pixels carrés.</li>
 <li>Source étendue : PSF supposée constante sur l'étendue de la source (source petite devant le champ).</li></ul>` },
@@ -3738,7 +3994,6 @@ const IO = (() => {
   const SEQ_SILENT = new Set(['GO', 'INI', 'SPH', 'CON', 'END', 'INS', 'SAV', 'UID', 'DER', 'DOR', 'GCH', 'GLB', 'CAT', 'DDM', 'CUM', 'THM', 'RDM;LEN', 'VIE', 'PLO', 'WRL', 'OUT', 'EVA', 'WRI', 'IN', 'CA', 'APE', 'DEL', 'AUT', 'MFR', 'IFR', 'NBR', 'XOF', 'YOF', 'XRA', 'YRA', 'COL', 'DES', 'TOW', 'LIB', 'PTH', 'DIN', 'GBL', 'NUM', 'STR', 'VAR', 'FIL', 'FRZ', 'FIX', 'CLR', 'CFG']);
   /** commandes reconnues mais non modélisées : une remarque par commande */
   const SEQ_UNSUP = {
-    ZOO: 'Système zoom / multi-configuration (ZOO) : seule la position 1 est importée',
     PIK: 'Reprises (PIK) non prises en charge : valeurs courantes conservées',
     PUY: 'Solve CODE V (PUY/PUX/PUC/PCY…) non pris en charge : valeur courante conservée', PUX: 'Solve CODE V (PUY/PUX/PUC/PCY…) non pris en charge : valeur courante conservée',
     PUC: 'Solve CODE V (PUY/PUX/PUC/PCY…) non pris en charge : valeur courante conservée', PCY: 'Solve CODE V (PUY/PUX/PUC/PCY…) non pris en charge : valeur courante conservée',
@@ -3752,10 +4007,24 @@ const IO = (() => {
     ADX: 'Décentrement d\'ouverture (ADX/ADY) ignoré', ADY: 'Décentrement d\'ouverture (ADX/ADY) ignoré',
     AFC: 'Mode afocal non pris en charge', AFO: 'Mode afocal non pris en charge', WID: 'Mode grand angle (WID) : utilisez la visée réelle des rayons',
   };
+  /** valeurs de multi-configuration exprimées en longueur (mise à l'échelle des unités) */
+  const MC_LEN = new Set(['THI', 'RAD', 'SD', 'DX', 'DY']);
+  function mcScale(sys, k) { if (!sys.mc) return; for (const op of sys.mc.ops) if (MC_LEN.has(op.type) || (op.type === 'APE' && ['EPD', 'STOP'].includes(sys.aperture.type))) op.v = op.v.map(v => typeof v === 'number' && isFinite(v) ? v * k : v); }
+  /** construit sys.mc à partir d'entrées { type, i, k (position, base 0), v } ; cur = configuration dont les valeurs sont celles du système */
+  function mcBuild(sys, ent, n, cur, W, src) {
+    if (!ent.length || n < 2) return;
+    const ops = new Map();
+    for (const e of ent) { const key = e.type + '|' + e.i; if (!ops.has(key)) ops.set(key, { type: e.type, i: e.i, v: new Array(n).fill(undefined) }); if (e.k >= 0 && e.k < n) ops.get(key).v[e.k] = e.v; }
+    sys.mc = { n, cur: Math.min(Math.max(0, cur), n - 1), ops: [...ops.values()], names: [] };
+    for (const op of sys.mc.ops) { const T = E.MCT[op.type], base = T.get(sys, op.i); op.v = op.v.map(v => v === undefined ? base : v); }
+    E.mcLoad(sys, sys.mc.cur);
+    W.push(`Multi-configuration importée (${src}) : ${n} configurations, ${sys.mc.ops.length} paramètre(s) — menu Configs`);
+  }
   const isSurfQ = t => /^S(\d+|O|I)$/i.test(t || '');
   const isItemQ = t => /^[WFZ]\d+$/i.test(t || '');
   function parseSeq(txt) {
     const W = [], sys = baseSys(), note = m => { if (!W.includes(m)) W.push(m); };
+    const zoo = { n: 0, ent: [] };
     let wl = [], wtw = [], fy = [], fxs = [], wtf = [], vig = { vuy: [], vly: [], vux: [], vlx: [] }, ftype = 'ang', cur = null, rdn = false, scale = null, ddm = null, prv = null, pwl = [], spsT = null, rect = new Map();
     const stmts = String(txt).split(/\r?\n/).map(l => l.replace(/!.*$/, '')).join('\n').split(/[;\n]/);
     const setList = (arr, a) => { // « CMD v1 v2 … » ou « CMD Wk v » / « CMD Fk v »
@@ -3768,6 +4037,17 @@ const IO = (() => {
       if (u === 'SO') return sys.surfaces[0];
       if (u === 'SI') return sys.surfaces.length > 1 ? sys.surfaces[sys.surfaces.length - 1] : null;
       return sys.surfaces[+u.slice(1)] || null;
+    };
+    const CV2MC = { THI: 'THI', RDY: 'RAD', CUY: 'RAD', K: 'CNC', GLA: 'GLA', GL1: 'GLA', CIR: 'SD', XDE: 'DX', YDE: 'DY', ADE: 'TX', BDE: 'TY', EPD: 'APE', FNO: 'APE', NAO: 'APE', NA: 'APE', YAN: 'FY', YOB: 'FY', YIM: 'FY', YRI: 'FY', XAN: 'FX', XOB: 'FX', XIM: 'FX', XRI: 'FX', WL: 'WL', WTW: 'WW', TEM: 'TEM', PRE: 'PRE' };
+    /** valeur(s) zoomée(s) : pos = position (base 0) ou null = une valeur par position */
+    const zooAdd = (c, sf, fi, vals, pos) => {
+      const type = CV2MC[c]; if (!type) return false; const D = E.MCT[type];
+      let i = 0; if (D.s) { if (!sf) return false; i = sf; } else if (D.f || D.w) i = fi ?? 0;
+      const conv = v => { if (type === 'GLA') return mapGlass(String(v).replace(/^['"]|['"]$/g, ''), NaN, NaN, W, 'zoom'); let x = num(v); if (!isFinite(x)) return undefined; if (c === 'CUY') x = x ? 1 / x : Infinity; if (c === 'RDY' && !x) x = Infinity; if (type === 'WL') x /= 1000; if (type === 'PRE') x /= 760; return x; };
+      const L = vals.map(conv).filter(v => v !== undefined);
+      if (pos != null) { if (L.length) zoo.ent.push({ type, sf: D.s ? i : null, i: D.s ? -1 : i, k: pos, v: L[0] }); zoo.n = Math.max(zoo.n, pos + 1); }
+      else { L.forEach((v, k) => zoo.ent.push({ type, sf: D.s ? i : null, i: D.s ? -1 : i, k, v })); zoo.n = Math.max(zoo.n, L.length); }
+      return true;
     };
     for (let st of stmts) {
       st = st.trim(); if (!st) continue;
@@ -3782,12 +4062,24 @@ const IO = (() => {
           continue; }
         continue;
       }
-      if (cmd === 'ZOO' || cmd === 'PIK') { note(SEQ_UNSUP[cmd]); continue; }
+      if (cmd === 'PIK') { note(SEQ_UNSUP[cmd]); continue; }
+      if (cmd === 'POS') continue;
+      if (cmd === 'ZOO') { // « ZOO n » (nombre de positions) ou « ZOO THI S5 v1 v2 … » (paramètre zoomé)
+        if (a.length === 1 && isFinite(num(a[0]))) { zoo.n = Math.max(zoo.n, num(a[0]) | 0); continue; }
+        const c2 = (a[0] || '').toUpperCase(); let rest = a.slice(1), sq = null, fq = null;
+        while (rest.length && (isSurfQ(rest[0]) || /^[FW]\d+$/i.test(rest[0]))) { const t0 = rest.shift(); if (isSurfQ(t0)) sq = surfAt(t0); else fq = +t0.slice(1) - 1; }
+        const vals = q ? [q[0]] : rest; if (!zooAdd(c2, sq || cur, fq, vals, null)) note(`Paramètre zoomé « ZOO ${c2} » non pris en charge`);
+        continue; }
       if (SEQ_SILENT.has(cmd)) continue;
       // qualificatif de surface explicite : « THI S3 5 », « CIR S2 10 », « SLB S4 'texte' », « STO S3 »…
       let tgt = cur;
       if (!['S', 'SO', 'SI'].includes(cmd) && isSurfQ(a[0])) { tgt = surfAt(a[0]); a = a.slice(1); if (!tgt) continue; }
       const n = i => num(a[i]);
+      { // qualificatif de position de zoom : « THI S5 Z2 12.5 », « YAN F2 Z3 10 »
+        let fq = null, zq = null, rest = a.slice();
+        while (rest.length && /^[FWZ]\d+$/i.test(rest[0])) { const t0 = rest.shift(); if (/^Z/i.test(t0)) zq = +t0.slice(1) - 1; else fq = +t0.slice(1) - 1; }
+        if (zq != null) { if (!zooAdd(cmd, tgt, fq, q ? [q[0]] : rest, zq)) note(`Commande « ${cmd} » en position de zoom non prise en charge`); continue; }
+      }
       switch (cmd) {
         case 'PRV': prv = true; pwl = []; break;
         case 'TIT': case 'TITLE': sys.title = q ? (q[1] ?? q[2]) : a.join(' '); break;
@@ -3879,8 +4171,9 @@ const IO = (() => {
     sys.fields = Array.from({ length: nf }, (_, i) => { const f = { x: fxs[i] || 0, y: fy[i] || 0, w: wtf[i] ?? 1 }; for (const k of ['vuy', 'vly', 'vux', 'vlx']) if (vig[k][i]) f[k] = vig[k][i]; return f; });
     if (Object.values(vig).some(v => v.some(x => x))) note('Facteurs de vignetage (VUY, VLY, VUX, VLX) importés');
     if (!sys.surfaces.some(s => s.stop)) { sys.surfaces[1].stop = true; W.push('Pas de diaphragme (STO) : surface 1 utilisée'); }
+    if (zoo.ent.length) { zoo.ent.forEach(e => { if (e.sf) e.i = sys.surfaces.indexOf(e.sf); }); mcBuild(sys, zoo.ent.filter(e => e.i >= 0), Math.max(2, zoo.n), 0, W, 'ZOO CODE V'); }
     const sc = scale ?? ddm ?? 1;
-    if (sc !== 1) { scaleSys(sys, sc, ftype); W.push(`Unités converties en mm (×${sc})`); }
+    if (sc !== 1) { scaleSys(sys, sc, ftype); mcScale(sys, sc); W.push(`Unités converties en mm (×${sc})`); }
     sys.ftype = ftype;
     fixFields(sys, ftype, W);
     if (sys.env && (sys.env.T != null || sys.env.P != null)) { if (Math.abs((sys.env.T ?? 20) - 20) < 1e-9 && Math.abs((sys.env.P ?? 1) - 1) < 1e-9) delete sys.env; else note(`Environnement importé : ${sys.env.T ?? 20} °C, ${+(sys.env.P ?? 1).toFixed(5)} atm (prescription à 20 °C)`); }
@@ -3906,6 +4199,7 @@ const IO = (() => {
     sys.fields = sys.fields.map(f => ({ ...f, x: f.x * k, y: f.y * k }));
   }
 
+  const cv0 = (s, objInf) => E.FTYPES[E.FTYPES[s.ftype] ? s.ftype : (objInf ? 'ang' : 'obj')].cv;
   function toSeq(s) {
     const W = [], S = s.surfaces, N = S.length - 1, L = [], TS = solvedT(s);
     const objInf = !isFinite(S[0].t) || Math.abs(S[0].t) > 1e10;
@@ -3955,6 +4249,17 @@ const IO = (() => {
     if (s.apod && s.apod.type === 'gauss') L.push(`PUI ${fmtN(s.apod.I ?? 0.135)}`);
     if (priv.size) { L.push('PRV', 'PWL ' + wls.map(l => (l * 1000).toFixed(4)).join(' ')); for (const [nm, ns] of priv) L.push(`'${nm}' ${ns.map(v => v.toFixed(6)).join(' ')}`); L.push('END'); W.push(`${priv.size} verre(s) fictif(s) ou importé(s) exporté(s) en verres privés PRV`); }
     if ((ap.obscuration || 0) > 0) W.push('Obstruction centrale non exportée');
+    if (E.mcOn(s)) { // multi-configuration → positions de zoom CODE V
+      const mc = E.mcSync(structuredClone(s)).mc, zl = [`ZOO ${mc.n}`];
+      for (const op of mc.ops) {
+        const D = E.MCT[op.type], cv = op.type === 'APE' ? ({ EPD: 'EPD', FNO: 'FNO', NA: 'NAO', NAI: 'NA' })[ap.type] : op.type === 'FY' ? cv0(s, objInf) : op.type === 'FX' ? 'X' + cv0(s, objInf).slice(1) : op.type === 'WL' ? 'WL' : D.cv;
+        if (!cv) { W.push(`Multi-configuration : paramètre « ${D.l} » non exporté vers CODE V`); continue; }
+        const qual = D.s ? (op.i === 0 ? 'SO' : op.i === N ? 'SI' : 'S' + op.i) : D.f ? 'F' + (op.i + 1) : D.w ? 'W' + (op.i + 1) : '';
+        const val = v => op.type === 'GLA' ? (gl(v) || 'AIR') : op.type === 'WL' ? (v * 1000).toFixed(4) : op.type === 'PRE' ? fmtN(v * 760) : op.type === 'RAD' ? r(v) : fmtN(v);
+        zl.push(`ZOO ${cv} ${qual} ${op.v.map(val).join(' ')}`.replace(/\s+/g, ' '));
+      }
+      body.push(...zl); W.push(`${mc.n} configurations exportées en positions de zoom CODE V (ZOO) : à vérifier dans CODE V`);
+    }
     return { text: [...L, ...body, 'GO'].join('\n'), warnings: W };
   }
 
@@ -3963,11 +4268,19 @@ const IO = (() => {
      ===================================================================== */
   function parseZMX(txt) {
     const W = [], sys = baseSys(), raw = [];
+    const mce = { n: 0, cur: 1, ent: [] }, ZM = { THIC: 'THI', CRVT: 'RAD', CONN: 'CNC', GLSS: 'GLA', SDIA: 'SD', APER: 'APE', YFIE: 'FY', XFIE: 'FX', WAVE: 'WL', WLWT: 'WW', TEMP: 'TEM', PRES: 'PRE' };
     let cur = null, unit = 1, ftype = 0, nf = null, nw = null, xf = [], yf = [], fw = [], wavm = [], wavl = [], wwgt = [], pwav = 1, floa = false, vdx = [], vdy = [], vcx = [], vcy = [];
     for (const line of String(txt).split(/\r?\n/)) {
       const tl = line.trim(); if (!tl) continue;
       const t = tl.split(/\s+/), cmd = t[0].toUpperCase();
       if (cmd === 'SURF') { cur = { n: +t[1], type: 'STANDARD', parm: {}, xdat: {} }; raw.push(cur); continue; }
+      if (cmd === 'MNUM') { mce.n = +t[1] || 0; mce.cur = +t[2] || 1; continue; }
+      if (cmd === 'MOFF') { const m = tl.match(/"([^"]*)"/); if (m && m[1].trim()) (mce.names = mce.names || [])[+t[2] - 1] = m[1].trim(); continue; }
+      if (ZM[cmd] && mce.n > 1 && t.length >= 4) { // ligne de l'éditeur multi-configuration : TYPE int1 config valeur …
+        const type = ZM[cmd], D = E.MCT[type], k = +t[2] - 1; let v = t[3];
+        if (type === 'GLA') v = /^"?\s*"?$/.test(v) ? '' : mapGlass(v.replace(/"/g, ''), NaN, NaN, W, 'multi-configuration');
+        else { v = num(v); if (type === 'RAD') v = v ? 1 / v : Infinity; }
+        mce.ent.push({ type, i: D.s ? +t[1] : D.f || D.w ? +t[1] - 1 : 0, k, v }); continue; }
       if (cur) {
         switch (cmd) {
           case 'TYPE': cur.type = (t[1] || 'STANDARD').toUpperCase(); continue;
@@ -4058,6 +4371,7 @@ const IO = (() => {
       else W.push('Ouverture « Float by stop size » sans demi-diamètre de diaphragme : EPD = 10 mm par défaut');
     }
     sys.surfaces.forEach(s => delete s._cb);
+    if (mce.ent.length) { mcBuild(sys, mce.ent.filter(e => !E.MCT[e.type].s || (e.i >= 0 && e.i < sys.surfaces.length)), mce.n, mce.cur - 1, W, 'Zemax MCE'); if (sys.mc && mce.names) sys.mc.names = Array.from({ length: sys.mc.n }, (_, k) => mce.names[k] || ''); if (unit !== 1) mcScale(sys, unit); }
     return { sys, warnings: W };
   }
 
@@ -4075,8 +4389,10 @@ const IO = (() => {
       if (o.kind === 'cat') { cats.add(o.cat); if (o.user) W.push(`Verre ${o.name} : catalogue ${o.cat} à installer dans OpticStudio`); return `GLAS ${o.name} 0 0 ${fmtN(o.nd)} ${fmtN(o.vd)} 0 0 0 0 0 0`; }
       return `GLAS ___BLANK 1 0 ${fmtN(o.nd)} ${fmtN(o.vd)} 0 0 0 0 0 0`;
     };
+    const zmap = [], ztmap = [];
     S.forEach((x, i) => {
       const t = i === N ? 0 : TS[i], dec = i > 0 && i < N && isDec(x);
+      zmap[i] = zs.length + (dec ? 1 : 0); ztmap[i] = zs.length + (dec ? (x.dmode === 'DEC' ? 1 : 2) : 0);
       const surf = { type: 'STANDARD', curv: isFinite(x.r) && x.r ? 1 / x.r : 0, disz: t, glas: glasLine(x.glass), sd: x.sd, fixed: x.sdFixed, coni: x.k, parm: {}, stop: x.stop, comm: x.comment || '' };
       if (E.ASPK.some(a => x[a])) { surf.type = 'EVENASPH'; surf.parm = { 1: 0, 2: x.a4 || 0, 3: x.a6 || 0, 4: x.a8 || 0, 5: x.a10 || 0, 6: x.a12 || 0, 7: x.a14 || 0, 8: x.a16 || 0 }; if (x.a18 || x.a20) W.push(`S${i} : coefficients A18, A20 non exportés (EVENASPH s'arrête à r¹⁶)`); }
       if (x.tce != null && x.tce !== '') surf.tce = +x.tce;
@@ -4123,6 +4439,17 @@ const IO = (() => {
       if (z.fixed && z.sd > 0) out.push(`  CLAP 0 ${fmtN(z.sd)} 0`);
       if (z.tce) out.push(`  TCE ${fmtN(z.tce)}`);
     });
+    if (E.mcOn(s)) { // éditeur multi-configuration OpticStudio
+      const mc = E.mcSync(structuredClone(s)).mc; out.push(`MNUM ${mc.n} ${(mc.cur | 0) + 1}`);
+      for (let k = 0; k < mc.n; k++) out.push(`MOFF 0 ${k + 1} "${String(mc.names && mc.names[k] || '').replace(/"/g, "'")}" 0 0 0 1 1 0 0.0 ""`);
+      for (const op of mc.ops) {
+        const D = E.MCT[op.type]; if (!D.zmx && op.type !== 'RAD') { W.push(`Multi-configuration : paramètre « ${D.l} » non exporté vers Zemax`); continue; }
+        const code = op.type === 'RAD' ? 'CRVT' : D.zmx, int1 = D.s ? (op.type === 'THI' ? ztmap[op.i] : zmap[op.i]) : D.f || D.w ? op.i + 1 : 0;
+        op.v.forEach((v, k) => { const val = op.type === 'RAD' ? fmtN(isFinite(v) && v ? 1 / v : 0) : op.type === 'GLA' ? (glassOut(v).kind === 'air' ? '""' : glassOut(v).kind === 'mirror' ? 'MIRROR' : glassOut(v).name || '___BLANK') : fmtN(v);
+          out.push(`${code} ${int1} ${k + 1} ${val} 0 0 0 1 1 0 0.0 ""`); });
+      }
+      W.push(`${mc.n} configurations exportées dans l'éditeur multi-configuration Zemax (MNUM / ${mc.ops.length} opérande(s))`);
+    }
     if (S.some(x => x.tsolve === 'M')) W.push('Solve de mise au point exporté comme épaisseur fixe');
     if ((ap.obscuration || 0) > 0) W.push('Obstruction centrale non exportée');
     if (s.rayAiming) W.push('Visée réelle des rayons : à réactiver dans OpticStudio (System Explorer → Ray Aiming)');
@@ -4465,10 +4792,11 @@ function openAssistant() {
 /* ---------------- Rafraîchissement ---------------- */
 let paneTimer = null;
 function refresh(opts = {}) {
-  const t0 = performance.now();
+  const t0 = performance.now(); App.sysKey = null;
+  if (App.sys.mc) OE.mcSync(App.sys);
   try { App.M = OE.prepare(App.sys); } catch (e) { console.error(e); App.M = { ok: false, errors: ['Erreur de calcul : ' + e.message] }; }
   App.sel = Math.min(Math.max(1, App.sel), App.sys.surfaces.length - 1);
-  renderLDE(); renderSide(); drawLayout(); if (window.GLW) GLW.refresh?.(); if (WIN.key === 'Données système') renderSD();
+  renderLDE(); renderSide(); drawLayout(); if (window.GLW) GLW.refresh?.(); if (WIN.key === 'Données système') renderSD(); if (WIN.key === 'Multi-configuration') renderMC(); renderMCBar();
   App.lastPrep = performance.now() - t0;
   clearTimeout(paneTimer);
   paneTimer = setTimeout(renderPanes, opts.fast ? 0 : 40);
@@ -4482,7 +4810,8 @@ function status(extra) {
   <span>TTL <span class="k">${fx(p.ttl, 2)}</span></span><span>Variables <span class="k">${OE.getVars(s).length}</span></span>
   ${M.env ? `<span title="Environnement (Données système → Température et pression)">🌡 <span class="k">${fmt(M.env.T, 4)} °C · ${fmt(M.env.P, 4)} atm</span></span>` : ''}
   ${M.warnings && M.warnings.length ? `<span style="color:var(--warn)" title="${esc(M.warnings.join('\n'))}">⚠ ${M.warnings.length} avertissement(s)</span>` : ''}
-  <span class="grow"></span><span>${extra || ''}</span><span>calcul <span class="k">${(App.lastPanes || 0).toFixed(0)} ms</span></span>`;
+  <span class="grow"></span><span id="bgst"></span><span>${extra || ''}</span><span>calcul <span class="k">${(App.lastPanes || 0).toFixed(0)} ms</span></span>`;
+  bgStatus();
 }
 
 /* ---------------- Éditeur de lentilles ---------------- */
@@ -4513,6 +4842,9 @@ function renderLDE() {
   });
   h += '</tbody>';
   const tb = $('#lde'); tb.innerHTML = h;
+  // valeurs pilotées par la multi-configuration
+  if (OE.mcOn(App.sys)) { const KM = { THI: 't', RAD: 'r', GLA: 'glass', SD: 'sd', CNC: 'k' }, nm = mcName(App.sys, App.sys.mc.cur | 0);
+    for (const op of App.sys.mc.ops) { const k = KM[op.type]; if (!k) continue; const inp = tb.querySelector(`input[data-i="${op.i}"][data-k="${k}"]`); if (inp) { inp.classList.add('mcc'); inp.title = `Valeur de « ${nm} » (multi-configuration : ${op.v.map(v => v === Infinity ? '∞' : typeof v === 'number' ? fmt(v, 6) : v).join(' / ')})`; } } }
   if (App.focus) { const f = App.focus; App.focus = null; const inp = tb.querySelector(`input[data-i="${f.i}"][data-k="${f.k}"]`); if (inp && !inp.disabled) { inp.focus(); inp.select(); } }
 }
 /** colonnes asphériques affichées : A4…A10, et A12…A20 dès qu'une surface les utilise (ou App.hiAsph) */
@@ -5296,7 +5628,9 @@ const PT = {
   wfe: { l: 'Carte de front d\'onde (WFE)', f: 1, w: 1 },
   zern: { l: 'Coefficients de Zernike', f: 1, w: 1, html: 1 },
   psf: { l: 'PSF diffractive (FFT)', f: 1, w: 1 },
-  mtf: { l: 'FTM / MTF polychromatique' },
+  mtf: { l: 'FTM / MTF polychromatique', job: p => ({ name: 'mtf', args: { o: { geo: p.mt === 'geo', dl: p.gdl !== false, N: +p.ns || 64, fmax: +p.fmax || 0 } } }) },
+  tfmtf: { l: 'FTM through-focus (meilleur foyer)', job: p => ({ name: 'tfmtf', args: { o: { freq: +p.tff || 30, half: p.tfh ? p.tfh / 1000 : 0, n: 21, N: +p.ns || 32 } } }) },
+  mtffield: { l: 'FTM selon le champ', job: p => ({ name: 'mtffield', args: { o: { freqs: mffList(p), n: 11, N: +p.ns || 32 } } }) },
   ee: { l: 'Énergie encerclée', f: 1 },
   footprint: { l: 'Footprint (empreinte du faisceau)', s: 1 },
   field: { l: 'Courbure de champ & distorsion' },
@@ -5308,21 +5642,24 @@ const PT = {
   source: { l: 'Source étendue (fibre, fente…)', f: 1 },
   imgsim: { l: 'Simulation d\'image' },
   presc: { l: 'Prescription & synthèse', html: 1 },
-  thermal: { l: 'Analyse thermique (focale, foyer, qualité vs T)', f: 1 },
+  thermal: { l: 'Analyse thermique (focale, foyer, qualité vs T)', f: 1, job: p => ({ name: 'thermal', args: { o: { T1: p.t1 ?? -20, T2: p.t2 ?? 60, n: 9, fi: p.fi || 0 } } }) },
+  relillum: { l: 'Éclairement relatif', w: 1, job: (p, M) => ({ name: 'relillum', args: { o: { n: 21, wi: p.wi ?? M.pw, grid: 40 } } }) },
+  distgrid: { l: 'Grille de distorsion', w: 1 },
+  mcsum: { l: 'Multi-configuration : synthèse', html: 1 },
 };
 /** section (et repère) de l'aide pour chaque type d'analyse */
-const HELPAN = { spot: ['analyses', 'Diagramme de spot'], rayfan: ['analyses', 'Ray fan'], opdfan: ['analyses', 'OPD fan'], wfe: ['analyses', 'Carte WFE'], zern: ['analyses', 'Zernike'], psf: ['analyses', 'PSF'],
+const HELPAN = { tfmtf: ['analyses', 'FTM through-focus'], mtffield: ['analyses', 'FTM selon le champ'], relillum: ['analyses', 'Éclairement relatif'], distgrid: ['analyses', 'Grille de distorsion'], mcsum: ['multiconfig'], spot: ['analyses', 'Diagramme de spot'], rayfan: ['analyses', 'Ray fan'], opdfan: ['analyses', 'OPD fan'], wfe: ['analyses', 'Carte WFE'], zern: ['analyses', 'Zernike'], psf: ['analyses', 'PSF'],
   mtf: ['analyses', 'FTM / MTF'], ee: ['analyses', 'Énergie encerclée'], footprint: ['analyses', 'Footprint'], field: ['analyses', 'Courbure de champ'], seidel: ['analyses', 'Seidel'], chrom: ['analyses', 'Décalage focal chromatique'],
   glass: ['analyses', 'Carte des verres'], polar: ['polarisation'], detector: ['detecteur'], source: ['source'], imgsim: ['imgsim'], presc: ['analyses', 'Prescription'], thermal: ['donnees', 'Analyse thermique'] };
 /** aide des fenêtres (par titre) */
-const HELPDLG = [['Catalogue de verres', 'verres'], ['Optimisation', 'optimisation'], ['Données système', 'donnees'], ['Tolérancement', 'tolerancement'], ['Rapport', 'rapport'], ['Export', 'fichiers'], ['Import', 'fichiers'], ['Assistant', 'assistant'], ['À propos', 'demarrage']];
+const HELPDLG = [['Catalogue de verres', 'verres'], ['Optimisation', 'optimisation'], ['Données système', 'donnees'], ['Tolérancement', 'tolerancement'], ['Rapport', 'rapport'], ['Export', 'fichiers'], ['Import', 'fichiers'], ['Assistant', 'assistant'], ['Multi-configuration', 'multiconfig'], ['À propos', 'demarrage']];
 /** choix du nombre de termes de Zernike Fringe (ordre radial et azimutal) */
 const ZNOPTS = [[4, 'défocalisation'], [9, '3ᵉ ordre'], [16, '5ᵉ ordre'], [25, '7ᵉ ordre'], [36, '9ᵉ ordre'], [37, '9ᵉ ordre + sphérique 11ᵉ']];
 /** groupes du menu des fenêtres d'analyse */
 const PTG = [
   ['Image et aberrations', ['spot', 'rayfan', 'opdfan', 'wfe', 'zern']],
-  ['Diffraction', ['psf', 'mtf', 'ee']],
-  ['Système', ['field', 'seidel', 'chrom', 'footprint', 'thermal', 'polar']],
+  ['Diffraction', ['psf', 'mtf', 'tfmtf', 'mtffield', 'ee']],
+  ['Système', ['field', 'distgrid', 'relillum', 'seidel', 'chrom', 'footprint', 'thermal', 'polar', 'mcsum']],
   ['Capteur et simulation', ['detector', 'source', 'imgsim']],
   ['Données et outils', ['glass', 'presc']],
 ];
@@ -5363,6 +5700,10 @@ function paneHeader(pi) {
   if (p.type === 'zern') h += `<select data-p="nz" title="Nombre de termes de Zernike Fringe ajustés">${ZNOPTS.map(([n, l]) => `<option value="${n}" ${(+p.nz || 16) === n ? 'selected' : ''}>Z1…Z${n} — ${l}</option>`).join('')}</select>`;
   if (p.type === 'mtf') h += `<select data-p="mt" title="Méthode de calcul de la FTM"><option value="diff" ${p.mt !== 'geo' ? 'selected' : ''}>Diffraction</option><option value="geo" ${p.mt === 'geo' ? 'selected' : ''}>Géométrique</option></select>${p.mt === 'geo' ? `<label title="Multiplier par la FTM d'une pupille parfaite (recommandé)"><input type="checkbox" data-p="gdl" ${p.gdl !== false ? 'checked' : ''}>× diffraction</label>` : `<select data-p="ns" title="Échantillonnage de la pupille (front d'onde N×N)">${[32, 64, 128, 256].map(n => `<option value="${n}" ${(+p.ns || 64) === n ? 'selected' : ''}>${n}×${n}</option>`).join('')}</select>`}<label>f max <input class="in" data-p="fmax" style="width:56px;height:22px" value="${p.fmax || ''}" placeholder="auto"></label>`;
   if (p.type === 'spot') h += `<label><input type="checkbox" data-p="chief" ${p.chief ? 'checked' : ''}>réf. principal</label>`;
+  const nsSel = d => `<select data-p="ns" title="Échantillonnage de la pupille (front d'onde N×N) : 32 rapide, 64 précis">${[32, 64, 128].map(n => `<option value="${n}" ${(+p.ns || d) === n ? 'selected' : ''}>${n}×${n}</option>`).join('')}</select>`;
+  if (p.type === 'tfmtf') h += `<label>f <input class="in" data-p="tff" style="width:46px;height:22px" value="${p.tff || 30}"> cy/mm</label><label title="Demi-étendue de la défocalisation (vide : automatique, au moins 8 λF² et englobant le meilleur foyer)">± <input class="in" data-p="tfh" style="width:52px;height:22px" value="${p.tfh || ''}" placeholder="auto"> µm</label>${nsSel(32)}<button class="bt" data-p="tfapply" style="height:24px" title="Déplacer le plan image au meilleur foyer trouvé (épaisseur avant l'image)">Appliquer le meilleur foyer</button>`;
+  if (p.type === 'mtffield') h += `<label title="Fréquences spatiales (cycles/mm), séparées par des virgules ou des espaces">f <input class="in" data-p="mff" style="width:96px;height:22px" value="${esc(mffList(p).join(', '))}"> cy/mm</label>${nsSel(32)}`;
+  if (p.type === 'distgrid') h += `<select data-p="dgn" title="Nombre de lignes de la grille">${[7, 11, 15, 21].map(n => `<option value="${n}" ${(+p.dgn || 11) === n ? 'selected' : ''}>${n}×${n}</option>`).join('')}</select><label title="Coché : les coins de la grille correspondent au champ maximal (diagonale du capteur). Décoché : le bord de la grille correspond au champ maximal."><input type="checkbox" data-p="diag" ${p.diag !== false ? 'checked' : ''}>coins = champ max</label><label title="Amplifier les écarts pour les rendre visibles"><input type="checkbox" data-p="dgx" ${p.dgx ? 'checked' : ''}>écarts ×10</label>`;
   if (p.type === 'thermal') h += `<label>de <input class="in" data-p="t1" style="width:46px;height:22px" value="${p.t1 ?? -20}"></label><label>à <input class="in" data-p="t2" style="width:46px;height:22px" value="${p.t2 ?? 60}"> °C</label>`;
   const fl = !!App.fw['p' + pi];
   h += `<span class="grow"></span><button class="x hb" data-help="${(HELPAN[p.type] || ['analyses'])[0]}" data-ha="${esc((HELPAN[p.type] || [])[1] || '')}" title="Aide sur cette analyse">?</button>${t.html ? '' : '<button class="x" data-p="png" title="Enregistrer l\'image (PNG)">⤓</button>'}${fl ? '' : `<button class="x" data-fw="p${pi}" title="Détacher dans une fenêtre flottante (déplaçable, redimensionnable)">⧉</button><button class="x" data-p="max" title="Agrandir / réduire">⤢</button>`}`;
@@ -5393,7 +5734,9 @@ function setupPaneEvents(el) {
     const t = e.target, k = t.dataset.p; if (!k || !t.closest('.pane')) return; const pi = +t.closest('.pane').dataset.i, p = App.panes[pi];
     if (k === 'zoom') { p.zoom = Math.min(5, Math.max(0.5, +t.value)); save(); paneBody(pi); return; }
     if (k === 'type') { App.panes[pi] = { type: t.value }; }
-    else if (['log', 'tilt', 'chief', 'fresnel', 'upright', 'pix', 'det', 'grid', 'gdl'].includes(k)) p[k] = t.checked;
+    else if (['log', 'tilt', 'chief', 'fresnel', 'upright', 'pix', 'det', 'grid', 'gdl', 'diag', 'dgx'].includes(k)) p[k] = t.checked;
+    else if (k === 'tff' || k === 'tfh') { const v = parseFloat(String(t.value).replace(',', '.')); p[k] = isFinite(v) && v > 0 ? v : null; }
+    else if (k === 'mff') p.mff = t.value;
     else if (['stype', 'phase', 'mt'].includes(k)) p[k] = t.value;
     else if (['sd', 'sna', 'sw', 'sh'].includes(k)) { const v = parseFloat(String(t.value).replace(',', '.')); p[k] = isFinite(v) && v >= 0 ? v : null; }
     else if (k === 'st' || k === 'src') p[k] = t.value;
@@ -5408,6 +5751,10 @@ function setupPaneEvents(el) {
   el.addEventListener('click', e => {
     const sc = e.target.closest('[data-p="srccfg"]'); if (sc) { closedCards.delete('src'); renderSide(); const el2 = $('#side [data-card="src"]'); if (el2) { el2.scrollIntoView({ behavior: 'smooth', block: 'start' }); el2.style.outline = '2px solid var(--acc)'; setTimeout(() => el2.style.outline = '', 1200); } return; }
     const ld = e.target.closest('[data-p="load"]'); if (ld) { App.simPane = +ld.closest('.pane').dataset.i; $('#imgIn').click(); return; }
+    const tfa = e.target.closest('[data-p="tfapply"]'); if (tfa) { const p = App.panes[+tfa.closest('.pane').dataset.i], d = App.M && App.M.ok ? JCACHE.get(jobSpec(p, App.M).key) : null;
+      if (!d || d.err || !isFinite(d.best)) { toast('Attendez la fin du calcul'); return; }
+      const j = App.sys.surfaces.length - 2; if (App.sys.surfaces[j].tsolve === 'M') { toast('L\'épaisseur avant l\'image est pilotée par un solve M : retirez-le d\'abord'); return; }
+      commit(s => { s.surfaces[j].t = +(d.t0 + d.best).toFixed(6); }); toast(`Plan image déplacé de ${fx(d.best * 1000, 1)} µm (meilleur foyer à ${fmt(d.freq, 4)} cy/mm)`); return; }
     const run = e.target.closest('[data-p="run"]'); if (run) { const pi = +run.closest('.pane').dataset.i; SIM.cache.clear(); SIM.force = true; renderPane(pi); return; }
     const g = e.target.closest('[data-p="png"]');
     if (g) { const pane = g.closest('.pane'), cv = pane.querySelector('canvas'), p = App.panes[+pane.dataset.i]; const o = document.createElement('canvas'); o.width = cv.width; o.height = cv.height; const oc = o.getContext('2d'); oc.fillStyle = TH.panel || '#fff'; oc.fillRect(0, 0, o.width, o.height); oc.drawImage(cv, 0, 0); o.toBlob(b => download(`${fileBase()}_${p.type}.png`, b)); return; }
@@ -5419,7 +5766,7 @@ function renderPanes() { readTheme(); const t0 = performance.now(); $$('.pane[da
 /** redessine le contenu d'un panneau sans reconstruire son en-tête (curseurs, rotation 3D) */
 function paneBody(pi) {
   const d = document.querySelector(`.pane[data-i="${pi}"]`), p = App.panes[pi], M = App.M; if (!d || !M || !M.ok || PT[p.type].html) return;
-  const cv = d.querySelector('canvas'); try { const { c, w, h } = prepCanvas(cv); R[p.type](p, M, c, w, h); } catch (err) { console.error(err); }
+  const cv = d.querySelector('canvas'); try { const { c, w, h } = prepCanvas(cv); if (PT[p.type].job) { const dd = JCACHE.get(jobSpec(p, M).key); if (dd && !dd.err) R[p.type](p, M, c, w, h, dd); } else R[p.type](p, M, c, w, h); } catch (err) { console.error(err); }
 }
 function renderPane(pi) {
   const d = document.querySelector(`.pane[data-i="${pi}"]`); if (!d) return;
@@ -5432,7 +5779,15 @@ function renderPane(pi) {
   if (!M || !M.ok) { if (isH) hd.innerHTML = '<p style="color:#dc2626">Système invalide</p>'; else { const { c } = prepCanvas(cv); text(c, 'Système invalide : ' + (M && M.errors || []).join(', '), 12, 12, { col: '#dc2626' }); } return; }
   try {
     if (isH) hd.innerHTML = R[p.type](p, M);
-    else { const { c, w, h } = prepCanvas(cv); R[p.type](p, M, c, w, h); }
+    else {
+      const { c, w, h } = prepCanvas(cv);
+      if (PT[p.type].job) {
+        const dd = paneData(p, M);
+        if (dd === undefined) drawWait(p, c, w, h, BG.pend && BG.pend.get(jobSpec(p, M).key));
+        else if (!dd || dd.err) text(c, 'Erreur : ' + ((dd && dd.err) || 'calcul impossible'), 12, 12, { col: '#dc2626' });
+        else R[p.type](p, M, c, w, h, dd);
+      } else R[p.type](p, M, c, w, h);
+    }
   } catch (err) {
     console.error(err);
     if (isH) hd.innerHTML = 'Erreur : ' + esc(err.message); else { const { c } = prepCanvas(cv); text(c, 'Erreur : ' + err.message, 12, 12, { col: '#dc2626' }); }
@@ -5440,6 +5795,8 @@ function renderPane(pi) {
 }
 /** type de champ effectif d'un système (ang, obj, pim, rim) */
 const ftypeOf = s => { const inf = !isFinite(s.surfaces[0].t) || Math.abs(s.surfaces[0].t) > 1e10; return OE.FTYPES[s.ftype] ? s.ftype : (inf ? 'ang' : 'obj'); };
+/** fréquences de l'analyse « FTM selon le champ » */
+const mffList = p => { const v = String(p.mff ?? '10, 30, 50').split(/[\s,;]+/).map(x => parseFloat(x)).filter(x => isFinite(x) && x > 0).slice(0, 6); return v.length ? v : [10, 30, 50]; };
 const fUnitOf = t => t === 'ang' ? '°' : t === 'obj' ? ' mm' : ' mm im.';
 /* ---------------- PSF : zoom continu et vue 3D (surface façon CODE V « Diffraction Intensity Spread Function ») ---------------- */
 const PSFC = new WeakMap();
@@ -5577,11 +5934,8 @@ const R = {
     }
     text(c, 'molette : zoom · double-clic : ×1', A.P.x + A.P.w - 4, A.P.y + 4, { col: 'rgba(255,255,255,.55)', size: 9.5, align: 'right' });
   },
-  mtf(p, M, c, w, h) {
-    const geo = p.mt === 'geo', N = +p.ns || 64, F = M.sys.fields;
-    const sc = F.map(f => M.wls.map((_, wi) => OE.pupilScale(M, f, wi)));
-    const fmax = p.fmax || Math.max(...sc.flatMap((a, i) => a.map((q, wi) => Math.max(q.dM, q.dL) / M.ctxs[wi].lmm)));
-    const res = F.map((_, i) => geo ? OE.mtfGeo(M, i, { fmax, dl: p.gdl !== false }) : OE.mtf(M, i, { fmax, N }));
+  mtf(p, M, c, w, h, d) {
+    const geo = p.mt === 'geo', N = +p.ns || 64, sc = d.sc, res = d.res;
     const f = res[0].f;
     const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, [0, f[f.length - 1]], [0, 1.02], { xl: 'Fréquence spatiale (cycles/mm)', yl: 'Module FTM', title: geo ? `FTM polychromatique géométrique (rayons${p.gdl !== false ? ' × limite de diffraction' : ''})` : `FTM polychromatique (diffraction, autocorrélation de la pupille ${N}×${N})` });
     { const pw = M.pw, fn = sc.map((a, i) => `F${i + 1} ${fx(1 / a[pw].dM, 2)}/${fx(1 / a[pw].dL, 2)}`).join(' · ');
@@ -5649,10 +6003,8 @@ const R = {
     legend(c, 8, h - 22, keys.map((k, i) => ({ col: kc[i], l: nm[i] })));
     text(c, `W040 = ${fx(sd.sum.SI / 8 / lm, 3)} λ · W131 = ${fx(sd.sum.SII / 2 / lm, 3)} λ · W222 = ${fx(sd.sum.SIII / 2 / lm, 3)} λ · W220 = ${fx((sd.sum.SIV) / 4 / lm, 3)} λ · W311 = ${fx(sd.sum.SV / 2 / lm, 3)} λ`, 8, h - 12, { col: TH.mut, size: 10.5, mono: true, maxW: w - 16 });
   },
-  thermal(p, M, c, w, h) {
-    const T1 = p.t1 ?? -20, T2 = p.t2 ?? 60, key = toJSON(App.sys) + '|' + T1 + '|' + T2 + '|' + (p.fi || 0);
-    if (!App._th || App._th.key !== key) App._th = { key, r: OE.thermalScan(App.sys, { T1, T2, n: 9, fi: p.fi || 0 }) };
-    const r = App._th.r, efl0 = M.par.efl, h1 = Math.round(h / 2), solve = App.sys.surfaces.some(x => x.tsolve === 'M');
+  thermal(p, M, c, w, h, r) {
+    const T1 = p.t1 ?? -20, T2 = p.t2 ?? 60, efl0 = M.par.efl, h1 = Math.round(h / 2), solve = App.sys.surfaces.some(x => x.tsolve === 'M');
     const dE = r.efl.map(v => (v - efl0) * 1000);
     let A = axes(c, { x: 0, y: 0, w, h: h1 - 20 }, [T1, T2], range([r.dz, dE], 0.1), { xl: '', yl: 'µm', title: solve ? 'Δ focale — solve de mise au point (M) actif : le plan image suit le foyer' : 'Défocalisation (foyer paraxial − plan image) et Δ focale' });
     pline(c, A, r.T, r.dz, TH.acc, 2); pline(c, A, r.T, dE, TH.mut, 1.6, [5, 4]);
@@ -5664,6 +6016,49 @@ const R = {
     c.strokeStyle = '#f59e0b'; c.lineWidth = 1.6; c.setLineDash([4, 3]); c.beginPath(); r.T.forEach((t, i) => { const X = A.X(t), Y = ys(r.spot[i]); i ? c.lineTo(X, Y) : c.moveTo(X, Y); }); c.stroke(); c.setLineDash([]);
     text(c, `${fx(sr[1], 2)} µm`, A.P.x + A.P.w - 4, A.P.y + 2, { col: '#f59e0b', size: 10, align: 'right' });
     legend(c, 8, h - 8, [{ col: '#16a34a', l: 'WFE RMS (λ)' }, { col: '#f59e0b', dash: [4, 3], l: `Spot RMS (µm, ${fx(sr[0], 2)} à ${fx(sr[1], 2)})` }]);
+  },
+  tfmtf(p, M, c, w, h, d) {
+    const X = d.dz.map(v => v * 1e3), F = M.sys.fields;
+    const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, [X[0], X[X.length - 1]], [0, 1.02], { xl: 'Défocalisation par rapport au plan image (µm)', yl: 'Module FTM', title: `FTM through-focus à ${fmt(d.freq, 4)} cy/mm — meilleur foyer ${d.best >= 0 ? '+' : ''}${fx(d.best * 1e3, 1)} µm (FTM moyenne ${fx(d.bestV, 3)})` });
+    pline(c, A, X, d.DL, TH.fg, 1.2, [2, 2]);
+    d.T.forEach((t, i) => { pline(c, A, X, t, fcol(i), 1.7); pline(c, A, X, d.S[i], fcol(i), 1.7, [6, 4]); });
+    pline(c, A, X, d.avg, '#f59e0b', 2.6);
+    const vl = (x, col, dash, lab) => { c.strokeStyle = col; c.lineWidth = 1.2; c.setLineDash(dash); c.beginPath(); c.moveTo(A.X(x), A.P.y); c.lineTo(A.X(x), A.P.y + A.P.h); c.stroke(); c.setLineDash([]); if (lab) text(c, lab, A.X(x) + 4, A.P.y + 4, { col, size: 10 }); };
+    vl(0, TH.mut, [2, 3], 'plan image'); vl(d.best * 1e3, TH.acc, [5, 3], 'meilleur foyer');
+    legend(c, 8, h - 8, [{ col: TH.fg, dash: [2, 2], l: 'Limite de diffraction' }, { col: '#f59e0b', l: 'Moyenne (T+S)/2 pondérée' }, { col: TH.mut, l: 'T' }, { col: TH.mut, dash: [6, 4], l: 'S' }, ...F.map((_, i) => ({ col: fcol(i), l: fLabel(M, i) }))]);
+  },
+  mtffield(p, M, c, w, h, d) {
+    const u = d.u, xr = [0, Math.max(...u.filter(isFinite)) || 1], fc = ['#2563eb', '#16a34a', '#dc2626', '#9333ea', '#ea580c', '#0891b2'];
+    const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, xr, [0, 1.02], { xl: `Champ (${d.unit})`, yl: 'Module FTM', title: `FTM en fonction du champ — ${d.freqs.map(f => fmt(f, 4)).join(', ')} cy/mm (pupille ${+p.ns || 32}×${+p.ns || 32})` });
+    d.freqs.forEach((f, q) => { const col = fc[q % fc.length]; pline(c, A, u, d.T[q], col, 1.8); pline(c, A, u, d.S[q], col, 1.8, [6, 4]); pline(c, A, u, d.DL[q], col, 0.9, [1, 3]); });
+    if (!d.img) d.defF.forEach((v, i) => { c.fillStyle = fcol(i); c.beginPath(); c.moveTo(A.X(v), A.P.y + A.P.h); c.lineTo(A.X(v) - 4, A.P.y + A.P.h + 6); c.lineTo(A.X(v) + 4, A.P.y + A.P.h + 6); c.fill(); });
+    legend(c, 8, h - 8, [{ col: TH.mut, l: 'T' }, { col: TH.mut, dash: [6, 4], l: 'S' }, { col: TH.mut, dash: [1, 3], l: 'limite de diffraction' }, ...d.freqs.map((f, q) => ({ col: fc[q % fc.length], l: `${fmt(f, 4)} cy/mm` }))]);
+  },
+  relillum(p, M, c, w, h, d) {
+    const u = d.u, xr = [0, Math.max(...u.filter(isFinite)) || 1], lo = Math.min(...d.ri.filter(isFinite), ...d.cos4.filter(isFinite));
+    const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, xr, [Math.min(0, Math.floor(lo * 10) / 10), 1.05], { xl: `Champ (${d.unit})`, yl: 'Éclairement relatif', title: `Éclairement relatif à ${fmt(d.wl * 1000, 5)} nm — bord du champ ${fx(100 * d.ri[d.ri.length - 1], 1)} %` });
+    pline(c, A, u, d.cos4, TH.mut, 1.3, [5, 4]); pline(c, A, u, d.ri, TH.acc, 2.2);
+    legend(c, 8, h - 8, [{ col: TH.acc, l: 'Éclairement relatif (vignetage et aberrations de pupille inclus)' }, { col: TH.mut, dash: [5, 4], l: 'cos⁴ θ′ du rayon principal' }]);
+  },
+  distgrid(p, M, c, w, h) {
+    const g = OE.distGrid(M, { n: +p.dgn || 11, diag: p.diag !== false, wi: p.wi ?? M.pw }), n = g.n, amp = p.dgx ? 10 : 1;
+    const P = g.R.map((q, k) => q ? [g.I[k][0] + amp * (q[0] - g.I[k][0]), g.I[k][1] + amp * (q[1] - g.I[k][1])] : null);
+    let m = 0; for (const q of [...g.I, ...P]) if (q) m = Math.max(m, Math.abs(q[0]), Math.abs(q[1])); m *= 1.08;
+    const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, [-m, m], [-m, m], { equal: true, xl: 'X image (mm)', yl: 'Y image (mm)', title: `Grille de distorsion — max ${g.dmax >= 0 ? '+' : ''}${fx(g.dmax, 3)} %${g.dAt ? ` en (${fmt(g.dAt[0], 3)}, ${fmt(g.dAt[1], 3)})${g.unit === '°' ? '°' : ' mm'}` : ''}${amp > 1 ? ' · écarts ×10' : ''}` });
+    const lines = (Q, col, lw, dash) => { c.strokeStyle = col; c.lineWidth = lw; c.setLineDash(dash || []);
+      for (let j = 0; j < n; j++) for (const dir of [0, 1]) { c.beginPath(); let on = false; for (let i = 0; i < n; i++) { const q = Q[dir ? i * n + j : j * n + i]; if (!q) { on = false; continue; } const X = A.X(q[0]), Y = A.Y(q[1]); on ? c.lineTo(X, Y) : c.moveTo(X, Y); on = true; } c.stroke(); }
+      c.setLineDash([]); };
+    lines(g.I, TH.mut, 0.8, [3, 3]); lines(P, TH.acc, 1.6);
+    c.fillStyle = TH.acc; for (const q of P) if (q) { c.beginPath(); c.arc(A.X(q[0]), A.Y(q[1]), 1.8, 0, 7); c.fill(); }
+    legend(c, 8, h - 8, [{ col: TH.mut, dash: [3, 3], l: 'Grille idéale (paraxiale)' }, { col: TH.acc, l: 'Rayons principaux réels' }]);
+  },
+  mcsum(p, M) {
+    if (!OE.mcOn(App.sys)) return `<div class="hint" style="padding:10px">Ce système n'a qu'une configuration. Ouvrez <b>Système → Multi-configuration…</b> pour en créer plusieurs (zoom, mise au point, changement de filtre…).</div>`;
+    const S = OE.mcSummary(App.sys), cur = App.sys.mc.cur | 0, nm = k => esc((App.sys.mc.names || [])[k] || `Config ${k + 1}`);
+    const row = (l, f) => `<tr><th style="text-align:left">${l}</th>${S.map(o => `<td class="mono" style="text-align:right${o.k === cur ? ';background:var(--sel)' : ''}">${o.ok ? f(o) : '—'}</td>`).join('')}</tr>`;
+    return `<table style="width:100%"><tr><th></th>${S.map(o => `<th style="text-align:right"><button class="bt" data-mcgo="${o.k}" style="height:22px${o.k === cur ? ';border-color:var(--acc);color:var(--acc)' : ''}">${nm(o.k)}</button></th>`).join('')}</tr>
+      ${row('Focale (EFL), mm', o => fx(o.efl, 4))}${row('F/# de travail', o => fx(o.wfno, 3))}${row('Champ max', o => fmt(o.fmax, 4) + (App.M.objInf ? '°' : ' mm'))}${row('Hauteur image, mm', o => fx(o.imgH, 3))}${row('Tirage (BFL), mm', o => fx(o.bfl, 3))}${row('Longueur totale, mm', o => fx(o.ttl, 3))}${row('Spot RMS max, µm', o => fx(o.spot, 2))}${row('WFE RMS max, λ', o => fx(o.wfe, 3))}</table>
+      <div class="hint" style="padding:6px 2px">Cliquez sur une configuration pour l'activer. Paramètres variables : ${App.sys.mc.ops.length} ligne(s) dans l'éditeur de multi-configuration.</div>`;
   },
   chrom(p, M, c, w, h) {
     const cs = OE.chromShift(M, 60);
@@ -5946,13 +6341,14 @@ function openOptim() {
     </div>
     <div class="oR">
       <h4 class="th4" style="margin-top:0">Opérandes</h4>
-      <div class="oscroll"><table class="mt otab"><tr><th>Opérande</th><th>Param.</th><th></th><th>Cible</th><th>Poids</th><th>Valeur</th><th title="Part de la fonction de mérite (somme des carrés)">%</th><th></th></tr>
+      <div class="oscroll"><table class="mt otab"><tr><th>Opérande</th><th>Param.</th><th></th><th>Cible</th><th>Poids</th>${OE.mcOn(App.sys) ? '<th title="Configuration où l\'opérande s\'applique (multi-configuration)">Config.</th>' : ''}<th>Valeur</th><th title="Part de la fonction de mérite (somme des carrés)">%</th><th></th></tr>
       ${mf.ops.map((o, i) => { const d = OE.OPS[o.type] || {}; const cmp = o.cmp || d.kind; return `<tr><td><select class="in" data-o="type" data-i="${i}" title="${esc(d.label || '')}">${ops.map(([k, v]) => `<option value="${k}" ${k === o.type ? 'selected' : ''}>${k} — ${v.label}</option>`).join('')}</select></td>
         <td>${d.p ? `<input class="in" data-o="p" data-i="${i}" value="${o.p ?? d.pdef}" title="${d.p}" style="width:56px">` : ''}</td>
         <td><select class="in" data-o="cmp" data-i="${i}" style="width:44px" title="Égal, au moins (≥) ou au plus (≤)">${[['eq', '='], ['ge', '≥'], ['le', '≤']].map(([k, l]) => `<option value="${k}" ${cmp === k ? 'selected' : ''}>${l}</option>`).join('')}</select></td>
         <td><input class="in" data-o="target" data-i="${i}" value="${o.target}" style="width:70px"></td><td><input class="in" data-o="weight" data-i="${i}" value="${o.weight}" style="width:48px"></td>
+        ${OE.mcOn(App.sys) ? `<td><select class="in" data-o="cfg" data-i="${i}" style="width:64px"><option value="0">toutes</option>${Array.from({ length: App.sys.mc.n }, (_, k) => `<option value="${k + 1}" ${+o.cfg === k + 1 ? 'selected' : ''}>${k + 1}</option>`).join('')}</select></td>` : ''}
         <td class="ov" data-ov="${i}"></td><td class="ov" data-oc="${i}"></td><td><button class="x" data-d="odel" data-i="${i}">✕</button></td></tr>`; }).join('')}
-      <tr><td colspan="5" class="hint">Critère image</td><td class="ov" id="oimgv"></td><td class="ov" id="oimgc"></td><td></td></tr></table></div>
+      <tr><td colspan="${OE.mcOn(App.sys) ? 6 : 5}" class="hint">Critère image${OE.mcOn(App.sys) && App.sys.mc.opt !== 'cur' ? ` (somme sur ${App.sys.mc.n} configurations)` : ''}</td><td class="ov" id="oimgv"></td><td class="ov" id="oimgc"></td><td></td></tr></table></div>
       <button class="add" data-d="oadd">+ Ajouter un opérande</button>
       <div style="display:flex;gap:16px;align-items:center;margin-top:10px">
         <div style="flex:none;width:150px"><div class="hint">Fonction de mérite</div><div class="big" id="mval">—</div><div class="hint" id="mit"></div></div>
@@ -6005,7 +6401,7 @@ async function runSubst() {
           const r = OE.subTry(best, j, cands[c], 12); if (!pick || r.m < pick.m) pick = { ...r, name: cands[c] };
           OPT.hist.push(Math.min(bm, pick.m)); if ($('#mchart')) drawMerit();
         }
-        if (pick && (m || pick.m < bm * (1 - 1e-9))) { if (pick.name !== cur) { log.push(`S${j} : ${cur} → ${pick.name}`); changed = true; } best = pick.sys; bm = pick.m; App.sys = structuredClone(best); App.M = OE.prepare(App.sys); renderLDE(); drawLayout(); if ($('#ovars')) optLive(); }
+        if (pick && (m || pick.m < bm * (1 - 1e-9))) { if (pick.name !== cur) { log.push(`S${j} : ${cur} → ${pick.name}`); changed = true; } best = pick.sys; bm = pick.m; App.sys = structuredClone(best); App.M = OE.prepare(App.sys); App.sysKey = null; renderLDE(); drawLayout(); if ($('#ovars')) optLive(); }
       }
       if (!changed && p > 0) break;
     }
@@ -6015,15 +6411,16 @@ async function runSubst() {
   }
 }
 /** valeurs des variables (pour afficher l'écart depuis le début) */
-function optSnapVars(s) { const o = {}; for (const v of OE.getVars(s)) o[v.kind + v.si] = optVarVal(s, v); return o; }
-function optVarVal(s, v) { const x = s.surfaces[v.si]; if (v.kind === 'nd' || v.kind === 'vd') return (OE.parseModel(x.glass) || {})[v.kind]; return v.kind === 'c' ? x.r : v.kind === 't' ? x.t : v.kind === 'k' ? (x.k || 0) : (+x[v.kind] || 0); }
-const optVarLab = v => v.kind === 'c' ? `R${v.si}` : v.kind === 't' ? `T${v.si}` : v.kind === 'k' ? `K${v.si}` : v.kind === 'nd' ? `nd S${v.si}` : v.kind === 'vd' ? `νd S${v.si}` : `${v.kind.toUpperCase()} S${v.si}`;
+const optVarKey = v => v.kind + v.si + (v.mc != null ? '@' + v.cfg : '');
+function optSnapVars(s) { const o = {}; for (const v of OE.getVars(s)) o[optVarKey(v)] = optVarVal(s, v); return o; }
+function optVarVal(s, v) { if (v.mc != null) { const y = OE.getVal(s, v); return v.kind === 'c' ? (y ? 1 / y : Infinity) : y; } const x = s.surfaces[v.si]; if (v.kind === 'nd' || v.kind === 'vd') return (OE.parseModel(x.glass) || {})[v.kind]; return v.kind === 'c' ? x.r : v.kind === 't' ? x.t : v.kind === 'k' ? (x.k || 0) : (+x[v.kind] || 0); }
+const optVarLab = v => v.mc != null ? `${v.kind === 'c' ? 'R' : v.kind === 't' ? 'T' : 'K'}${v.si} · ${mcName(App.sys, v.cfg)}` : v.kind === 'c' ? `R${v.si}` : v.kind === 't' ? `T${v.si}` : v.kind === 'k' ? `K${v.si}` : v.kind === 'nd' ? `nd S${v.si}` : v.kind === 'vd' ? `νd S${v.si}` : `${v.kind.toUpperCase()} S${v.si}`;
 /** met à jour variables, valeurs des opérandes, contributions et courbe de mérite */
 function optLive() {
   const s = App.sys, vars = OE.getVars(s), r = OE.residuals(s), x0 = OPT.x0 || {};
   const ev = $('#ovars'); if (!ev) return;
   $('#onv').textContent = `(${vars.length})`;
-  ev.innerHTML = vars.length ? `<table class="mt" style="font-size:12px"><tr><th>Variable</th><th>Valeur</th><th>Écart</th></tr>${vars.map(v => { const x = optVarVal(s, v), a = x0[v.kind + v.si]; const d = a != null && isFinite(a) && isFinite(x) ? x - a : NaN;
+  ev.innerHTML = vars.length ? `<table class="mt" style="font-size:12px"><tr><th>Variable</th><th>Valeur</th><th>Écart</th></tr>${vars.map(v => { const x = optVarVal(s, v), a = x0[optVarKey(v)]; const d = a != null && isFinite(a) && isFinite(x) ? x - a : NaN;
     return `<tr><td>${optVarLab(v)}</td><td style="font-family:var(--mono)">${fmt(x, 7)}</td><td style="font-family:var(--mono);color:var(--mut)">${isFinite(d) && Math.abs(d) > 1e-12 ? (d > 0 ? '+' : '') + fmt(d, 4) : ''}</td></tr>`; }).join('')}</table>` : '<em class="hint">aucune variable définie</em>';
   if (!r) { $('#mval').textContent = '—'; return; }
   const m2 = r.f.reduce((a, b) => a + b * b, 0) || 1;
@@ -6353,7 +6750,7 @@ function dlg(html, wide, o = {}) {
 }
 function winSave() { const d = $('#dlg'); if (!WIN.key) return; const { left, top, width, height } = d.style; WIN.geo.set(WIN.key, { left, top, width, height }); }
 function winClamp() { const d = $('#dlg'), r = d.getBoundingClientRect(); let l = parseFloat(d.style.left) || r.left, t = parseFloat(d.style.top) || r.top; l = Math.max(0, Math.min(l, innerWidth - r.width)); t = Math.min(Math.max(t, 0), innerHeight - 40); d.style.left = l + 'px'; d.style.top = t + 'px'; }
-function closeDlg() { if ($('#modal').classList.contains('open')) winSave(); $('#modal').classList.remove('open'); WIN.key = null; OPT.running = false; if (typeof TOL !== 'undefined') TOL.running = false; }
+function closeDlg() { if ($('#modal').classList.contains('open')) winSave(); $('#modal').classList.remove('open'); WIN.key = null; OPT.running = false; }
 function setupWin() {
   const d = $('#dlg');
   const track = (e, fn) => { e.preventDefault(); const mv = ev => fn(ev), up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); document.body.classList.remove('wdrag'); winSave(); }; document.body.classList.add('wdrag'); window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up); };
@@ -6404,7 +6801,8 @@ function setupDlg() {
     if (t.id === 'gAmp') OPT.gAmp = Math.max(1, Math.min(100, parseFloat(String(t.value).replace(',', '.')) || 20));
     if (t.dataset.o) { const i = +t.dataset.i, k = t.dataset.o; commit(s => { const o = s.merit.ops[i]; if (k === 'type') { o.type = t.value; delete o.cmp; const d = OE.OPS[t.value]; if (d.p) o.p = o.p ?? d.pdef; else delete o.p; } else if (k === 'cmp') o.cmp = t.value; else o[k] = parseFloat(String(t.value).replace(',', '.')) || 0; }); openOptim(); }
   });
-  $('#dlg').addEventListener('change', e => { if (e.target.dataset.sd) sdChange(e.target); });
+  $('#dlg').addEventListener('change', e => { if (e.target.dataset.sd) sdChange(e.target); if (e.target.closest('#mcw')) mcEvent(e); });
+  $('#dlg').addEventListener('click', e => { const b = e.target.closest('#mcw [data-mcact]'); if (b) mcAction(b); });
   $('#dlg').addEventListener('click', e => { const t = e.target.closest('[data-sdt]'); if (t) { SD.tab = t.dataset.sdt; renderSD(); return; } const b = e.target.closest('[data-sda]'); if (b) sdAction(b); });
   $('#dlg').addEventListener('click', e => {
     const tb = e.target.closest('[data-tl],[data-tr]'); if (tb) { if (tb.dataset.tl) { TOL.tabL = tb.dataset.tl; renderTolL(); } else { TOL.tabR = tb.dataset.tr; renderTolRes(); } return; }
@@ -6415,7 +6813,7 @@ function setupDlg() {
     if (a === 'tsens') runSens();
     if (a === 'tmc') runMC();
     if (a === 'tinv') runInv();
-    if (a === 'tstop') TOL.running = false;
+    if (a === 'tstop') { TOL.running = false; bgCancel('tol'); }
     if (a === 'tcopy') { const r = tolReport(); navigator.clipboard?.writeText(r).then(() => toast('Rapport copié (CSV, séparateur ;)'), () => download(fileBase() + '_tolerances.csv', r, 'text/csv')); }
     if (a === 'tgen') { commit(s => { const c = tolCfg(); c.list = OE.tolGen(s, c).map(x => ({ ...x })); }); TOL.stale = !!(TOL.sens || TOL.mc || TOL.inv); TOL.tabL = 'list'; renderTolL(); renderTolRes(); toast('Liste détaillée créée depuis les valeurs par défaut'); }
     if (a === 'tlauto') { commit(s => { tolCfg().list = null; }); TOL.stale = !!(TOL.sens || TOL.mc || TOL.inv); renderTolL(); renderTolRes(); }
@@ -6456,7 +6854,7 @@ function runOpt() {
     if (!OPT.running) { finish('Arrêté'); return; }
     const t = performance.now(); let r;
     do { r = OE.optStep(OPT.st); OPT.it++; if (r.merit != null) OPT.hist.push(r.merit); } while (!r.done && OPT.it < maxIt && performance.now() - t < 90);
-    App.sys = OPT.st.sys; App.M = OE.prepare(App.sys); renderLDE(); renderSide(); drawLayout();
+    App.sys = OPT.st.sys; App.M = OE.prepare(App.sys); App.sysKey = null; renderLDE(); renderSide(); drawLayout();
     if (performance.now() - lastPane > 600) { renderPanes(); lastPane = performance.now(); }
     if ($('#mval')) { optLive(); $('#mit').textContent = `itération ${OPT.it}`; }
     if (r.done || OPT.it >= maxIt) { OPT.running = false; finish(r.msg || (OPT.it >= maxIt ? 'Nombre max d\'itérations atteint' : 'Convergé')); return; }
@@ -6474,17 +6872,17 @@ async function runGlobal() {
   const run = async st => { let r, n = 0, t = performance.now(); do { r = OE.optStep(st); n++; OPT.it++; if (performance.now() - t > 80) { await tick(); t = performance.now(); if (!OPT.running) break; } } while (!r.done && n < maxIt); return st.merit ?? OE.meritOf(OE.residuals(st.sys).f); };
   // point de départ : optimum local du système actuel
   let best = { sys: structuredClone(App.sys), mu: 1e-3 }; let bm = await run(best); best = best.sys; OPT.hist.push(bm);
-  App.sys = structuredClone(best); App.M = OE.prepare(App.sys); renderLDE(); drawLayout(); optLive();
+  App.sys = structuredClone(best); App.M = OE.prepare(App.sys); App.sysKey = null; renderLDE(); drawLayout(); optLive();
   let improved = 0;
   for (let c = 0; c < cyc && OPT.running; c++) {
     const s = structuredClone(best);
-    for (const v of OE.getVars(s)) { const g = 2 * Math.random() - 1, x = (() => { const o = s.surfaces[v.si]; return v.kind === 'c' ? OE.curv(o) : v.kind === 't' ? o.t : v.kind === 'k' ? (o.k || 0) : (+o[v.kind] || 0); })();
+    for (const v of OE.getVars(s)) { const g = 2 * Math.random() - 1, x = OE.getVal(s, v);
       const o = s.surfaces[v.si];
       if (v.kind === 'nd' || v.kind === 'vd') { const m = OE.parseModel(o.glass); if (m) { m[v.kind] += v.kind === 'nd' ? amp * g * 0.3 : amp * g * 40; o.glass = OE.fmtModel(Math.min(2.2, Math.max(1.35, m.nd)), Math.min(100, Math.max(15, m.vd))); } continue; }
       const nx = v.kind === 'c' ? x * (1 + amp * g) + (Math.abs(x) < 1e-6 ? amp * g * 0.01 : 0) : v.kind === 't' ? Math.sign(x || 1) * Math.max(0.05, Math.abs(x) * (1 + amp * g)) : v.kind === 'k' ? x + amp * g * 2 : x * (1 + amp * g);
-      if (v.kind === 'c') o.r = Math.abs(nx) < 1e-12 ? Infinity : 1 / nx; else if (v.kind === 't') o.t = nx; else if (v.kind === 'k') o.k = nx; else o[v.kind] = nx; }
+      OE.setVal(s, v, nx); }
     const st = { sys: s, mu: 1e-3 }; const m = await run(st);
-    if (isFinite(m) && m < bm * (1 - 1e-6)) { bm = m; best = st.sys; improved++; App.sys = structuredClone(best); App.M = OE.prepare(App.sys); renderLDE(); drawLayout(); }
+    if (isFinite(m) && m < bm * (1 - 1e-6)) { bm = m; best = st.sys; improved++; App.sys = structuredClone(best); App.M = OE.prepare(App.sys); App.sysKey = null; renderLDE(); drawLayout(); }
     OPT.hist.push(bm); if ($('#mval')) { optLive(); $('#mit').textContent = `cycle ${c + 1} / ${cyc}`; $('#omsg').textContent = `Recherche globale : cycle ${c + 1} / ${cyc} — ${improved} amélioration(s)`; }
   }
   OPT.running = false; App.sys = best; pushHist(); refresh({ fast: true }); optLive();
@@ -6524,6 +6922,188 @@ function drawMerit() {
 /* ---------------- Tolérancement ---------------- */
 const TOL = { running: false, sens: null, inv: null, mc: null, stale: false, tabL: 'set', tabR: 'sens' };
 const tick = () => new Promise(r => setTimeout(r, 0));
+/* ---------------- Multi-configuration (zoom) ---------------- */
+const mcName = (s, k) => (s.mc && s.mc.names && s.mc.names[k]) || `Config ${k + 1}`;
+function mcGo(k) {
+  const s = App.sys; if (!OE.mcOn(s)) return; const n = s.mc.n;
+  if (k === 'prev') k = ((s.mc.cur | 0) - 1 + n) % n; else if (k === 'next') k = ((s.mc.cur | 0) + 1) % n;
+  commit(x => OE.mcSet(x, +k), { fast: true });
+}
+function renderMCBar() {
+  const el = $('#mcbar'); if (!el) return; const s = App.sys;
+  if (!OE.mcOn(s)) { el.innerHTML = ''; el.style.display = 'none'; return; }
+  el.style.display = ''; const cur = s.mc.cur | 0;
+  el.innerHTML = `<button class="tb" data-mcgo="prev" title="Configuration précédente (Ctrl+Maj+Page préc.)">◀</button><select data-mcsel title="Configuration active (multi-configuration)">${Array.from({ length: s.mc.n }, (_, k) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${esc(mcName(s, k))} (${k + 1}/${s.mc.n})</option>`).join('')}</select><button class="tb" data-mcgo="next" title="Configuration suivante (Ctrl+Maj+Page suiv.)">▶</button>`;
+}
+function openMC() { dlg(`<h2>Multi-configuration <button class="x" data-d="close">✕</button></h2><div class="db" id="mcw"></div>`, true, { w: 900, h: 560 }); renderMC(); }
+function renderMC() {
+  const el = $('#mcw'); if (!el) return; const s = App.sys, mc = s.mc || { n: 1, cur: 0, ops: [] }, n = mc.n, cur = mc.cur | 0;
+  const nS = s.surfaces.length - 1, T = OE.MCT;
+  const idxOpts = (type, i) => { const D = T[type]; let L = [];
+    if (D.s) L = s.surfaces.map((x, j) => [j, `S${j}${x.comment ? ' · ' + x.comment : ''}`]).filter(([j]) => j > 0 && (type !== 'THI' || j < nS) || (type === 'THI' && j === 0));
+    else if (D.f) L = s.fields.map((_, j) => [j, `Champ ${j + 1}`]); else if (D.w) L = s.wavelengths.map((w, j) => [j, `λ${j + 1} (${fmt(w.um * 1000, 5)} nm)`]); else return '<span class="hint">—</span>';
+    return `<select data-mca="i" data-mco="__O__">${L.map(([j, l]) => `<option value="${j}" ${j === i ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`; };
+  const typeSel = (t, o) => `<select data-mca="type" data-mco="${o}">${Object.entries(T).map(([k, d]) => `<option value="${k}" ${k === t ? 'selected' : ''}>${esc(d.l)}${d.u ? ' (' + d.u + ')' : ''}</option>`).join('')}</select>`;
+  const cell = (op, oi, k) => { const D = T[op.type], v = op.v ? op.v[k] : '', vs = v === Infinity ? 'Infini' : v == null ? '' : D.num ? fmt(+v, 8) : String(v);
+    return `<td style="${k === cur ? 'background:var(--sel)' : ''}"><div style="display:flex;gap:3px;align-items:center"><input class="in" data-mcv="${oi}" data-k="${k}" value="${esc(vs)}" style="flex:1;min-width:62px">${D.var ? `<label title="Variable d'optimisation pour cette configuration" style="font-size:10px;display:inline-flex;align-items:center;white-space:nowrap"><input type="checkbox" data-mcvv="${oi}" data-k="${k}" ${op.vv && op.vv[k] ? 'checked' : ''}>V</label>` : ''}</div></td>`; };
+  el.innerHTML = `<div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+      <b>${n} configuration${n > 1 ? 's' : ''}</b><button class="bt" data-mcact="addcfg" title="Ajoute une configuration, copie de la configuration active">+ Configuration</button>
+      <button class="bt" data-mcact="delcfg" ${n < 2 ? 'disabled' : ''} title="Supprime la configuration active">− Supprimer la config. active</button>
+      <span class="grow"></span><label title="La fonction de mérite additionne les résidus de toutes les configurations (zoom optimisé d'un seul tenant)"><input type="radio" name="mco" data-mcopt="all" ${mc.opt !== 'cur' ? 'checked' : ''}> optimiser toutes les configurations</label><label><input type="radio" name="mco" data-mcopt="cur" ${mc.opt === 'cur' ? 'checked' : ''}> la configuration active seulement</label></div>
+    <div style="overflow:auto;margin-top:8px"><table class="mct" style="width:100%"><tr><th style="text-align:left">Paramètre</th><th style="text-align:left">Élément</th>${Array.from({ length: n }, (_, k) => `<th style="${k === cur ? 'background:var(--sel)' : ''}"><input class="in" data-mcn="${k}" value="${esc(mcName(s, k))}" style="width:100%;font-weight:600;text-align:center" title="Nom de la configuration"><button class="bt" data-mcgo="${k}" style="height:20px;margin-top:2px;width:100%" ${k === cur ? 'disabled' : ''}>${k === cur ? 'active' : 'activer'}</button></th>`).join('')}<th></th></tr>
+      ${mc.ops.map((op, oi) => `<tr><td>${typeSel(op.type, oi)}</td><td>${idxOpts(op.type, op.i).replace('__O__', oi)}</td>${Array.from({ length: n }, (_, k) => cell(op, oi, k)).join('')}<td><button class="x" data-mcact="delop" data-mco="${oi}" title="Supprimer la ligne">✕</button></td></tr>`).join('')}
+      <tr><td colspan="${n + 3}"><button class="bt" data-mcact="addop" title="Ajoute un paramètre qui change d'une configuration à l'autre">+ Paramètre</button> <button class="bt" data-mcact="addvar" title="Ajoute les épaisseurs marquées V dans l'éditeur de lentilles (typique d'un zoom : espaces entre groupes)">+ Épaisseurs variables (V) de l'éditeur</button></td></tr></table></div>
+    <p class="hint" style="margin-top:10px">Chaque ligne est un paramètre qui prend une valeur par configuration (zoom, mise au point, changement de filtre ou de longueur d'onde, température…). L'éditeur de lentilles, le layout et les analyses montrent toujours la <b>configuration active</b> ; une valeur modifiée dans l'éditeur est enregistrée dans cette configuration. Cochez <b>V</b> pour rendre une valeur variable dans une configuration donnée ; l'optimiseur additionne alors les fonctions de mérite de toutes les configurations (un opérande peut être réservé à une configuration, colonne « Config. » de la fonction de mérite). Le tolérancement porte sur la configuration active.</p>`;
+}
+function mcNum(raw) { const t = String(raw).trim().replace(',', '.'); if (/^inf/i.test(t)) return Infinity; const v = parseFloat(t); return isFinite(v) ? v : null; }
+function mcEvent(e) {
+  const t = e.target, s0 = App.sys, cur = s0.mc ? s0.mc.cur | 0 : 0;
+  if (t.dataset.mcv != null) { const oi = +t.dataset.mcv, k = +t.dataset.k, op = s0.mc.ops[oi], D = OE.MCT[op.type], v = D.num ? mcNum(t.value) : t.value.trim();
+    if (D.num && v == null) { toast('Valeur invalide'); renderMC(); return; }
+    commit(s => { OE.mcSync(s); const o = s.mc.ops[oi]; o.v[k] = v; if (k === (s.mc.cur | 0)) D.set(s, o.i, v); }); return; }
+  if (t.dataset.mcvv != null) { const oi = +t.dataset.mcvv, k = +t.dataset.k; commit(s => { const o = s.mc.ops[oi]; o.vv = o.vv || []; while (o.vv.length < s.mc.n) o.vv.push(false); o.vv[k] = t.checked; }); return; }
+  if (t.dataset.mcn != null) { const k = +t.dataset.mcn; commit(s => { s.mc.names = s.mc.names || []; s.mc.names[k] = t.value.trim(); }); return; }
+  if (t.dataset.mcopt) { commit(s => { s.mc.opt = t.dataset.mcopt; }); return; }
+  if (t.dataset.mca) { const oi = +t.dataset.mco; commit(s => { OE.mcSync(s); const o = s.mc.ops[oi]; if (t.dataset.mca === 'type') { o.type = t.value; const D = OE.MCT[o.type]; if (D.s && !(o.i > 0)) o.i = 1; if ((D.f && o.i >= s.fields.length) || (D.w && o.i >= s.wavelengths.length)) o.i = 0; if (!D.var) delete o.vv; } else o.i = +t.value;
+    if (o.type === 'THI' && s.surfaces[o.i] && s.surfaces[o.i].tsolve) { const M = OE.prepare(s); if (M.ok) s.surfaces[o.i].t = M.S[o.i].t; s.surfaces[o.i].tsolve = ''; }
+    const v = OE.MCT[o.type].get(s, o.i); o.v = Array.from({ length: s.mc.n }, () => v); }); return; }
+}
+function mcAction(b) {
+  const a = b.dataset.mcact, nS = App.sys.surfaces.length - 1;
+  if (a === 'addcfg') commit(s => { if (!s.mc) s.mc = { n: 1, cur: 0, ops: [], names: [] }; OE.mcSync(s); const c = s.mc.cur | 0; s.mc.ops.forEach(o => { o.v.push(o.v[c]); if (o.vv) o.vv.push(false); }); s.mc.names = s.mc.names || []; s.mc.names[s.mc.n] = ''; s.mc.n++; OE.mcLoad(s, s.mc.n - 1); });
+  if (a === 'delcfg') commit(s => { if (!s.mc || s.mc.n < 2) return; const k = s.mc.cur | 0; s.mc.ops.forEach(o => { o.v.splice(k, 1); if (o.vv) o.vv.splice(k, 1); }); if (s.mc.names) s.mc.names.splice(k, 1); s.mc.n--; OE.mcLoad(s, Math.min(k, s.mc.n - 1)); if (s.mc.n === 1 && !s.mc.ops.length) delete s.mc; });
+  if (a === 'addop') commit(s => { if (!s.mc) s.mc = { n: 1, cur: 0, ops: [], names: [] }; OE.mcSync(s); OE.mcAddOp(s, 'THI', Math.max(1, Math.min(nS - 1, App.sel))); });
+  if (a === 'addvar') { let k = 0; commit(s => { if (!s.mc) s.mc = { n: 1, cur: 0, ops: [], names: [] }; OE.mcSync(s); s.surfaces.forEach((x, j) => { if (x.vt && !s.mc.ops.some(o => o.type === 'THI' && o.i === j)) { const o = OE.mcAddOp(s, 'THI', j); o.vv = Array.from({ length: s.mc.n }, () => true); x.vt = false; k++; } }); }); toast(k ? `${k} épaisseur(s) ajoutée(s), variables dans chaque configuration` : 'Aucune épaisseur marquée V dans l\'éditeur'); }
+  if (a === 'delop') { const oi = +b.dataset.mco; commit(s => { s.mc.ops.splice(oi, 1); if (s.mc.n === 1 && !s.mc.ops.length) delete s.mc; }); }
+}
+/* ---------------- Calculs en tâche de fond (Web Workers, repli dans la page) ----------------
+   runJob(nom, args, { group, key, want, onProg, onPart }) → Promise ; les tâches sont définies dans jobs.js (JOBS).
+   Les workers sont créés à partir du code source des scripts de la page (moteur + verres + tâches). */
+const BG = { workers: [], queue: [], seq: 0, ok: null, url: null, mainBusy: false, prog: new Map(), done: 0 };
+const bgMax = () => Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1));
+function bgSource() {
+  const t = id => (document.getElementById(id) || {}).textContent || '';
+  return [t('js-glasses'), t('js-glassth'), t('js-engine'), t('js-jobs')].join('\n;\n') + `
+;self.onmessage = async e => { const m = e.data; if (m.ping) { self.postMessage({ pong: 1 }); return; }
+  try { if (m.ug && m.ug.length) OE.addGlasses(m.ug, true); const r = await JOBS[m.name](m.args, (d, n, part) => { self.postMessage({ id: m.id, prog: [d, n], part }); }); self.postMessage({ id: m.id, res: r }); }
+  catch (err) { self.postMessage({ id: m.id, err: String(err && err.message || err) }); } };`;
+}
+/** verres utilisateur (AGF, saisis) à transmettre au worker */
+function bgGlasses(sys) {
+  const out = [], seen = new Set();
+  for (const x of (sys && sys.surfaces) || []) { const r = OE.glassRecord(x.glass); if (r && r.user && !seen.has(r.key)) { seen.add(r.key); try { const c = structuredClone({ ...r }); delete c.ndv; out.push(c); } catch (e) { } } }
+  return out;
+}
+function bgSpawn() {
+  try {
+    if (!BG.url) BG.url = URL.createObjectURL(new Blob([bgSource()], { type: 'text/javascript' }));
+    const w = new Worker(BG.url), W = { w, job: null };
+    w.onmessage = e => bgMsg(W, e.data);
+    w.onerror = e => { if (e.preventDefault) e.preventDefault(); bgFail(W, e.message || 'erreur du worker'); };
+    BG.workers.push(W);
+    if (BG.ok === null && !BG.pinging) { BG.pinging = true; w.postMessage({ ping: 1 }); BG.pingT = setTimeout(() => { if (BG.ok === null) bgDisable(); }, 5000); }
+    return W;
+  } catch (e) { bgDisable(); return null; }
+}
+/** workers indisponibles (politique de sécurité de l'hébergeur…) : tout est calculé dans la page */
+function bgDisable() {
+  if (BG.ok === false) return; BG.ok = false; clearTimeout(BG.pingT);
+  for (const W of BG.workers) { try { W.w.terminate(); } catch (e) { } if (W.job) BG.queue.unshift(W.job); }
+  BG.workers = []; bgPump();
+}
+function bgMsg(W, m) {
+  if (m.pong) { BG.ok = true; clearTimeout(BG.pingT); bgPump(); return; }
+  const j = W.job; if (!j || m.id !== j.id) return;
+  if (m.prog) { BG.prog.set(j.id, m.prog); if (j.onProg) j.onProg(m.prog[0], m.prog[1]); if (m.part && j.onPart) j.onPart(m.part); bgStatus(); return; }
+  W.job = null; BG.prog.delete(j.id); BG.done++;
+  if (m.err) j.reject(new Error(m.err)); else j.resolve(m.res);
+  bgPump();
+}
+function bgFail(W, msg) {
+  if (BG.ok !== true) { bgDisable(); return; }
+  const j = W.job; W.job = null; try { W.w.terminate(); } catch (e) { } BG.workers = BG.workers.filter(x => x !== W);
+  if (j) { BG.prog.delete(j.id); j.reject(new Error(msg)); }
+  bgPump();
+}
+async function bgMain(j) {
+  BG.mainBusy = true; BG.mainJob = j; bgStatus(); let t = performance.now();
+  try {
+    const r = await JOBS[j.name](j.args, async (d, n, part) => {
+      if (j.cancelled) throw Object.assign(new Error('annulé'), { cancel: true });
+      BG.prog.set(j.id, [d, n]); if (j.onProg) j.onProg(d, n); if (part && j.onPart) j.onPart(part);
+      if (performance.now() - t > 60) { bgStatus(); await tick(); t = performance.now(); }
+    });
+    if (j.cancelled) throw Object.assign(new Error('annulé'), { cancel: true });
+    j.resolve(r);
+  } catch (e) { j.reject(e); }
+  finally { BG.prog.delete(j.id); BG.mainBusy = false; BG.mainJob = null; BG.done++; bgPump(); }
+}
+function bgPump() {
+  for (;;) {
+    // tâches devenues inutiles (panneau changé entre-temps)
+    while (BG.queue.length && BG.queue[0].want && !BG.queue[0].want()) { const j = BG.queue.shift(); j.reject(Object.assign(new Error('obsolète'), { stale: true })); }
+    if (!BG.queue.length) break;
+    if (BG.ok === false) { if (BG.mainBusy) break; bgMain(BG.queue.shift()); break; }
+    let W = BG.workers.find(x => !x.job);
+    if (!W && (BG.workers.length < (BG.ok ? bgMax() : 1))) W = bgSpawn();
+    if (BG.ok !== true || !W) break;
+    const j = BG.queue.shift(); W.job = j; j.started = true;
+    W.w.postMessage({ id: j.id, name: j.name, args: j.args, ug: j.ug });
+  }
+  bgStatus();
+}
+function runJob(name, args, o = {}) {
+  return new Promise((resolve, reject) => {
+    const j = { id: ++BG.seq, name, args, ug: bgGlasses(args.sys || (args.B && args.B.base)), resolve, reject, ...o };
+    BG.queue.push(j); bgPump();
+  });
+}
+/** annule les tâches d'un groupe (en attente, dans les workers et dans la page) */
+function bgCancel(group) {
+  const err = () => Object.assign(new Error('annulé'), { cancel: true });
+  BG.queue = BG.queue.filter(j => { if (j.group === group) { j.reject(err()); return false; } return true; });
+  for (const W of [...BG.workers]) if (W.job && W.job.group === group) { const j = W.job; try { W.w.terminate(); } catch (e) { } BG.workers = BG.workers.filter(x => x !== W); BG.prog.delete(j.id); j.reject(err()); }
+  if (BG.mainJob && BG.mainJob.group === group) BG.mainJob.cancelled = true; // arrêt au prochain point d'avancement
+  bgPump();
+}
+function bgStatus() {
+  const el = document.getElementById('bgst'); if (!el) return;
+  const run = BG.workers.filter(W => W.job).length + (BG.mainBusy ? 1 : 0), n = run + BG.queue.length;
+  if (!n) { el.innerHTML = ''; el.title = ''; return; }
+  const pr = [...BG.prog.values()], pc = pr.length ? Math.round(100 * pr.reduce((a, q) => a + q[0] / Math.max(1, q[1]), 0) / pr.length) : 0;
+  el.innerHTML = `<span class="bgspin"></span> ${n} calcul${n > 1 ? 's' : ''} <span class="k">${pc} %</span>`;
+  el.title = BG.ok === false ? 'Calculs dans la page (Web Workers indisponibles ici)' : `Calculs en tâche de fond : ${run} en cours sur ${BG.workers.length} worker(s), ${BG.queue.length} en attente`;
+}
+/* --- analyses calculées en tâche de fond : PT[type].job(p, M) → { name, args, key } ; résultats en cache --- */
+const JCACHE = new Map();
+const sysKey = () => App.sysKey || (App.sysKey = toJSON(App.sys));
+function jobSpec(p, M) { const J = PT[p.type].job(p, M); J.key = J.name + '|' + JSON.stringify(J.args.o || {}) + '|' + sysKey(); J.args.sys = J.args.sys || App.sys; return J; }
+function paneWants(key) { return $$('.pane[data-i]').some(d => { const p = App.panes[+d.dataset.i]; return p && PT[p.type] && PT[p.type].job && App.M && App.M.ok && jobSpec(p, App.M).key === key; }); }
+function rerenderKey(key) { $$('.pane[data-i]').forEach(d => { const pi = +d.dataset.i, p = App.panes[pi]; if (p && PT[p.type] && PT[p.type].job && App.M && App.M.ok && jobSpec(p, App.M).key === key) renderPane(pi); }); }
+/** données d'une analyse : le résultat (ou { err }) s'il est en cache, sinon undefined et lancement du calcul */
+function paneData(p, M) {
+  const J = jobSpec(p, M);
+  if (JCACHE.has(J.key)) return JCACHE.get(J.key);
+  if (!BG.pend) BG.pend = new Map();
+  if (!BG.pend.has(J.key)) {
+    const key = J.key; BG.pend.set(key, 0);
+    runJob(J.name, J.args, { key, group: 'pane', want: () => paneWants(key), onProg: (d, n) => { BG.pend.set(key, d / Math.max(1, n)); drawWaitKey(key); } })
+      .then(r => { JCACHE.set(key, r); }, e => { if (!e.stale && !e.cancel) JCACHE.set(key, { err: e.message }); })
+      .finally(() => { BG.pend.delete(key); while (JCACHE.size > 40) JCACHE.delete(JCACHE.keys().next().value); rerenderKey(key); });
+  }
+  return undefined;
+}
+function drawWait(p, c, w, h, frac) {
+  c.clearRect(0, 0, w, h);
+  text(c, PT[p.type].l, 10, 8, { b: true });
+  const bw = Math.min(260, w - 40), x = (w - bw) / 2, y = h / 2;
+  text(c, `Calcul en tâche de fond… ${Math.round(100 * (frac || 0))} %`, w / 2, y - 22, { align: 'center', col: TH.mut });
+  c.fillStyle = TH.line; c.fillRect(x, y, bw, 6); c.fillStyle = TH.acc; c.fillRect(x, y, bw * Math.min(1, frac || 0), 6);
+  text(c, BG.ok === false ? 'calcul dans la page' : 'l\'interface reste utilisable pendant le calcul', w / 2, y + 14, { align: 'center', col: TH.mut, size: 10 });
+}
+function drawWaitKey(key) {
+  $$('.pane[data-i]').forEach(d => { const p = App.panes[+d.dataset.i]; if (p && PT[p.type] && PT[p.type].job && App.M && App.M.ok && jobSpec(p, App.M).key === key) { const cv = d.querySelector('canvas'); const { c, w, h } = prepCanvas(cv); drawWait(p, c, w, h, BG.pend.get(key)); } });
+}
 function tolCfg() {
   const d = OE.tolDefaults(), s = App.sys; s.tol = { ...d, ...(s.tol || {}) };
   s.tol.types = Object.fromEntries(Object.keys(d.types).map(k => [k, { ...d.types[k], ...((s.tol.types || {})[k] || {}) }]));
@@ -6580,16 +7160,29 @@ function renderTolL() {
 function tolMsg(t) { const e = $('#tmsg'); if (e) e.textContent = t; }
 /** fige la liste détaillée (passe en mode personnalisé) puis applique fn */
 function tolEditList(fn) { commit(s => { const c = tolCfg(); if (!Array.isArray(c.list)) c.list = OE.tolGen(s, c).map(x => ({ ...x })); fn(c.list, c); }); TOL.stale = !!(TOL.sens || TOL.mc || TOL.inv); renderTolL(); renderTolRes(); }
-async function tolPrep(c) { tolMsg('Préparation (système nominal' + (c.comp ? ', mise au point' : '') + ')…'); await tick(); const B = OE.tolBase(App.sys, c.crit, c.comp, tolOpts(c)); return { B, items: OE.tolItems(B.base, c) }; }
+/** découpe [0, n) en lots pour les workers (équilibrage : ~3 lots par worker) */
+function tolChunks(n) { const w = BG.ok === false ? 1 : bgMax(), k = Math.max(1, Math.min(n, w * 3)), out = []; for (let i = 0; i < k; i++) { const a = Math.floor(i * n / k), b = Math.floor((i + 1) * n / k); if (b > a) out.push([a, b]); } return out; }
+const tolErr = e => { if (!e || !e.cancel) { console.error(e); tolMsg('Erreur : ' + (e && e.message)); } };
+async function tolPrep(c) {
+  tolMsg('Préparation (système nominal' + (c.comp ? ', mise au point' : '') + ')…');
+  const B = await runJob('tolBase', { sys: App.sys, crit: c.crit, comp: c.comp, o: tolOpts(c) }, { group: 'tol' });
+  return { B, items: OE.tolItems(B.base, c) };
+}
+/** exécute une tâche de tolérancement répartie sur les workers ; onPart(k, r) à chaque élément terminé */
+async function tolRun(name, n, mk, onPart, label) {
+  let done = 0, tl = 0; const t0 = performance.now();
+  await Promise.all(tolChunks(n).map(([a, b]) => runJob(name, mk(a, b), { group: 'tol', onPart: p => { done++; onPart(p.k, p.r);
+    if (performance.now() - tl > 150) { tl = performance.now(); renderTolRes(); const el = (performance.now() - t0) / 1000; tolMsg(`${label} : ${done} / ${n} · reste ≈ ${Math.ceil(el / done * (n - done))} s${BG.ok ? ` · ${BG.workers.length} calcul(s) en parallèle` : ''}`); } } })));
+}
 async function runSens() {
   if (TOL.running) return; const c = structuredClone(tolCfg()); TOL.running = true; TOL.stale = false; TOL.tabR = 'sens';
-  const { B, items } = await tolPrep(c), rows = [], o = tolOpts(c); let tl = performance.now(), t0 = performance.now();
-  TOL.sens = { B, rows, c, n: items.length, items };
-  for (let i = 0; i < items.length && TOL.running; i++) {
-    rows.push(OE.tolSens(B, items[i], c.crit, c.comp, o));
-    if (performance.now() - tl > 80) { renderTolRes(); const el = (performance.now() - t0) / 1000; tolMsg(`Sensibilité : ${i + 1} / ${items.length} · reste ≈ ${Math.ceil(el / (i + 1) * (items.length - i - 1))} s`); await tick(); tl = performance.now(); }
-  }
-  TOL.running = false; renderTolRes(); tolMsg(`Sensibilité terminée — ${rows.length} tolérances`);
+  try {
+    const { B, items } = await tolPrep(c), o = tolOpts(c), arr = new Array(items.length);
+    TOL.sens = { B, rows: [], c, n: items.length, items };
+    await tolRun('tolSens', items.length, (a, b) => ({ B, items: items.slice(a, b), k0: a, crit: c.crit, comp: c.comp, o }), (k, r) => { arr[k] = r; TOL.sens.rows = arr.filter(Boolean); }, 'Sensibilité');
+    tolMsg(`Sensibilité terminée — ${TOL.sens.rows.length} tolérances`);
+  } catch (e) { tolErr(e); if (e && e.cancel) tolMsg(`Arrêté — ${TOL.sens ? TOL.sens.rows.length : 0} tolérances calculées`); }
+  TOL.running = false; renderTolRes();
 }
 /** dégradation admissible par tolérance pour le calcul inverse */
 function tolDmax(c, nominal, n) {
@@ -6601,32 +7194,31 @@ async function runInv() {
   if (TOL.running) return; const c = structuredClone(tolCfg()); TOL.tabR = 'inv'; renderTolRes();
   if (!(+c.invVal > 0)) { tolMsg('Indiquez d\'abord la cible du calcul inverse (onglet « Tolérances inverses »).'); return; }
   TOL.running = true; TOL.stale = false;
-  const { B, items } = await tolPrep(c), o = tolOpts(c), dmax = tolDmax(c, B.nominal, items.length);
-  if (!(dmax > 0)) { TOL.running = false; tolMsg(`Cible inatteignable : le nominal (${fx(B.nominal, 4)} ${tolUnit(c.crit)}) est déjà ${OE.TOLC[c.crit].up ? 'sous' : 'au-dessus de'} la cible.`); return; }
-  const S = TOL.sens && !TOL.stale && TOL.sens.c.crit === c.crit && TOL.sens.c.comp === c.comp ? TOL.sens : null, rows = [];
-  TOL.inv = { B, rows, c, dmax, n: items.length };
-  let tl = performance.now(), t0 = performance.now();
-  for (let i = 0; i < items.length && TOL.running; i++) {
-    const it = items[i], sr = S && S.rows.find(r => r.it.type === it.type && r.it.j === it.j && r.it.tol === it.tol);
-    const d0 = sr && sr.lo && sr.hi && Math.abs(it.min + it.max) < 1e-12 ? Math.max(sr.lo.d, sr.hi.d) : undefined;
-    const r = OE.tolInverse(B, it, c.crit, c.comp, dmax, { ...o, d0 });
-    rows.push({ it, t: r.t, tr: c.invRound ? OE.niceDown(r.t) : r.t, d: r.d, capped: r.capped });
-    if (performance.now() - tl > 80) { renderTolRes(); const el = (performance.now() - t0) / 1000; tolMsg(`Calcul inverse : ${i + 1} / ${items.length} · reste ≈ ${Math.ceil(el / (i + 1) * (items.length - i - 1))} s`); await tick(); tl = performance.now(); }
-  }
-  TOL.running = false; renderTolRes(); tolMsg(`Calcul inverse terminé — Δ admissible ${fx(dmax, 4)} ${tolUnit(c.crit)} par tolérance`);
+  try {
+    const { B, items } = await tolPrep(c), o = tolOpts(c), dmax = tolDmax(c, B.nominal, items.length);
+    if (!(dmax > 0)) { TOL.running = false; tolMsg(`Cible inatteignable : le nominal (${fx(B.nominal, 4)} ${tolUnit(c.crit)}) est déjà ${OE.TOLC[c.crit].up ? 'sous' : 'au-dessus de'} la cible.`); return; }
+    const S = TOL.sens && !TOL.stale && TOL.sens.c.crit === c.crit && TOL.sens.c.comp === c.comp ? TOL.sens : null, arr = new Array(items.length);
+    const d0 = items.map(it => { const sr = S && S.rows.find(r => r.it.type === it.type && r.it.j === it.j && r.it.tol === it.tol); return sr && sr.lo && sr.hi && Math.abs(it.min + it.max) < 1e-12 ? Math.max(sr.lo.d, sr.hi.d) : undefined; });
+    TOL.inv = { B, rows: [], c, dmax, n: items.length };
+    await tolRun('tolInv', items.length, (a, b) => ({ B, items: items.slice(a, b), d0: d0.slice(a, b), k0: a, crit: c.crit, comp: c.comp, dmax, o }),
+      (k, r) => { arr[k] = { it: items[k], t: r.t, tr: c.invRound ? OE.niceDown(r.t) : r.t, d: r.d, capped: r.capped }; TOL.inv.rows = arr.filter(Boolean); }, 'Calcul inverse');
+    tolMsg(`Calcul inverse terminé — Δ admissible ${fx(dmax, 4)} ${tolUnit(c.crit)} par tolérance`);
+  } catch (e) { tolErr(e); if (e && e.cancel) tolMsg('Arrêté'); }
+  TOL.running = false; renderTolRes();
 }
 async function runMC() {
   if (TOL.running) return; const c = structuredClone(tolCfg()); TOL.running = true; TOL.stale = false; TOL.tabR = 'mc';
-  const { B, items } = await tolPrep(c), n = Math.max(5, Math.min(5000, +c.trials || 200)), o = tolOpts(c);
-  const sd = String(c.seed ?? '').trim(), rnd = sd !== '' ? OE.rng(parseInt(sd, 10) || [...sd].reduce((a, ch) => a * 31 + ch.charCodeAt(0) >>> 0, 7)) : Math.random;
-  const vals = [], foc = [], bore = [], draws = []; TOL.mc = { B, vals, foc, bore, draws, c, n, items };
-  let tl = performance.now(), t0 = performance.now();
-  for (let k = 0; k < n && TOL.running; k++) {
-    const r = OE.tolTrial(B, items, c.crit, c.comp, c.dist, rnd, o);
-    if (isFinite(r.c)) { vals.push(r.c); foc.push(r.dt); bore.push(r.bore); draws.push(r.draws); }
-    if (performance.now() - tl > 120) { renderTolRes(); const el = (performance.now() - t0) / 1000; tolMsg(`Monte-Carlo : ${k + 1} / ${n} · reste ≈ ${Math.ceil(el / (k + 1) * (n - k - 1))} s`); await tick(); tl = performance.now(); }
-  }
-  TOL.running = false; renderTolRes(); tolMsg(`Monte-Carlo terminé — ${vals.length} tirages`);
+  try {
+    const { B, items } = await tolPrep(c), n = Math.max(5, Math.min(5000, +c.trials || 200)), o = tolOpts(c);
+    const sd = String(c.seed ?? '').trim(), rnd = sd !== '' ? OE.rng(parseInt(sd, 10) || [...sd].reduce((a, ch) => a * 31 + ch.charCodeAt(0) >>> 0, 7)) : Math.random;
+    // tirages générés ici, dans l'ordre : même graine = mêmes systèmes, quel que soit le nombre de workers
+    const D = Array.from({ length: n }, () => items.map(it => OE.tolValue(it, OE.tolDraw(c.dist, rnd))));
+    const vals = [], foc = [], bore = [], draws = []; TOL.mc = { B, vals, foc, bore, draws, c, n, items };
+    await tolRun('tolMC', n, (a, b) => ({ B, items, draws: D.slice(a, b), k0: a, crit: c.crit, comp: c.comp, o }),
+      (k, r) => { if (isFinite(r.c)) { vals.push(r.c); foc.push(r.dt); bore.push(r.bore); draws.push(Float64Array.from(D[k])); } }, 'Monte-Carlo');
+    tolMsg(`Monte-Carlo terminé — ${vals.length} tirages`);
+  } catch (e) { tolErr(e); if (e && e.cancel) tolMsg(`Arrêté — ${TOL.mc ? TOL.mc.vals.length : 0} tirages`); }
+  TOL.running = false; renderTolRes();
 }
 const pct = (arr, q) => { if (!arr.length) return NaN; const a = arr.slice().sort((x, y) => x - y), i = Math.min(a.length - 1, Math.max(0, q * (a.length - 1))), lo = Math.floor(i), f = i - lo; return a[lo] * (1 - f) + (a[lo + 1] ?? a[lo]) * f; };
 /** statistiques Monte-Carlo ; « q » = centile dans le sens « pire » (FTM : centiles bas) */
@@ -6798,10 +7390,27 @@ const FS = { handle: null };
 const TOP = (() => { try { return window.top === window; } catch (e) { return false; } })();
 const fileBase = () => (App.sys.title || 'systeme').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w\-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'systeme';
 function sysJSON() { const s = structuredClone(App.sys); if (typeof usedUserGlasses === 'function') { const u = usedUserGlasses(s); if (Object.keys(u).length) s.userGlass = u; } return toJSON(s); }
-function download(name, text, type = 'application/json') {
-  const b = text instanceof Blob ? text : new Blob([text], { type }), a = document.createElement('a');
+/** capacité « downloads » de l'hébergeur claude.ai (null ailleurs) */
+const DLCAP = { ns: undefined, p: null };
+function dlCap() {
+  if (DLCAP.ns !== undefined) return Promise.resolve(DLCAP.ns);
+  if (!DLCAP.p) DLCAP.p = (async () => { try { DLCAP.ns = (!TOP && window.claude && typeof window.claude.use === 'function') ? (await window.claude.use('downloads')) || null : null; } catch (e) { DLCAP.ns = null; } return DLCAP.ns; })();
+  return DLCAP.p;
+}
+const DL_OK = /\.(gif|png|jpe?g|webp|mp4|webm|txt|json|md|docx|pptx|epub|csv|html|svg|pdf|xlsx|zip)$/i;
+async function download(name, text, type = 'application/json') {
+  const b = text instanceof Blob ? text : new Blob([text], { type });
+  const ns = TOP ? null : await dlCap();
+  if (ns) {
+    // extensions hors liste (.zmx, .seq, .agf…) : enregistrées en .txt (à renommer)
+    const fn = DL_OK.test(name) ? name : name + '.txt';
+    try { await ns.save({ filename: fn, data: b }); if (fn !== name) toast(`Enregistré sous ${fn} : retirez « .txt » pour retrouver ${name}`, 5000); return true; }
+    catch (e) { const c = e && e.code; if (c === 'declined') { toast('Téléchargement annulé'); return false; } if (c === 'rate_limited') { toast('Une demande de téléchargement est déjà ouverte'); return false; } }
+  }
+  const a = document.createElement('a');
   a.href = URL.createObjectURL(b); a.download = name; document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  return true;
 }
 async function openFile() {
   if (window.showOpenFilePicker && TOP) {
@@ -6819,7 +7428,7 @@ async function saveFile(as) {
       const w = await FS.handle.createWritable(); await w.write(txt); await w.close(); toast('Enregistré : ' + FS.handle.name); return;
     } catch (e) { if (e.name === 'AbortError') return; }
   }
-  download(fileBase() + '.json', txt); toast('Fichier ' + fileBase() + '.json téléchargé' + (TOP ? '' : ' (si rien ne se passe, utilisez Fichier → Afficher / copier)'), 4000);
+  download(fileBase() + '.json', txt); toast('Fichier ' + fileBase() + '.json téléchargé', 3000);
 }
 function importFile(name, t) { importText(t, name); }
 /** lit un fichier (UTF-8, UTF-16…) puis l'importe */
@@ -6850,6 +7459,9 @@ function openAbout() {
 
 /* ---------------- Initialisation ---------------- */
 function init() {
+  setTimeout(dlCap, 0);
+  document.addEventListener('click', e => { const g = e.target.closest('[data-mcgo]'); if (g && !g.disabled) { const v = g.dataset.mcgo; mcGo(v === 'prev' || v === 'next' ? v : +v); } });
+  document.addEventListener('change', e => { if (e.target.matches('[data-mcsel]')) mcGo(+e.target.value); });
   loadStoredAGF(); rebuildGlassList();
   $('#mSamp').innerHTML = Object.keys(SAMPLES).map(k => `<button data-samp="${esc(k)}">${esc(k)}</button>`).join('');
   load();
@@ -6884,6 +7496,7 @@ function init() {
       case 'asstShow': App.asst = !App.asst; applyAsstPref(); save(); toast(App.asst ? 'Bouton Assistant affiché' : 'Bouton Assistant masqué (Fichier pour le réafficher)'); break;
       case 'glasses': openGlasses(); break;
       case 'sysdata': openSysData(); break;
+      case 'mconf': openMC(); break;
       case 'newpane': newFloatPane(); break;
       case 'qfocus': quickFocusUI(); break;
       case 'qfopt': qfMenu(a); break;
@@ -6916,6 +7529,8 @@ function init() {
     else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); quickFocusUI(); }
     else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'a') { e.preventDefault(); openAssistant(); }
     else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'd') { e.preventDefault(); openSysData(); }
+    else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'm') { e.preventDefault(); openMC(); }
+    else if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'PageUp' || e.key === 'PageDown') && OE.mcOn(App.sys)) { e.preventDefault(); mcGo(e.key === 'PageUp' ? 'prev' : 'next'); }
     else if (e.key === 'Insert') { e.preventDefault(); lde('insA'); }
     else if ((e.ctrlKey || e.metaKey) && e.key === 'Delete') { e.preventDefault(); lde('del'); }
     else if (e.key === 'Delete' && !inInput && !e.target.closest?.('#dlg')) { e.preventDefault(); lde('del'); }
@@ -6936,8 +7551,8 @@ init();
    ===================================================================== */
 const RPT_DEF = {
   title: 'Rapport de conception optique', author: '', notes: '',
-  sec: { cover: true, system: true, presc: true, layout: true, perf: true, seidel: true, panes: false, det: true, src: true, tol: true },
-  an: { spot: true, mtf: true, field: true, wfe: false, psf: false, rayfan: false, opdfan: false, zern: false, ee: false, footprint: false, chrom: false, polar: false, detector: false, source: false, imgsim: false, glass: false },
+  sec: { cover: true, system: true, presc: true, mc: true, layout: true, perf: true, seidel: true, panes: false, det: true, src: true, tol: true },
+  an: { spot: true, mtf: true, field: true, tfmtf: false, mtffield: false, relillum: false, distgrid: false, thermal: false, wfe: false, psf: false, rayfan: false, opdfan: false, zern: false, ee: false, footprint: false, chrom: false, polar: false, detector: false, source: false, imgsim: false, glass: false },
   perField: false,
 };
 function rptCfg() {
@@ -6947,7 +7562,7 @@ function rptCfg() {
   return App.rpt;
 }
 function rptSave() { try { localStorage.setItem('focale.rpt', JSON.stringify(App.rpt)); } catch (e) { } }
-const RPT_SEC = [['cover', 'Page de garde et notes'], ['system', 'Données du système et paraxial'], ['presc', 'Prescription (surfaces)'], ['layout', 'Layout 2D'], ['perf', 'Performances par champ'],
+const RPT_SEC = [['cover', 'Page de garde et notes'], ['system', 'Données du système et paraxial'], ['presc', 'Prescription (surfaces)'], ['mc', 'Multi-configuration (si définie)'], ['layout', 'Layout 2D'], ['perf', 'Performances par champ'],
   ['seidel', 'Coefficients de Seidel'], ['panes', 'Fenêtres d\'analyse ouvertes (avec leurs réglages)'], ['det', 'Détecteur (si actif)'], ['src', 'Source / fibre (si définie)'], ['tol', 'Tolérancement (si calculé)']];
 function openReport() {
   const c = rptCfg(), an = Object.keys(RPT_DEF.an).filter(k => PT[k]);
@@ -7117,6 +7732,30 @@ async function genReport() {
       const dec = M.S.map((s, i) => [i, s]).filter(([, s]) => isDec(s));
       if (dec.length) { h2('Décentrements et bascules'); const w6 = (CW - 90) / 6; table([{ t: '#', w: 40 }, { t: 'Mode', w: 50 }, ...['X (mm)', 'Y (mm)', 'Z (mm)', 'α (°)', 'β (°)', 'γ (°)'].map(t => ({ t, w: w6, a: 'right', mono: true }))], dec.map(([i, s]) => [i, s.dmode || 'DEC', fmt(s.dx, 6), fmt(s.dy, 6), fmt(s.dz, 6), fmt(s.tx, 6), fmt(s.ty, 6), fmt(s.tz, 6)])); }
     }
+    // ---------------- multi-configuration ----------------
+    if (cf.sec.mc && OE.mcOn(sys)) {
+      await step('Multi-configuration…'); h1('Multi-configuration');
+      const n = sys.mc.n, cur = sys.mc.cur | 0, nm = k => mcName(sys, k), wc = Math.max(48, (CW - 150) / n);
+      para(`${n} configurations ; la configuration active (« ${nm(cur)} ») est celle des autres sections du rapport.${sys.mc.opt !== 'cur' ? ' Optimisation sur toutes les configurations.' : ''}`, { size: 9 });
+      h2('Paramètres par configuration');
+      const el = op => { const D = OE.MCT[op.type]; return D.s ? `S${op.i}` : D.f ? `champ ${op.i + 1}` : D.w ? `λ${op.i + 1}` : '—'; };
+      table([{ t: 'Paramètre', w: 100 }, { t: 'Élément', w: 50 }, ...Array.from({ length: n }, (_, k) => ({ t: nm(k), w: wc, a: 'right', mono: true }))],
+        sys.mc.ops.map(op => [OE.MCT[op.type].l + (OE.MCT[op.type].u ? ` (${OE.MCT[op.type].u})` : ''), el(op), ...op.v.map(v => v === Infinity ? 'Infini' : typeof v === 'number' ? fmt(v, 6) : String(v))]), { size: n > 6 ? 7.5 : 8.5 });
+      const S = OE.mcSummary(sys);
+      h2('Synthèse par configuration');
+      const rowS = (l, f) => [l, ...S.map(o => o.ok ? f(o) : '—')];
+      table([{ t: 'Grandeur', w: 150 }, ...Array.from({ length: n }, (_, k) => ({ t: nm(k), w: wc, a: 'right', mono: true }))],
+        [rowS('Focale (EFL), mm', o => fx(o.efl, 3)), rowS('F/# de travail', o => fx(o.wfno, 3)), rowS('Champ max', o => fmt(o.fmax, 4)), rowS('Hauteur image, mm', o => fx(o.imgH, 3)), rowS('Tirage (BFL), mm', o => fx(o.bfl, 3)), rowS('Longueur totale, mm', o => fx(o.ttl, 2)), rowS('Spot RMS max, µm', o => fx(o.spot, 2)), rowS('WFE RMS max, λ', o => fx(o.wfe, 3))], { size: n > 6 ? 7.5 : 8.5 });
+      const sv = { sys: App.sys, M: App.M };
+      try {
+        App.view = { ...App.view, auto: true }; App.mode = '2d';
+        for (let k = 0; k < n; k++) {
+          App.sys = OE.mcApply(sv.sys, k); App.M = OE.prepare(App.sys); if (!App.M.ok) continue;
+          const cv = rptCanvas((c, w, h) => drawLayout({ c, w, h }), 780, 250);
+          image(cv, `Layout — ${nm(k)} : EFL ${fx(App.M.par.efl, 2)} mm, F/${fx(App.M.par.wfno, 2)}.`);
+        }
+      } finally { App.sys = sv.sys; App.M = sv.M; App.sysKey = null; }
+    }
     // ---------------- layout ----------------
     if (cf.sec.layout) {
       await step('Layout…'); h1('Layout');
@@ -7147,10 +7786,12 @@ async function genReport() {
       if (pp.type === 'zern') { const wf = OE.wavefront(M, pp.fi || 0, pp.wi ?? M.pw, 64, false), z = OE.zernFit(wf, +pp.nz || 16); h2(title, 80, true);
         table([{ t: 'Terme', w: 50 }, { t: 'n', w: 30, a: 'right' }, { t: 'Aberration', w: CW - 260 }, { t: 'Coef. (λ)', w: 90, a: 'right', mono: true }, { t: 'RMS (λ)', w: 90, a: 'right', mono: true }], z.c.map((v, i) => [`Z${i + 1}`, z.order[i], z.names[i], (v >= 0 ? '+' : '') + v.toFixed(5), i ? z.rmsTerm[i].toFixed(5) : '—']));
         kv([['RMS total (piston retiré)', `${fx(z.rmsTot, 5)} λ`], [`Résidu au-delà de Z${z.nz} (RMS / PV)`, `${fx(z.rmsRes, 5)} λ / ${fx(z.pvRes, 4)} λ`]]); return; }
-      if (pp.type === 'presc') return;
+      if (PT[pp.type].html) return;
       if (pp.type === 'imgsim') simSync(pp, M);
+      let data;
+      if (PT[pp.type].job) { const J = jobSpec(pp, M); data = JCACHE.get(J.key); if (!data) { data = await runJob(J.name, J.args, { onProg: (d, n) => msg(`Analyse : ${title}… ${Math.round(100 * d / Math.max(1, n))} %`) }); JCACHE.set(J.key, data); } }
       const tall = ['spot', 'rayfan', 'opdfan'].includes(pp.type) && sys.fields.length > 2;
-      const cv = rptCanvas((c, w, h) => R[pp.type](pp, M, c, w, h), 780, tall ? 560 : 430);
+      const cv = rptCanvas((c, w, h) => R[pp.type](pp, M, c, w, h, data), 780, tall ? 560 : 430);
       h2(title, CW * cv.height / cv.width + 6, true); image(cv);
     };
     const anKeys = Object.keys(cf.an).filter(k => cf.an[k] && PT[k]);
