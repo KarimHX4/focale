@@ -67,6 +67,21 @@ table.mt input.in{width:100%}
 .add{border:1px dashed var(--line);background:none;width:100%;border-radius:6px;padding:4px;color:var(--mut);cursor:pointer;margin-top:4px}
 .add:hover{color:var(--acc);border-color:var(--acc)}
 .sw{display:inline-block;width:10px;height:10px;border-radius:3px}
+label.zr{display:inline-flex;align-items:center;gap:4px}
+label.zr input[type=range]{width:90px;accent-color:var(--acc)}
+label.zr .zv{font-family:var(--mono);font-size:11px;min-width:38px}
+.seg.sm button{height:22px;padding:0 7px;font-size:11.5px}
+button.cpk{width:18px;height:18px;padding:0;border:1px solid var(--line);border-radius:5px;cursor:pointer;vertical-align:middle}
+button.cpk:hover{outline:2px solid var(--acc);outline-offset:1px}
+.cpop{position:fixed;z-index:250;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 14px 40px rgba(0,0,0,.3);padding:10px 12px;width:248px;font-size:12.5px}
+.cpop .cph{font-weight:600;margin-bottom:8px}
+.cpop .cpg{display:grid;grid-template-columns:repeat(8,1fr);gap:5px;margin-bottom:8px}
+.cpop .cps{width:100%;aspect-ratio:1;border:1px solid var(--line);border-radius:5px;cursor:pointer;padding:0}
+.cpop .cps.on{outline:2px solid var(--fg);outline-offset:1px}
+.cpop .cpr{display:flex;align-items:center;gap:8px;margin:6px 0}
+.cpop .cpr input[type=color]{width:30px;height:22px;padding:0;border:1px solid var(--line);border-radius:5px;background:none;vertical-align:middle;cursor:pointer}
+.cpop .cpv{width:34px;height:18px;border-radius:5px;border:1px solid var(--line)}
+.cpop .cpf{display:flex;gap:6px;align-items:center;margin-top:10px}
 input.cpk{-webkit-appearance:none;appearance:none;width:18px;height:18px;padding:0;border:1px solid var(--line);border-radius:5px;background:none;cursor:pointer;vertical-align:middle}
 input.cpk::-webkit-color-swatch-wrapper{padding:0}
 input.cpk::-webkit-color-swatch{border:none;border-radius:4px}
@@ -345,7 +360,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 <div class="toast" id="toast"></div>
 <input type="file" id="fileIn" accept=".json,.zmx,.seq,.txt,.agf" style="display:none">
 <div class="drop" id="drop">Déposez un fichier .zmx, .seq, .json ou .agf</div>
-<script>const FOCALE_VERSION = '5b9cd664';</script>
+<script>const FOCALE_VERSION = 'c9af4537';</script>
 <script>
 'use strict';
 /* =====================================================================
@@ -3225,8 +3240,8 @@ const HELP = [
 <h4>Ouverture</h4><ul><li><b>Diamètre de la pupille d'entrée</b> (EPD), <b>F/# image</b>, <b>ouverture numérique objet</b> (objet à distance finie seulement), <b>ouverture numérique image</b> (CODE V NA) ou <b>demi-diamètre du diaphragme</b> (l'ouverture est fixée par le diaphragme, Zemax « Float by stop size »). Le F/# image suit la convention Zemax « Image Space F/# » : EPD = EFL / F#, y compris en conjugué fini (le F/# de travail réel est affiché dans les données paraxiales).</li>
 <li><b>Obstruction centrale</b> : fraction du rayon de pupille masquée (télescopes à miroir secondaire).</li>
 <li><b>Visée réelle des rayons</b> : chaque rayon est itéré pour viser exactement le diaphragme (utile pour les grands champs et les pupilles aberrantes) ; sinon visée paraxiale de la pupille d'entrée.</li></ul>
-<h4>Champs</h4><p>Quatre <b>types de champ</b>, comme dans CODE V : <b>angle objet</b> (YAN, en °, direction ∝ (tan X, tan Y, 1) ; en conjugué fini l'angle est mesuré depuis la pupille d'entrée), <b>hauteur objet</b> (YOB, mm, objet à distance finie), <b>hauteur image paraxiale</b> (YIM, mm) et <b>hauteur image réelle</b> (YRI, mm : le point de champ est ajusté pour que le rayon principal réel arrive à cette hauteur — idéal pour couvrir exactement un capteur malgré la distorsion). Changer le type dans la liste <b>convertit</b> les valeurs pour garder les mêmes points de champ. Sans type choisi : angles pour un objet à l'infini, hauteurs objet sinon. Le poids sert à l'optimisation et au tolérancement. Le bouton <b>Vignetage…</b> ouvre l'onglet Champs des Données système (facteurs VUY, VLY, VUX, VLX, génération de champs). Le <b>carré de couleur</b> devant chaque champ ouvre un sélecteur : la couleur choisie est utilisée dans le layout, les spots, la FTM, le footprint… et enregistrée avec le système.</p>
-<h4>Longueurs d'onde</h4><p>En µm, avec poids et longueur d'onde <b>primaire</b> (pupilles, fronts d'onde par défaut, solves). Préréglages F-d-C, visible, 632,8 nm, NIR. Par défaut chaque λ prend sa couleur spectrale ; cliquez sur son carré de couleur pour en choisir une autre (utile en infrarouge ou pour distinguer des λ proches).</p>
+<h4>Champs</h4><p>Quatre <b>types de champ</b>, comme dans CODE V : <b>angle objet</b> (YAN, en °, direction ∝ (tan X, tan Y, 1) ; en conjugué fini l'angle est mesuré depuis la pupille d'entrée), <b>hauteur objet</b> (YOB, mm, objet à distance finie), <b>hauteur image paraxiale</b> (YIM, mm) et <b>hauteur image réelle</b> (YRI, mm : le point de champ est ajusté pour que le rayon principal réel arrive à cette hauteur — idéal pour couvrir exactement un capteur malgré la distorsion). Changer le type dans la liste <b>convertit</b> les valeurs pour garder les mêmes points de champ. Sans type choisi : angles pour un objet à l'infini, hauteurs objet sinon. Le poids sert à l'optimisation et au tolérancement. Le bouton <b>Vignetage…</b> ouvre l'onglet Champs des Données système (facteurs VUY, VLY, VUX, VLX, génération de champs). Le <b>carré de couleur</b> devant chaque champ ouvre un sélecteur : palette, couleur libre (« Autre ») ou code hexadécimal, aperçu avant / après ; la couleur n'est appliquée qu'avec <b>OK</b> (ou Entrée, ou double-clic sur une pastille) ; <b>Annuler</b> (ou Échap, ou clic à côté) l'abandonne, <b>Par défaut</b> revient à la couleur automatique. Elle est utilisée dans le layout, les spots, la FTM, le footprint… et enregistrée avec le système.</p>
+<h4>Longueurs d'onde</h4><p>En µm, avec poids et longueur d'onde <b>primaire</b> (pupilles, fronts d'onde par défaut, solves). Préréglages F-d-C, visible, 632,8 nm, NIR. Par défaut chaque λ prend sa couleur spectrale ; cliquez sur son carré de couleur pour en choisir une autre, validée par <b>OK</b> (utile en infrarouge ou pour distinguer des λ proches).</p>
 <h4>Données paraxiales</h4><p>Focale effective, tirage, F/#, ouvertures numériques, positions et diamètres des pupilles, grandissement, invariant de Lagrange.</p>` },
 
   { id: 'donnees', t: 'Données système (CODE V)', h: `
@@ -3266,7 +3281,7 @@ const HELP = [
 <tr><td>OPD fan</td><td>Écart de chemin optique (en ondes) le long des deux coupes de pupille.</td></tr>
 <tr><td>Carte WFE</td><td>Front d'onde dans la pupille de sortie : OPD par rapport à une sphère de référence centrée sur l'image du rayon principal. RMS, PV, et Strehl approché par Maréchal quand RMS ≤ 0,15 λ (au-delà, voir la PSF). Option : retrait du tilt.</td></tr>
 <tr><td>Zernike</td><td>Décomposition du front d'onde sur 16 polynômes Fringe (moindres carrés).</td></tr>
-<tr><td>PSF</td><td>Réponse impulsionnelle par FFT de la pupille complexe (64×64 dans 256×256), échelle linéaire ou log, rapport de Strehl.</td></tr>
+<tr><td>PSF</td><td>Réponse impulsionnelle par FFT de la pupille complexe (64×64 dans 256×256, 512×512 au-delà du zoom ×2,2), échelle linéaire ou log, rapport de Strehl. <b>2D</b> : carte de couleurs avec cercle d'Airy. <b>3D</b> : surface d'intensité en % du pic (comme la « Diffraction Intensity Spread Function » de CODE V), couleurs par hauteur, parois graduées ; <b>glisser</b> pour la faire tourner. <b>Zoom continu</b> de ×0,5 à ×5 par le curseur de l'en-tête ou la <b>molette</b> sur la PSF.</td></tr>
 <tr><td>FTM / MTF</td><td>Module de la fonction de transfert (FFT de la PSF), tangentiel et sagittal, polychromatique pondéré, avec limite de diffraction calculée sur la même pupille (obstruction centrale et vignetage compris).</td></tr>
 <tr><td>Énergie encerclée</td><td>Fraction d'énergie dans un cercle : diffraction (λ primaire) et géométrique (polychromatique), rayon à 80 %.</td></tr>
 <tr><td>Footprint</td><td>Empreinte des faisceaux de chaque champ sur une surface, comparée au demi-diamètre (dimensionnement des optiques et montures).</td></tr>
@@ -4482,12 +4497,12 @@ function renderSide() {
   h += card('fi', `Champs — ${OE.FTYPES[ft].l.toLowerCase()} (${fu})`, `
     <div class="row"><select class="in" style="flex:1" data-f="ftype" title="Type de champ (CODE V : YAN, YOB, YIM, YRI). Les valeurs sont converties pour garder les mêmes points de champ.">${Object.entries(OE.FTYPES).filter(([k]) => !(objInf && k === 'obj')).map(([k, v]) => `<option value="${k}" ${k === ft ? 'selected' : ''}>${v.l} (${v.cv})</option>`).join('')}</select></div>
     <table class="mt"><tr><th></th><th>X (${fu})</th><th>Y (${fu})</th><th>Poids</th><th></th></tr>
-    ${s.fields.map((f, i) => `<tr><td><input type="color" class="cpk" data-f="fcol" data-i="${i}" value="${hexCol(fcol(i))}" title="Couleur du champ ${i + 1} (clic pour la changer)" aria-label="Couleur du champ ${i + 1}"></td><td><input class="in" data-f="fx" data-i="${i}" value="${fmt(f.x || 0, 6)}"></td><td><input class="in" data-f="fy" data-i="${i}" value="${fmt(f.y, 6)}"></td><td><input class="in" data-f="fw" style="width:44px" data-i="${i}" value="${fmt(f.w ?? 1, 4)}"></td><td><button class="x" data-a="fdel" data-i="${i}" title="Supprimer">✕</button></td></tr>`).join('')}
+    ${s.fields.map((f, i) => `<tr><td><button class="cpk" data-cpk="f" data-i="${i}" style="background:${hexCol(fcol(i))}" title="Couleur du champ ${i + 1} (clic pour la changer)" aria-label="Couleur du champ ${i + 1}"></button></td><td><input class="in" data-f="fx" data-i="${i}" value="${fmt(f.x || 0, 6)}"></td><td><input class="in" data-f="fy" data-i="${i}" value="${fmt(f.y, 6)}"></td><td><input class="in" data-f="fw" style="width:44px" data-i="${i}" value="${fmt(f.w ?? 1, 4)}"></td><td><button class="x" data-a="fdel" data-i="${i}" title="Supprimer">✕</button></td></tr>`).join('')}
     </table><button class="add" data-a="fadd">+ Ajouter un champ</button>
     <div class="chips"><button class="chip" data-a="fspread">Répartir 0 · 0.7 · 1</button><button class="chip" data-a="sdfld" title="Vignetage (VUY, VLY, VUX, VLX), génération et conversion des champs">Vignetage…</button></div>${s.fields.some(f => +f.vuy || +f.vly || +f.vux || +f.vlx) ? '<div class="hint">Facteurs de vignetage actifs (voir Données système).</div>' : ''}`);
   h += card('wl', 'Longueurs d\'onde (µm)', `
     <table class="mt"><tr><th></th><th>λ (µm)</th><th>Poids</th><th title="Primaire">Prim.</th><th></th></tr>
-    ${s.wavelengths.map((w, i) => `<tr><td><input type="color" class="cpk" data-f="wcol" data-i="${i}" value="${hexCol(wlCol(w.um))}" title="Couleur de λ${i + 1} (clic pour la changer)" aria-label="Couleur de la longueur d'onde ${i + 1}"></td><td><input class="in" data-f="wum" data-i="${i}" value="${fmt(w.um, 7)}"></td><td><input class="in" data-f="ww" style="width:48px" data-i="${i}" value="${fmt(w.w ?? 1, 4)}"></td><td style="text-align:center"><input type="radio" name="prim" data-f="wp" data-i="${i}" ${i === s.primary ? 'checked' : ''}></td><td><button class="x" data-a="wdel" data-i="${i}">✕</button></td></tr>`).join('')}
+    ${s.wavelengths.map((w, i) => `<tr><td><button class="cpk" data-cpk="w" data-i="${i}" style="background:${hexCol(wlCol(w.um))}" title="Couleur de λ${i + 1} (clic pour la changer)" aria-label="Couleur de la longueur d'onde ${i + 1}"></button></td><td><input class="in" data-f="wum" data-i="${i}" value="${fmt(w.um, 7)}"></td><td><input class="in" data-f="ww" style="width:48px" data-i="${i}" value="${fmt(w.w ?? 1, 4)}"></td><td style="text-align:center"><input type="radio" name="prim" data-f="wp" data-i="${i}" ${i === s.primary ? 'checked' : ''}></td><td><button class="x" data-a="wdel" data-i="${i}">✕</button></td></tr>`).join('')}
     </table><button class="add" data-a="wadd">+ Ajouter une longueur d'onde</button>
     <div class="chips"><button class="chip" data-a="wpre" data-v="FdC">F, d, C</button><button class="chip" data-a="wpre" data-v="vis">Visible</button><button class="chip" data-a="wpre" data-v="hene">632,8 nm</button><button class="chip" data-a="wpre" data-v="nir">NIR</button><button class="chip" data-a="wpre" data-v="d">d seule</button></div>`);
   h += srcCard();
@@ -4842,6 +4857,7 @@ const CMAPS = {
   div: ['#1d3b8f', '#3f6fc4', '#8fb4e3', '#f5f5f4', '#f0a58d', '#d4553b', '#8c1a1a'],
   inferno: ['#000004', '#1b0c41', '#4a0c6b', '#781c6d', '#a52c60', '#cf4446', '#ed6925', '#fb9b06', '#f7d13d', '#fcffa4'],
   vir: ['#440154', '#46327e', '#365c8d', '#277f8e', '#1fa187', '#4ac16d', '#a0da39', '#fde725'],
+  jet: ['#0000b4', '#0028ff', '#0096ff', '#00dcdc', '#20d060', '#a0e020', '#ffd000', '#ff7000', '#e00000'],
 };
 const LUT = {};
 function lut(name) {
@@ -5110,7 +5126,7 @@ function paneHeader(pi) {
     <label><input type="checkbox" data-p="upright" ${p.upright ? 'checked' : ''}>redresser</label><button class="bt" data-p="run" style="height:24px">▶ Simuler</button>`;
   if (p.type === 'glass') h += `<select data-p="cat"><option value="">Tous les catalogues</option>${OE.cats().map(k => `<option ${p.cat === k ? 'selected' : ''}>${k}</option>`).join('')}</select>`;
   if (p.type === 'psf' && det().on) h += `<label title="PSF intégrée sur les pixels du détecteur"><input type="checkbox" data-p="pix" ${p.pix ? 'checked' : ''}>pixels</label>`;
-  if (p.type === 'psf') h += `<label><input type="checkbox" data-p="log" ${p.log ? 'checked' : ''}>log</label><select data-p="zoom">${[1, 2, 4].map(z => `<option value="${z}" ${(p.zoom || 2) == z ? 'selected' : ''}>×${z}</option>`).join('')}</select>`;
+  if (p.type === 'psf') h += `<span class="seg sm"><button data-p="view2" class="${p.view === '3d' ? '' : 'on'}" title="Carte 2D">2D</button><button data-p="view3" class="${p.view === '3d' ? 'on' : ''}" title="Surface 3D (glisser pour tourner)">3D</button></span><label><input type="checkbox" data-p="log" ${p.log ? 'checked' : ''}>log</label><label class="zr" title="Zoom continu de ×0,5 à ×5 (ou molette sur la PSF)">zoom <input type="range" data-p="zoom" min="0.5" max="5" step="0.05" value="${psfZoom(p)}"><span class="zv">×${psfZoom(p).toFixed(2)}</span></label>`;
   if (p.type === 'wfe') h += `<label><input type="checkbox" data-p="tilt" ${p.tilt !== false ? 'checked' : ''}>sans tilt</label>`;
   if (p.type === 'mtf') h += `<label>f max <input class="in" data-p="fmax" style="width:56px;height:22px" value="${p.fmax || ''}" placeholder="auto"></label>`;
   if (p.type === 'spot') h += `<label><input type="checkbox" data-p="chief" ${p.chief ? 'checked' : ''}>réf. principal</label>`;
@@ -5125,8 +5141,19 @@ function setupPanes() {
   setupFloats();
 }
 function setupPaneEvents(el) {
+  const later = pi => { cancelAnimationFrame(App._pz); App._pz = requestAnimationFrame(() => renderPane(pi)); };
+  el.addEventListener('input', e => { const t = e.target; if (t.dataset.p !== 'zoom' || !t.closest('.pane')) return; const pi = +t.closest('.pane').dataset.i; App.panes[pi].zoom = +t.value; const z = t.parentElement.querySelector('.zv'); if (z) z.textContent = '×' + (+t.value).toFixed(2); paneBody(pi); });
+  el.addEventListener('wheel', e => { const pane = e.target.closest('.pane'); if (!pane || !e.target.closest('.pb')) return; const pi = +pane.dataset.i, p = App.panes[pi]; if (!p || p.type !== 'psf') return;
+    e.preventDefault(); p.zoom = Math.min(5, Math.max(0.5, psfZoom(p) * (e.deltaY < 0 ? 1.08 : 1 / 1.08))); const r = pane.querySelector('input[data-p="zoom"]'); if (r) { r.value = p.zoom; r.parentElement.querySelector('.zv').textContent = '×' + p.zoom.toFixed(2); } paneBody(pi); clearTimeout(App._zs); App._zs = setTimeout(save, 400); }, { passive: false });
+  el.addEventListener('mousedown', e => { const pane = e.target.closest('.pane'); if (!pane || e.button !== 0 || !e.target.closest('.pb canvas')) return; const pi = +pane.dataset.i, p = App.panes[pi]; if (!p || p.type !== 'psf' || p.view !== '3d') return;
+    e.preventDefault(); const x0 = e.clientX, y0 = e.clientY, a0 = p.yaw ?? -35, b0 = p.pitch ?? 28;
+    const mv = ev => { p.yaw = a0 + (ev.clientX - x0) * 0.5; p.pitch = Math.max(5, Math.min(89, b0 + (ev.clientY - y0) * 0.4)); paneBody(pi); }, up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); save(); };
+    window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up); });
+  el.addEventListener('click', e => { const b = e.target.closest('[data-p="view2"],[data-p="view3"]'); if (!b) return; const pi = +b.closest('.pane').dataset.i; App.panes[pi].view = b.dataset.p === 'view3' ? '3d' : '2d'; save(); renderPane(pi); });
+  void later;
   el.addEventListener('change', e => {
     const t = e.target, k = t.dataset.p; if (!k || !t.closest('.pane')) return; const pi = +t.closest('.pane').dataset.i, p = App.panes[pi];
+    if (k === 'zoom') { p.zoom = Math.min(5, Math.max(0.5, +t.value)); save(); paneBody(pi); return; }
     if (k === 'type') { App.panes[pi] = { type: t.value }; }
     else if (['log', 'tilt', 'chief', 'fresnel', 'upright', 'pix', 'det', 'grid'].includes(k)) p[k] = t.checked;
     else if (['stype', 'phase'].includes(k)) p[k] = t.value;
@@ -5151,6 +5178,11 @@ function setupPaneEvents(el) {
 }
 function renderPanesIf(type) { $$('.pane[data-i]').forEach(d => { if (App.panes[+d.dataset.i] && App.panes[+d.dataset.i].type === type) renderPane(+d.dataset.i); }); }
 function renderPanes() { readTheme(); const t0 = performance.now(); $$('.pane[data-i]').forEach(d => { if (!d.closest('.fwin.min')) renderPane(+d.dataset.i); }); App.lastPanes = performance.now() - t0; status(); }
+/** redessine le contenu d'un panneau sans reconstruire son en-tête (curseurs, rotation 3D) */
+function paneBody(pi) {
+  const d = document.querySelector(`.pane[data-i="${pi}"]`), p = App.panes[pi], M = App.M; if (!d || !M || !M.ok || PT[p.type].html) return;
+  const cv = d.querySelector('canvas'); try { const { c, w, h } = prepCanvas(cv); R[p.type](p, M, c, w, h); } catch (err) { console.error(err); }
+}
 function renderPane(pi) {
   const d = document.querySelector(`.pane[data-i="${pi}"]`); if (!d) return;
   { const w = d.closest('.fwin'); if (w) { const t = w.querySelector('.fwh b'); if (t) t.textContent = (PT[App.panes[pi].type] || PT.spot).l; } }
@@ -5171,6 +5203,57 @@ function renderPane(pi) {
 /** type de champ effectif d'un système (ang, obj, pim, rim) */
 const ftypeOf = s => { const inf = !isFinite(s.surfaces[0].t) || Math.abs(s.surfaces[0].t) > 1e10; return OE.FTYPES[s.ftype] ? s.ftype : (inf ? 'ang' : 'obj'); };
 const fUnitOf = t => t === 'ang' ? '°' : t === 'obj' ? ' mm' : ' mm im.';
+/* ---------------- PSF : zoom continu et vue 3D (surface façon CODE V « Diffraction Intensity Spread Function ») ---------------- */
+const PSFC = new WeakMap();
+const psfZoom = p => Math.min(5, Math.max(0.5, +p.zoom || 2));
+function psf3d(p, M, c, w, h, data, n, mx, ext, ps, ra) {
+  const yaw = (p.yaw ?? -35) * Math.PI / 180, pit = (p.pitch ?? 28) * Math.PI / 180, log = !!p.log;
+  // rééchantillonnage : au plus ~72 mailles par côté
+  const st = Math.max(1, Math.ceil(n / 72)), m = Math.floor(n / st), Z = new Float64Array(m * m);
+  for (let j = 0; j < m; j++) for (let i = 0; i < m; i++) { let v = 0; for (let b = 0; b < st; b++) for (let a = 0; a < st; a++) v = Math.max(v, data[(j * st + b) * n + i * st + a]); Z[j * m + i] = log ? (Math.log10(Math.max(v / mx, 1e-6)) + 6) / 6 : v / mx; }
+  const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pit), sp = Math.sin(pit), H = 0.9;
+  const pr = (x, y, z) => { const xr = x * cy - y * sy, yr = x * sy + y * cy; return [xr, z * H * cp + yr * sp, yr]; };
+  // échelle : boîte [-1,1]² × [0,1] projetée dans la zone de tracé
+  const pts = []; for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [0, 1]) pts.push(pr(x, y, z));
+  const x0 = Math.min(...pts.map(q => q[0])), x1 = Math.max(...pts.map(q => q[0])), y0 = Math.min(...pts.map(q => q[1])), y1 = Math.max(...pts.map(q => q[1]));
+  const L = 48, R0 = 70, T = 26, B = 40, sc = Math.min((w - L - R0) / (x1 - x0), (h - T - B) / (y1 - y0));
+  const SX = q => L + (q[0] - x0) * sc + ((w - L - R0) - (x1 - x0) * sc) / 2, SY = q => T + (y1 - q[1]) * sc + ((h - T - B) - (y1 - y0) * sc) / 2;
+  const P2 = (x, y, z) => { const q = pr(x, y, z); return [SX(q), SY(q)]; };
+  text(c, `PSF 3D  Strehl ${fx(ps.strehl, 4)} · zoom ×${fmt(psfZoom(p), 2)}${log ? ' · log' : ''}`, 8, 4, { b: true });
+  // parois du fond (les deux plus éloignées) et sol, graduations
+  const far = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, y]) => [x, y, pr(x, y, 0)[2]]).sort((a, b) => b[2] - a[2]), fc = far[0];
+  c.save(); c.lineWidth = 1;
+  const poly = (Q, fill, stroke) => { c.beginPath(); Q.forEach((q, k) => k ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1])); c.closePath(); if (fill) { c.fillStyle = fill; c.fill(); } if (stroke) { c.strokeStyle = stroke; c.stroke(); } };
+  for (const [ax, ay] of [[-fc[0], fc[1]], [fc[0], -fc[1]]]) poly([P2(fc[0], fc[1], 0), P2(ax, ay, 0), P2(ax, ay, 1), P2(fc[0], fc[1], 1)], 'rgba(148,163,184,.13)', TH.line);
+  poly([P2(-1, -1, 0), P2(1, -1, 0), P2(1, 1, 0), P2(-1, 1, 0)], null, TH.line);
+  c.strokeStyle = TH.line; c.fillStyle = TH.mut; c.font = '10px Inter, sans-serif';
+  for (const zt of [0, 0.25, 0.5, 0.75, 1]) { const a = P2(fc[0], fc[1], zt), b = P2(-fc[0], fc[1], zt), d = P2(fc[0], -fc[1], zt); c.beginPath(); c.moveTo(b[0], b[1]); c.lineTo(a[0], a[1]); c.lineTo(d[0], d[1]); c.stroke(); }
+  // axe vertical gradué sur l'arête gauche visible
+  const edges = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, y]) => [x, y, P2(x, y, 0)[0]]).sort((a, b) => a[2] - b[2]), ez = edges[0];
+  c.textAlign = 'right'; c.textBaseline = 'middle';
+  for (const zt of [0, 0.5, 1]) { const q = P2(ez[0], ez[1], zt); c.fillText(log ? String(Math.round(-6 + 6 * zt)) : String(Math.round(zt * 100)), q[0] - 5, q[1]); }
+  { const q = P2(ez[0], ez[1], 0.55); c.save(); c.translate(q[0] - 30, q[1]); c.rotate(-Math.PI / 2); c.textAlign = 'center'; c.fillText(log ? 'log₁₀ I' : 'Intensité (%)', 0, 0); c.restore(); }
+  // graduations X et Y (µm) sur les arêtes avant du sol
+  const { t: tk, s: ts } = ticks(-ext, ext, 4);
+  const near = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, y]) => [x, y, pr(x, y, 0)[2]]).sort((a, b) => a[2] - b[2])[0];
+  c.textAlign = 'center'; c.textBaseline = 'top';
+  for (const t of tk) { const u = t / ext; if (Math.abs(u) > 1.0001) continue; const qa = P2(u, near[1], 0), qb = P2(near[0], u, 0); c.fillText(tl(t, ts), qa[0], qa[1] + 4); c.fillText(tl(t, ts), qb[0], qb[1] + 4); }
+  { const qa = P2(0, near[1] * 1.28, 0), qb = P2(near[0] * 1.28, 0, 0); c.fillStyle = TH.fg; c.fillText('X, µm', qa[0], qa[1] + 6); c.fillText('Y, µm', qb[0], qb[1] + 6); }
+  // surface : mailles de la plus éloignée à la plus proche
+  const Lc = lut('jet'), G = (i, j) => [-1 + 2 * i / (m - 1), -1 + 2 * j / (m - 1)], quads = [];
+  for (let j = 0; j < m - 1; j++) for (let i = 0; i < m - 1; i++) { const [xa, ya] = G(i, j), [xb, yb] = G(i + 1, j + 1); quads.push([i, j, pr((xa + xb) / 2, (ya + yb) / 2, 0)[2]]); }
+  quads.sort((a, b) => b[2] - a[2]);
+  const thin = m > 50;
+  for (const [i, j] of quads) {
+    const z00 = Z[j * m + i], z10 = Z[j * m + i + 1], z11 = Z[(j + 1) * m + i + 1], z01 = Z[(j + 1) * m + i];
+    const [xa, ya] = G(i, j), [xb, yb] = G(i + 1, j + 1), zm = Math.max(0, Math.min(1, (z00 + z10 + z11 + z01) / 4)), k = Math.round(zm * 255);
+    const col = `rgb(${Lc[k * 3]},${Lc[k * 3 + 1]},${Lc[k * 3 + 2]})`;
+    poly([P2(xa, ya, z00), P2(xb, ya, z10), P2(xb, yb, z11), P2(xa, yb, z01)], col, thin ? col : 'rgba(0,0,0,.25)');
+  }
+  c.restore();
+  cbar(c, w - 58, 30, 12, Math.max(40, h - 70), log ? -6 : 0, log ? 0 : 100, 'jet', log ? 'log₁₀' : '%');
+  text(c, `glisser : tourner · molette : zoom · Ø Airy ${fx(2 * ra, 2)} µm`, 8, h - 14, { col: TH.mut, size: 10 });
+}
 const fLabel = (M, i) => { const f = (M.ufields || M.sys.fields)[i] || M.sys.fields[i], u = fUnitOf(M.ftype || (M.objInf ? 'ang' : 'obj')); return f.x ? `(${fmt(f.x, 4)}, ${fmt(f.y, 4)})${u}` : `${fmt(f.y, 4)}${u}`; };
 const wlLegend = M => M.wls.map((l, i) => ({ col: wlCol(l), l: `${fmt(l * 1000, 4)} nm` }));
 const R = {
@@ -5215,25 +5298,28 @@ const R = {
       <p class="hint">RMS total (piston retiré) : <b>${fx(wf.rms, 5)} λ</b> · PV : <b>${fx(wf.pv, 4)} λ</b></p>`;
   },
   psf(p, M, c, w, h) {
-    const ps = OE.psf(M, p.fi || 0, p.wi ?? M.pw, 64, 256), P = ps.P, zoom = p.zoom || 2;
-    const half = Math.floor(P / 2 / zoom / 2), n = 2 * half, o = P / 2 - half, data = new Float64Array(n * n);
+    const zoom = psfZoom(p), P = zoom > 2.2 ? 512 : 256, fi = p.fi || 0, wi = p.wi ?? M.pw;
+    let C = PSFC.get(p); if (!C || C.M !== M || C.fi !== fi || C.wi !== wi || C.P !== P) { C = { M, fi, wi, P, ps: OE.psf(M, fi, wi, 64, P) }; PSFC.set(p, C); }
+    const ps = C.ps;
+    const half = Math.max(4, Math.min(P >> 1, Math.round(P / 4 / zoom))), n = 2 * half, o = P / 2 - half, data = new Float64Array(n * n);
     let mx = 0;
     for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { const v = ps.I[(y + o) * P + x + o]; data[y * n + x] = v; mx = Math.max(mx, v); }
+    const ext = half * ps.dx * 1e3, ra = 1.22 * M.ctxs[wi].lmm * M.par.wfno * 1e3;
+    if (p.view === '3d') return psf3d(p, M, c, w, h, data, n, mx, ext, ps, ra);
     if (p.log) for (let i = 0; i < data.length; i++) data[i] = Math.log10(Math.max(data[i] / mx, 1e-6));
-    const ext = half * ps.dx * 1e3;
-    const A = axes(c, { x: 0, y: 0, w: w - 70, h: h - 4 }, [-ext, ext], [-ext, ext], { equal: true, title: `PSF  Strehl ${fx(ps.strehl, 4)}`, ml: 46, xl: 'µm', zero: false });
+    const A = axes(c, { x: 0, y: 0, w: w - 70, h: h - 4 }, [-ext, ext], [-ext, ext], { equal: true, title: `PSF  Strehl ${fx(ps.strehl, 4)} · zoom ×${fmt(zoom, 2)}`, ml: 46, xl: 'µm', zero: false });
     A.xr0 = -ext; A.xr1 = ext; A.yr0 = -ext; A.yr1 = ext;
     heat(c, A, data, n, n, p.log ? -6 : 0, p.log ? 0 : mx, 'inferno', true);
-    const ra = 1.22 * M.ctxs[p.wi ?? M.pw].lmm * M.par.wfno * 1e3;
     c.strokeStyle = 'rgba(255,255,255,.45)'; c.setLineDash([3, 3]); c.beginPath(); c.arc(A.X(0), A.Y(0), A.X(ra) - A.X(0), 0, 2 * Math.PI); c.stroke(); c.setLineDash([]);
     cbar(c, w - 58, 30, 12, Math.max(40, h - 70), p.log ? -6 : 0, p.log ? 0 : mx, 'inferno', p.log ? 'log₁₀' : 'Strehl');
     if (det().on) {
       const pu = det().p, bp = OE.binPSF(ps.I, ps.P, ps.dx, pu * 1e-3, 'centre', 3);
-      if (p.pix) { const L = lut('inferno'), mxp = Math.max(...bp.G); const nb = Math.ceil(ext / pu) * 2 + 1, b2 = OE.binPSF(ps.I, ps.P, ps.dx, pu * 1e-3, 'centre', nb); const m2 = Math.max(...b2.G);
-        clip(c, A.P); for (let iy = 0; iy < nb; iy++) for (let ix = 0; ix < nb; ix++) { const v = b2.G[iy * nb + ix] / m2, k = Math.round(Math.max(0, Math.min(1, v)) * 255); c.fillStyle = `rgb(${L[k * 3]},${L[k * 3 + 1]},${L[k * 3 + 2]})`; const x0 = A.X((ix - (nb >> 1) - 0.5) * pu), y0 = A.Y((iy - (nb >> 1) + 0.5) * pu); c.fillRect(x0, y0, A.X(pu) - A.X(0) + 0.5, A.Y(0) - A.Y(pu) + 0.5); } c.restore(); void mxp; }
+      if (p.pix) { const L = lut('inferno'); const nb = Math.ceil(ext / pu) * 2 + 1, b2 = OE.binPSF(ps.I, ps.P, ps.dx, pu * 1e-3, 'centre', nb); const m2 = Math.max(...b2.G);
+        clip(c, A.P); for (let iy = 0; iy < nb; iy++) for (let ix = 0; ix < nb; ix++) { const v = b2.G[iy * nb + ix] / m2, k = Math.round(Math.max(0, Math.min(1, v)) * 255); c.fillStyle = `rgb(${L[k * 3]},${L[k * 3 + 1]},${L[k * 3 + 2]})`; const x0 = A.X((ix - (nb >> 1) - 0.5) * pu), y0 = A.Y((iy - (nb >> 1) + 0.5) * pu); c.fillRect(x0, y0, A.X(pu) - A.X(0) + 0.5, A.Y(0) - A.Y(pu) + 0.5); } c.restore(); }
       pixGrid(c, A, pu, 'rgba(255,255,255,.35)');
       text(c, `pixel ${pu} µm · énergie pixel central ${fx(bp.G[4] * 100, 1)} % · 3×3 ${fx(bp.G.reduce((a, b) => a + b, 0) * 100, 1)} %`, A.P.x + 4, A.P.y + A.P.h - 14, { col: '#fff', size: 10.5 });
     }
+    text(c, 'molette : zoom', A.P.x + A.P.w - 4, A.P.y + 4, { col: 'rgba(255,255,255,.55)', size: 9.5, align: 'right' });
   },
   mtf(p, M, c, w, h) {
     const res = M.sys.fields.map((_, i) => OE.mtf(M, i, { fmax: p.fmax }));
@@ -5775,6 +5861,40 @@ function setupFloats() {
 }
 function fwRefresh(w) { const id = w.dataset.fw; if (w.classList.contains('min')) return; if (id === 'lay') drawLayout(); else if (/^p\d+$/.test(id)) renderPane(+id.slice(1)); }
 
+/* ---------------- Sélecteur de couleur avec validation (OK / Annuler) ---------------- */
+const CPAL = ['#2563eb', '#16a34a', '#dc2626', '#9333ea', '#ea580c', '#0891b2', '#ca8a04', '#db2777', '#4f46e5', '#65a30d', '#0d9488', '#be123c', '#7c3aed', '#f59e0b', '#64748b', '#111827'];
+function openColorPicker(btn) {
+  closeColorPicker();
+  const kind = btn.dataset.cpk, i = +btn.dataset.i, s = App.sys, item = kind === 'f' ? s.fields[i] : s.wavelengths[i]; if (!item) return;
+  const old = hexCol(kind === 'f' ? fcol(i) : wlCol(item.um));
+  const name = kind === 'f' ? `du champ ${i + 1}` : `de λ${i + 1} (${fmt(item.um * 1000, 5)} nm)`;
+  let cur = old;
+  const d = document.createElement('div'); d.id = 'cpop'; d.className = 'cpop';
+  d.innerHTML = `<div class="cph">Couleur ${name}</div>
+    <div class="cpg">${CPAL.map(c => `<button class="cps" data-c="${c}" style="background:${c}" title="${c}"></button>`).join('')}</div>
+    <div class="cpr"><label class="hint">Autre <input type="color" id="cpNat" value="${old}"></label><input class="in" id="cpHex" value="${old}" maxlength="7" style="width:82px;font-family:var(--mono)"></div>
+    <div class="cpr"><span class="hint">Avant</span><span class="cpv" style="background:${old}"></span><span class="hint">Après</span><span class="cpv" id="cpNew" style="background:${old}"></span></div>
+    <div class="cpf"><button class="bt" id="cpDef" title="Revenir à la couleur automatique">Par défaut</button><span class="grow"></span><button class="bt" id="cpNo">Annuler</button><button class="tb pri" id="cpOk">OK</button></div>`;
+  document.body.appendChild(d);
+  const r = btn.getBoundingClientRect(), pr = d.getBoundingClientRect();
+  d.style.left = Math.max(6, Math.min(innerWidth - pr.width - 6, r.left)) + 'px'; d.style.top = (r.bottom + pr.height + 8 < innerHeight ? r.bottom + 6 : Math.max(6, r.top - pr.height - 6)) + 'px';
+  const set = c => { if (!/^#[0-9a-f]{6}$/i.test(c)) return; cur = c.toLowerCase(); d.querySelector('#cpNew').style.background = cur; d.querySelector('#cpHex').value = cur; d.querySelector('#cpNat').value = cur; d.querySelectorAll('.cps').forEach(b => b.classList.toggle('on', b.dataset.c === cur)); };
+  const apply = c => { commit(S => { const it = kind === 'f' ? S.fields[i] : S.wavelengths[i]; if (!it) return; if (c) it.col = c; else delete it.col; }); closeColorPicker(); toast(c ? `Couleur ${name} : ${c}` : `Couleur ${name} : automatique`); };
+  set(old);
+  d.addEventListener('click', e => { const b = e.target.closest('.cps'); if (b) set(b.dataset.c); });
+  d.addEventListener('dblclick', e => { const b = e.target.closest('.cps'); if (b) { set(b.dataset.c); apply(cur); } });
+  d.querySelector('#cpNat').addEventListener('input', e => set(e.target.value));
+  d.querySelector('#cpHex').addEventListener('input', e => { let v = e.target.value.trim(); if (!v.startsWith('#')) v = '#' + v; if (/^#[0-9a-f]{6}$/i.test(v)) { cur = v.toLowerCase(); d.querySelector('#cpNew').style.background = cur; d.querySelector('#cpNat').value = cur; } });
+  d.querySelector('#cpOk').onclick = () => apply(cur);
+  d.querySelector('#cpNo').onclick = closeColorPicker;
+  d.querySelector('#cpDef').onclick = () => apply(null);
+  d.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); apply(cur); } else if (e.key === 'Escape') { e.stopPropagation(); closeColorPicker(); } });
+  d.querySelector('#cpOk').focus();
+}
+function closeColorPicker() { const d = $('#cpop'); if (d) d.remove(); }
+document.addEventListener('mousedown', e => { if ($('#cpop') && !e.target.closest('#cpop') && !e.target.closest('[data-cpk]')) closeColorPicker(); }, true);
+document.addEventListener('click', e => { const b = e.target.closest('button[data-cpk]'); if (b) { e.preventDefault(); openColorPicker(b); } });
+
 /* ---------------- Données système (façon CODE V : System Data) ---------------- */
 const SDT = [['pup', 'Pupille'], ['wl', 'Longueurs d\'onde'], ['fld', 'Champs / vignetage'], ['env', 'Température et pression'], ['mat', 'Matériaux (dn/dT, CTE)'], ['adv', 'Avancé']];
 var SD = { tab: 'fld', conv: true, gen: { n: 5, mode: 'area' } };
@@ -5808,7 +5928,7 @@ const SDTAB = {
   wl() {
     const s = App.sys;
     return `<h3>Longueurs d'onde</h3><table class="mt"><tr><th></th><th>#</th><th>λ (nm)</th><th>Poids</th><th>Référence</th><th>Couleur</th><th></th></tr>
-      ${s.wavelengths.map((w, i) => `<tr><td><span class="sw" style="background:${wlCol(w.um)}"></span></td><td>W${i + 1}</td><td>${sdIn('wnm', fmt(w.um * 1000, 8), { i })}</td><td>${sdIn('ww', fmt(w.w ?? 1, 5), { i, w: 60 })}</td><td style="text-align:center"><input type="radio" name="sdprim" data-sd="wp" data-i="${i}" ${i === s.primary ? 'checked' : ''}></td><td><input type="color" class="cpk" data-sd="wcol" data-i="${i}" value="${hexCol(wlCol(w.um))}"></td><td><button class="x" data-sda="wdel" data-i="${i}" title="Supprimer">✕</button></td></tr>`).join('')}</table>
+      ${s.wavelengths.map((w, i) => `<tr><td><span class="sw" style="background:${wlCol(w.um)}"></span></td><td>W${i + 1}</td><td>${sdIn('wnm', fmt(w.um * 1000, 8), { i })}</td><td>${sdIn('ww', fmt(w.w ?? 1, 5), { i, w: 60 })}</td><td style="text-align:center"><input type="radio" name="sdprim" data-sd="wp" data-i="${i}" ${i === s.primary ? 'checked' : ''}></td><td><button class="cpk" data-cpk="w" data-i="${i}" style="background:${hexCol(wlCol(w.um))}" title="Couleur de λ${i + 1}"></button></td><td><button class="x" data-sda="wdel" data-i="${i}" title="Supprimer">✕</button></td></tr>`).join('')}</table>
       <button class="add" data-sda="wadd">+ Ajouter une longueur d'onde</button>
       <div class="chips"><button class="chip" data-sda="wpre" data-v="FdC">F, d, C</button><button class="chip" data-sda="wpre" data-v="vis">Visible 450–650</button><button class="chip" data-sda="wpre" data-v="hene">632,8 nm</button><button class="chip" data-sda="wpre" data-v="nir">NIR</button><button class="chip" data-sda="wpre" data-v="d">d seule</button></div>
       <div class="hint">Longueurs d'onde dans l'air du système (comme CODE V et Zemax). La référence sert au paraxial, aux solves et au rayon principal.</div>`;
@@ -5821,7 +5941,7 @@ const SDTAB = {
       <label class="hint" style="margin-left:10px" title="Recalcule les valeurs pour conserver les mêmes points de champ (CODE V « Convert Fields »). Décoché : les nombres sont gardés et réinterprétés."><input type="checkbox" data-sd="fconv" ${SD.conv ? 'checked' : ''}> convertir les valeurs</label></div>
       <div style="overflow:auto"><table class="mt sdt"><tr><th>#</th><th></th><th>X (${u})</th><th>Y (${u})</th><th>Poids</th><th title="Fraction du rayon de pupille coupée côté +Y">VUY</th><th title="… côté −Y">VLY</th><th title="… côté +X">VUX</th><th title="… côté −X">VLX</th>
         <th class="ro">${inf ? 'Angle (°)' : 'Objet (mm)'}</th><th class="ro">Image parax. (mm)</th><th class="ro">Image réelle (mm)</th><th></th></tr>
-      ${s.fields.map((f, i) => `<tr><td>F${i + 1}</td><td><input type="color" class="cpk" data-sd="fcol" data-i="${i}" value="${hexCol(fcol(i))}"></td><td>${sdIn('fx', fmt(f.x || 0, 8), { i, w: 72 })}</td><td>${sdIn('fy', fmt(f.y, 8), { i, w: 72 })}</td><td>${sdIn('fw', fmt(f.w ?? 1, 4), { i, w: 48 })}</td>
+      ${s.fields.map((f, i) => `<tr><td>F${i + 1}</td><td><button class="cpk" data-cpk="f" data-i="${i}" style="background:${hexCol(fcol(i))}" title="Couleur du champ ${i + 1}"></button></td><td>${sdIn('fx', fmt(f.x || 0, 8), { i, w: 72 })}</td><td>${sdIn('fy', fmt(f.y, 8), { i, w: 72 })}</td><td>${sdIn('fw', fmt(f.w ?? 1, 4), { i, w: 48 })}</td>
         ${['vuy', 'vly', 'vux', 'vlx'].map(k => `<td>${sdIn('fv', fmt(+f[k] || 0, 5), { i, k, w: 70 })}</td>`).join('')}
         <td class="ro">${eq ? fx(eq[i].y, 4) : '—'}</td><td class="ro">${pim ? fx(pim[i].y, 4) : '—'}</td><td class="ro">${rim ? fx(rim[i].y, 4) : '—'}</td><td><button class="x" data-sda="fdel" data-i="${i}" title="Supprimer">✕</button></td></tr>`).join('')}</table></div>
       <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:6px"><button class="bt" data-sda="fadd">+ Ajouter un champ</button>
