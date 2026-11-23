@@ -12,7 +12,7 @@ const PDF = (() => {
   // caractères rendus avec la police Symbol
   const SYM = { 'α': 'a', 'β': 'b', 'γ': 'g', 'δ': 'd', 'ε': 'e', 'θ': 'q', 'λ': 'l', 'μ': 'm', 'ν': 'n', 'π': 'p', 'ρ': 'r', 'σ': 's', 'τ': 't', 'φ': 'f', 'χ': 'c', 'ψ': 'y', 'ω': 'w',
     'Δ': 'D', 'Θ': 'Q', 'Λ': 'L', 'Σ': 'S', 'Φ': 'F', 'Ψ': 'Y', 'Ω': 'W', '∞': '¥', '≈': '»', '≤': '£', '≥': '³', '≠': '¹', '→': '®', '←': '¬',
-    '√': 'Ö', '∑': 'å', '∂': '¶', '⊗': 'Ä', '∝': 'µ', '·': '×' };
+    'µ': 'm', '√': 'Ö', '∑': 'å', '∂': '¶', '⊗': 'Ä', '∝': 'µ', '·': '×' };
   const REPL = { 'ᵉ': 'e', 'ʳ': 'r', 'ᵈ': 'd', 'ᵗ': 't', 'ˢ': 's', 'ᵃ': 'a', '⁺': '+', '₃': '3', '₄': '4', '⁰': '0', '¹': '1', '⁴': '4', '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9', 'ⁱ': 'i', 'ʲ': 'j', '₀': '0', '₁': '1', '₂': '2', '⁻': '-', '−': '-', '′': "'", '″': '"', '✓': 'OK', '⚠': '!', '✕': 'x', '…': '...', ' ': ' ', ' ': ' ' };
   const mctx = typeof document !== 'undefined' ? document.createElement('canvas').getContext('2d') : null;
   const FONTS = { reg: { pdf: 'F1', css: '' }, bold: { pdf: 'F2', css: 'bold ' }, mono: { pdf: 'F3' } };
@@ -77,6 +77,18 @@ const PDF = (() => {
       const p = `${n(x)} ${n(H - y - h)} ${n(w)} ${n(h)} re`;
       if (o.fill) { const [r, g, b] = col(o.fill); this.page.push(`${n(r)} ${n(g)} ${n(b)} rg ${p} f`); }
       if (o.stroke) { const [r, g, b] = col(o.stroke); this.page.push(`${n(o.w || 0.5)} w ${n(r)} ${n(g)} ${n(b)} RG ${p} S`); }
+    }
+    /** rectangle à coins arrondis (rayon r) ; o : { fill, stroke, w } */
+    rrect(x, y, w, h, r, o = {}) {
+      r = Math.max(0, Math.min(r, w / 2, h / 2)); const k = 0.5523 * r, X = x, Y = H - y, Y2 = H - y - h;
+      let p = `${n(X + r)} ${n(Y)} m ${n(X + w - r)} ${n(Y)} l ${n(X + w - r + k)} ${n(Y)} ${n(X + w)} ${n(Y - r + k)} ${n(X + w)} ${n(Y - r)} c`
+        + ` ${n(X + w)} ${n(Y2 + r)} l ${n(X + w)} ${n(Y2 + r - k)} ${n(X + w - r + k)} ${n(Y2)} ${n(X + w - r)} ${n(Y2)} c`
+        + ` ${n(X + r)} ${n(Y2)} l ${n(X + r - k)} ${n(Y2)} ${n(X)} ${n(Y2 + r - k)} ${n(X)} ${n(Y2 + r)} c`
+        + ` ${n(X)} ${n(Y - r)} l ${n(X)} ${n(Y - r + k)} ${n(X + r - k)} ${n(Y)} ${n(X + r)} ${n(Y)} c h`;
+      let s = '';
+      if (o.fill) { const [a, b, c] = col(o.fill); s += `${n(a)} ${n(b)} ${n(c)} rg `; }
+      if (o.stroke) { const [a, b, c] = col(o.stroke); s += `${n(o.w || 0.5)} w ${n(a)} ${n(b)} ${n(c)} RG `; }
+      this.page.push(s + p + (o.fill && o.stroke ? ' B' : o.fill ? ' f' : ' S'));
     }
     /** image JPEG (Uint8Array) de wpx × hpx pixels, placée en (x, y, w, h) points */
     jpeg(bytes, wpx, hpx, x, y, w, h) {

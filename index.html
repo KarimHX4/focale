@@ -369,7 +369,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 <div class="toast" id="toast"></div>
 <input type="file" id="fileIn" accept=".json,.zmx,.seq,.txt,.agf" style="display:none">
 <div class="drop" id="drop">Déposez un fichier .zmx, .seq, .json ou .agf</div>
-<script>const FOCALE_VERSION = 'a67465ac';</script>
+<script>const FOCALE_VERSION = '924c0ab0';</script>
 <script>
 'use strict';
 /* =====================================================================
@@ -3515,6 +3515,7 @@ const HELP = [
 <ul><li><b>Titre, auteur, notes</b> : repris en page de garde (avec date, version de Focale et chiffres clés) et dans les pieds de page.</li>
 <li><b>Sections</b> : données du système et paraxiales, prescription (avec asphères et décentrements), layout 2D, performances par champ (spot, front d'onde, Strehl, vignetage), coefficients de Seidel, détecteur, source / fibre, tolérancement (résultats déjà calculés : sensibilités, RSS, Monte-Carlo avec histogramme).</li>
 <li><b>Analyses</b> : cochez celles à inclure ; « un graphique par champ » les répète pour chaque champ. « Fenêtres d'analyse ouvertes » reprend exactement vos fenêtres avec leurs réglages.</li>
+<li><b>Mise en page</b> : page de garde avec bandeau, cartes de chiffres clés (focale, F/#, champ, spectre, longueur) et <b>sommaire avec numéros de page</b> (analyses en sous-entrées) ; sections numérotées, tableaux à en-tête bleu et ligne Σ mise en évidence, données encadrées sur deux colonnes, figures numérotées avec légende, pagination en pied de page. La section Performances commence par quatre cartes (spot RMS max, rayon d'Airy, WFE RMS max, Strehl min) dont le repère passe au vert quand le critère de Maréchal est atteint (WFE ≤ 0,0714 λ, Strehl ≥ 0,8). Le tableau des asphères affiche tous les coefficients utilisés, jusqu'à A20.</li>
 <li>Les graphiques sont rendus en haute résolution sur fond blanc (même en mode nuit) ; textes et tableaux sont vectoriels et sélectionnables. Le PDF (A4) est créé dans le navigateur, sans connexion.</li></ul>
 <p class="hint">Vos choix sont mémorisés pour le prochain rapport. Dans la version hébergée sur claude.ai, le téléchargement peut être bloqué : utilisez le site GitHub Pages ou l'application installée.</p>` },
 
@@ -4222,7 +4223,7 @@ const PDF = (() => {
   // caractères rendus avec la police Symbol
   const SYM = { 'α': 'a', 'β': 'b', 'γ': 'g', 'δ': 'd', 'ε': 'e', 'θ': 'q', 'λ': 'l', 'μ': 'm', 'ν': 'n', 'π': 'p', 'ρ': 'r', 'σ': 's', 'τ': 't', 'φ': 'f', 'χ': 'c', 'ψ': 'y', 'ω': 'w',
     'Δ': 'D', 'Θ': 'Q', 'Λ': 'L', 'Σ': 'S', 'Φ': 'F', 'Ψ': 'Y', 'Ω': 'W', '∞': '¥', '≈': '»', '≤': '£', '≥': '³', '≠': '¹', '→': '®', '←': '¬',
-    '√': 'Ö', '∑': 'å', '∂': '¶', '⊗': 'Ä', '∝': 'µ', '·': '×' };
+    'µ': 'm', '√': 'Ö', '∑': 'å', '∂': '¶', '⊗': 'Ä', '∝': 'µ', '·': '×' };
   const REPL = { 'ᵉ': 'e', 'ʳ': 'r', 'ᵈ': 'd', 'ᵗ': 't', 'ˢ': 's', 'ᵃ': 'a', '⁺': '+', '₃': '3', '₄': '4', '⁰': '0', '¹': '1', '⁴': '4', '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9', 'ⁱ': 'i', 'ʲ': 'j', '₀': '0', '₁': '1', '₂': '2', '⁻': '-', '−': '-', '′': "'", '″': '"', '✓': 'OK', '⚠': '!', '✕': 'x', '…': '...', ' ': ' ', ' ': ' ' };
   const mctx = typeof document !== 'undefined' ? document.createElement('canvas').getContext('2d') : null;
   const FONTS = { reg: { pdf: 'F1', css: '' }, bold: { pdf: 'F2', css: 'bold ' }, mono: { pdf: 'F3' } };
@@ -4287,6 +4288,18 @@ const PDF = (() => {
       const p = `${n(x)} ${n(H - y - h)} ${n(w)} ${n(h)} re`;
       if (o.fill) { const [r, g, b] = col(o.fill); this.page.push(`${n(r)} ${n(g)} ${n(b)} rg ${p} f`); }
       if (o.stroke) { const [r, g, b] = col(o.stroke); this.page.push(`${n(o.w || 0.5)} w ${n(r)} ${n(g)} ${n(b)} RG ${p} S`); }
+    }
+    /** rectangle à coins arrondis (rayon r) ; o : { fill, stroke, w } */
+    rrect(x, y, w, h, r, o = {}) {
+      r = Math.max(0, Math.min(r, w / 2, h / 2)); const k = 0.5523 * r, X = x, Y = H - y, Y2 = H - y - h;
+      let p = `${n(X + r)} ${n(Y)} m ${n(X + w - r)} ${n(Y)} l ${n(X + w - r + k)} ${n(Y)} ${n(X + w)} ${n(Y - r + k)} ${n(X + w)} ${n(Y - r)} c`
+        + ` ${n(X + w)} ${n(Y2 + r)} l ${n(X + w)} ${n(Y2 + r - k)} ${n(X + w - r + k)} ${n(Y2)} ${n(X + w - r)} ${n(Y2)} c`
+        + ` ${n(X + r)} ${n(Y2)} l ${n(X + r - k)} ${n(Y2)} ${n(X)} ${n(Y2 + r - k)} ${n(X)} ${n(Y2 + r)} c`
+        + ` ${n(X)} ${n(Y - r)} l ${n(X)} ${n(Y - r + k)} ${n(X + r - k)} ${n(Y)} ${n(X + r)} ${n(Y)} c h`;
+      let s = '';
+      if (o.fill) { const [a, b, c] = col(o.fill); s += `${n(a)} ${n(b)} ${n(c)} rg `; }
+      if (o.stroke) { const [a, b, c] = col(o.stroke); s += `${n(o.w || 0.5)} w ${n(a)} ${n(b)} ${n(c)} RG `; }
+      this.page.push(s + p + (o.fill && o.stroke ? ' B' : o.fill ? ' f' : ' S'));
     }
     /** image JPEG (Uint8Array) de wpx × hpx pixels, placée en (x, y, w, h) points */
     jpeg(bytes, wpx, hpx, x, y, w, h) {
@@ -6970,64 +6983,113 @@ async function genReport() {
   if (!App.M || !App.M.ok) { toast('Système invalide : impossible de générer le rapport'); return; }
   const cf = rptCfg(), msg = t => { const e = $('#rptMsg'); if (e) e.textContent = t; };
   const M = App.M, sys = App.sys, doc = new PDF.Doc(), L = 42, Rr = PDF.W - 42, CW = Rr - L, BOT = PDF.H - 48;
-  const ACC = '#2563eb', MUT = '#6b7686', LINE = '#dde3ea';
+  const ACC = '#2563eb', ACC2 = '#1e3a8a', INK = '#111827', MUT = '#6b7686', LINE = '#dde3ea', SOFT = '#f4f7fb', DARK = '#0f172a';
   const date = new Date().toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric' });
-  let y = 0;
+  let y = 0, secN = 0, figN = 0;
+  const toc = []; // { t, n, pg, sub }
   const savedView = { ...App.view }, savedMode = App.mode;
   App.forceLight = true; readTheme();
-  const page = () => {
+  const page = (cover = false) => {
     doc.addPage();
-    lensMark(doc, L, 24, 0.7); doc.text(L + 20, 34, 'Focale', { size: 10, font: 'bold', color: ACC });
-    doc.text(Rr, 33, `${cf.title || 'Rapport'} — ${sys.title || ''}`.slice(0, 95), { size: 8.5, color: MUT, align: 'right' });
-    doc.line(L, 42, Rr, 42, { color: LINE }); y = 64;
+    if (cover) { y = 0; return; }
+    doc.rect(0, 0, PDF.W, 5, { fill: ACC });
+    lensMark(doc, L, 20, 0.75); doc.text(L + 21, 31.5, 'Focale', { size: 10, font: 'bold', color: INK });
+    doc.text(Rr, 31, `${cf.title || 'Rapport'} — ${sys.title || ''}`.slice(0, 95), { size: 8, color: MUT, align: 'right' });
+    doc.line(L, 42, Rr, 42, { color: LINE }); y = 66;
   };
   let pendH1 = null; // titre de section en attente : imprimé avec le premier contenu qui le suit
-  const need = h => { const extra = pendH1 ? 30 : 0; if (y + h + extra > BOT) page(); if (pendH1) { const t = pendH1; pendH1 = null; doc.text(L, y + 4, t, { size: 15, font: 'bold', color: '#111827' }); doc.rect(L, y + 10, 34, 2.2, { fill: ACC }); y += 30; } };
+  const need = h => {
+    const extra = pendH1 ? 40 : 0; if (y + h + extra > BOT) page();
+    if (pendH1) {
+      const t = pendH1; pendH1 = null; secN++;
+      doc.rrect(L, y - 8, 24, 24, 5, { fill: ACC }); doc.text(L + 12, y + 8.5, String(secN), { size: 12, font: 'bold', color: '#ffffff', align: 'center' });
+      doc.text(L + 34, y + 9, t, { size: 15, font: 'bold', color: INK });
+      doc.line(L + 34 + PDF.measure(t, 15, 'bold') + 10, y + 4, Rr, y + 4, { color: LINE, w: 0.6 });
+      toc.push({ t, n: secN, pg: doc.pages.length }); y += 36;
+    }
+  };
   const h1 = t => { pendH1 = t; };
-  const h2 = (t, keep = 0) => { need(28 + keep); doc.text(L, y + 2, t, { size: 11.5, font: 'bold', color: '#1f2937' }); y += 18; };
+  const h2 = (t, keep = 0, inToc = false) => {
+    need(30 + keep); doc.rect(L, y - 7.5, 2.6, 11, { fill: ACC });
+    doc.text(L + 8, y + 2, t, { size: 11, font: 'bold', color: '#1f2937' });
+    if (inToc) toc.push({ t, pg: doc.pages.length, sub: true }); y += 17;
+  };
   const para = (t, o = {}) => { need(30); y += doc.para(L, y, CW, t, { size: o.size || 9.5, color: o.color || '#374151' }) + 4; };
-  /** tableau ; cols : [{ t: titre, w: largeur, a: 'left'|'right', mono }] */
+  const note = t => { need(24); y += doc.para(L, y, CW, t, { size: 8.3, color: MUT, lh: 11 }) + 6; };
+  /** tableau ; cols : [{ t: titre, w: largeur, a: 'left'|'right', mono }] ; o.total : dernière ligne = total */
   const table = (cols, rows, o = {}) => {
-    const fs = o.size || 8.5, rh = fs + 6.5, head = () => { doc.rect(L, y, CW, rh, { fill: '#eef2f7' }); let x = L; cols.forEach(c => { doc.text(c.a === 'right' ? x + c.w - 4 : x + 4, y + fs + 1.5, c.t, { size: fs, font: 'bold', color: '#374151', align: c.a === 'right' ? 'right' : 'left' }); x += c.w; }); y += rh; };
-    need(rh * 3); head();
+    const fs = o.size || 8.5, rh = fs + 7.5, tx = (c, x) => c.a === 'right' ? x + c.w - 5 : x + 5, al = c => c.a === 'right' ? 'right' : 'left';
+    const head = () => { doc.rrect(L, y, CW, rh + 2, 3, { fill: '#e8eefb' }); let x = L; cols.forEach(c => { doc.text(tx(c, x), y + fs + 2.6, c.t, { size: fs - 0.3, font: 'bold', color: ACC2, align: al(c) }); x += c.w; }); y += rh + 2; };
+    need(rh * 3 + 2); head();
     rows.forEach((r, i) => {
       if (y + rh > BOT) { page(); head(); }
-      if (i % 2) doc.rect(L, y, CW, rh, { fill: '#f8fafc' });
-      let x = L; cols.forEach((c, k) => { let v = r[k] == null ? '' : String(r[k]); const maxw = c.w - 8; while (v.length > 3 && PDF.measure(v, fs, c.mono ? 'mono' : 'reg') > maxw) v = v.slice(0, -2) + '…';
-        doc.text(c.a === 'right' ? x + c.w - 4 : x + 4, y + fs + 1.5, v, { size: fs, font: c.mono ? 'mono' : 'reg', color: '#111827', align: c.a === 'right' ? 'right' : 'left' }); x += c.w; });
+      const tot = o.total && i === rows.length - 1;
+      if (tot) { doc.line(L, y, Rr, y, { color: '#9aa8bd', w: 0.7 }); doc.rect(L, y, CW, rh, { fill: '#eef2f7' }); }
+      else if (i % 2) doc.rect(L, y, CW, rh, { fill: '#f7f9fc' });
+      let x = L; cols.forEach((c, k) => { let v = r[k] == null ? '' : String(r[k]); const maxw = c.w - 9, f = tot ? 'bold' : c.mono ? 'mono' : 'reg'; while (v.length > 3 && PDF.measure(v, fs, f) > maxw) v = v.slice(0, -2) + '…';
+        doc.text(tx(c, x), y + fs + 2, v, { size: fs, font: f, color: k === 0 ? '#334155' : INK, align: al(c) }); x += c.w; });
       y += rh;
     });
-    doc.line(L, y, Rr, y, { color: LINE }); y += 10;
+    doc.line(L, y, Rr, y, { color: LINE }); y += 12;
   };
+  /** données clé / valeur dans un cadre clair, en une ou deux colonnes */
   const kv = (rows) => {
-    const two = rows.every(([a, b]) => PDF.measure(a, 8.8) + PDF.measure(b, 8.8, 'mono') + 20 < CW / 2 - 12);
-    const half = two ? Math.ceil(rows.length / 2) : rows.length, cw = two ? CW / 2 : CW; need(Math.min(half, 12) * 13 + 6);
-    rows.forEach(([a, b], i) => { const col = i < half ? 0 : 1, row = i < half ? i : i - half; const yy = y + row * 13; doc.text(L + col * cw, yy + 9, a, { size: 8.8, color: MUT }); doc.text(L + col * cw + cw - 12, yy + 9, b, { size: 8.8, font: 'mono', color: '#111827', align: 'right' }); });
-    y += half * 13 + 8; };
+    const two = rows.length > 2 && rows.every(([a, b]) => PDF.measure(a, 8.6) + PDF.measure(b, 8.6, 'mono') + 30 < CW / 2 - 14);
+    const half = two ? Math.ceil(rows.length / 2) : rows.length, cw = two ? CW / 2 : CW, rh = 14, hh = half * rh + 10; need(hh + 6);
+    doc.rrect(L, y, CW, hh, 4, { fill: SOFT }); if (two) doc.line(L + cw, y + 6, L + cw, y + hh - 6, { color: LINE });
+    rows.forEach(([a, b], i) => { const c = i < half ? 0 : 1, row = i < half ? i : i - half, yy = y + 5 + row * rh, x0 = L + c * cw;
+      if (row) doc.line(x0 + 10, yy, x0 + cw - 10, yy, { color: '#e6ebf2', w: 0.4 });
+      doc.text(x0 + 10, yy + 9.8, a, { size: 8.6, color: MUT }); doc.text(x0 + cw - 10, yy + 9.8, b, { size: 8.6, font: 'mono', color: INK, align: 'right' }); });
+    y += hh + 12; };
+  /** cartes d'indicateurs : [{ l, v, u }] */
+  const cards = (items, o = {}) => {
+    const n = items.length, gap = 8, w = (CW - gap * (n - 1)) / n, hh = o.h || 50; need(hh + 8);
+    items.forEach((it, i) => { const x = L + i * (w + gap);
+      doc.rrect(x, y, w, hh, 5, { fill: o.fill || SOFT, stroke: o.stroke || '#e3e9f2' }); doc.rect(x + 8, y + 8, 14, 2, { fill: it.c || ACC });
+      doc.text(x + 8, y + 22, it.l, { size: 7.6, color: MUT });
+      let vs = 15; while (vs > 8 && PDF.measure(it.v, vs, 'bold') + (it.u ? PDF.measure(' ' + it.u, 8.5) : 0) > w - 14) vs -= 0.5;
+      doc.text(x + 8, y + hh - 10, it.v, { size: vs, font: 'bold', color: INK });
+      if (it.u) doc.text(x + 8 + PDF.measure(it.v, vs, 'bold') + 3, y + hh - 10, it.u, { size: 8.5, color: MUT }); });
+    y += hh + 14;
+  };
   const image = (cv, caption) => {
-    const w = CW, h = CW * cv.height / cv.width; need(h + (caption ? 18 : 6));
-    doc.jpeg(PDF.canvasJPEG(cv, 0.9), cv.width, cv.height, L, y, w, h); doc.rect(L, y, w, h, { stroke: LINE });
-    y += h + 4; if (caption) { doc.text(L, y + 8, caption, { size: 8.5, color: MUT }); y += 16; } else y += 6;
+    const w = CW, h = CW * cv.height / cv.width; need(h + (caption ? 22 : 8));
+    doc.jpeg(PDF.canvasJPEG(cv, 0.9), cv.width, cv.height, L, y, w, h); doc.rrect(L - 0.5, y - 0.5, w + 1, h + 1, 3, { stroke: LINE, w: 0.7 });
+    y += h + 4;
+    if (caption) { figN++; const lab = `Figure ${figN}. `; doc.text(L, y + 9, lab, { size: 8.3, font: 'bold', color: '#334155' }); y += doc.para(L + PDF.measure(lab, 8.3, 'bold'), y + 9, CW - 60, caption, { size: 8.3, color: MUT, lh: 11 }) + 18; }
+    else y += 14;
   };
   const step = async t => { msg(t); await tick(); };
-  const fl = i => fLabel(M, i), uF = M.objInf ? '°' : ' mm', p = M.par;
+  const fl = i => fLabel(M, i), p = M.par;
+  const fmax = () => `${fmt(Math.max(...(M.ufields || M.sys.fields).map(f => Math.hypot(f.x || 0, f.y || 0))), 4)}${fUnitOf(M.ftype)}`;
+  let tocBox = null;
   try {
     // ---------------- page de garde ----------------
-    page();
     if (cf.sec.cover) {
-      y = 150; lensMark(doc, L, y - 40, 2.2);
-      doc.text(L + 90, y - 10, cf.title || 'Rapport de conception optique', { size: 22, font: 'bold', color: '#111827' });
-      doc.text(L + 90, y + 14, sys.title || 'Système sans titre', { size: 13, color: ACC });
-      y += 50; doc.line(L, y, Rr, y, { color: LINE }); y += 22;
+      page(true);
+      doc.rect(0, 0, PDF.W, 196, { fill: DARK }); doc.rect(0, 196, PDF.W, 4, { fill: ACC });
+      for (let k = 0; k < 5; k++) doc.line(PDF.W - 230 + k * 34, 0, PDF.W - 120 + k * 34, 196, { color: '#1b2a45', w: 0.8 });
+      lensMark(doc, L, 46, 1.6); doc.text(L + 42, 64, 'FOCALE', { size: 9.5, font: 'bold', color: '#93b4f0' }); doc.text(L + 42, 76, 'Conception optique', { size: 8, color: '#8090aa' });
+      doc.para(L, 122, CW - 40, cf.title || 'Rapport de conception optique', { size: 24, font: 'bold', color: '#ffffff', lh: 28 });
+      doc.text(L, 172, sys.title || 'Système sans titre', { size: 13, color: '#93b4f0' });
+      y = 228;
+      const wlr = sys.wavelengths.map(w => w.um * 1000), wlS = wlr.length > 1 ? `${fmt(Math.min(...wlr), 4)}–${fmt(Math.max(...wlr), 4)}` : fmt(wlr[0], 5);
+      cards([{ l: 'Focale effective', v: fx(p.efl, 3), u: 'mm' }, { l: 'Ouverture (F/# trav.)', v: 'F/' + fx(p.wfno, 2) }, { l: 'Champ max', v: fmax() }, { l: 'Spectre', v: wlS, u: 'nm' }, { l: 'Longueur totale', v: fx(p.ttl, 2), u: 'mm' }], { h: 54 });
       kv([['Auteur', cf.author || '—'], ['Date', date], ['Logiciel', `Focale ${typeof FOCALE_VERSION !== 'undefined' ? FOCALE_VERSION : ''}`], ['Surfaces', String(sys.surfaces.length - 2)],
-        ['Focale (EFL)', `${fx(p.efl, 4)} mm`], ['F/# de travail', fx(p.wfno, 3)], ['Champ max', `${fmt(Math.max(...(M.ufields || M.sys.fields).map(f => Math.hypot(f.x || 0, f.y || 0))), 4)}${fUnitOf(M.ftype)}${M.ftype === 'pim' || M.ftype === 'rim' ? ' (' + OE.FTYPES[M.ftype].l.toLowerCase() + ')' : ''}`], ...(M.env ? [['Environnement', `${fmt(M.env.T, 4)} °C, ${fmt(M.env.P, 4)} atm`]] : []), ['Longueur totale', `${fx(p.ttl, 2)} mm`]]);
-      if (cf.notes && cf.notes.trim()) { h2('Notes'); para(cf.notes.trim(), { size: 10 }); }
-      const toc = RPT_SEC.filter(([k]) => cf.sec[k] && k !== 'cover').map(([, l]) => l).concat(Object.keys(cf.an).filter(k => cf.an[k] && PT[k]).map(k => PT[k].l));
-      h2('Contenu'); para(toc.map(t => '• ' + t).join('\n'), { size: 9.5 });
-    }
+        ['Objet', M.objInf ? 'à l\'infini' : `à ${fx(M.t0, 2)} mm`], ...(M.env ? [['Environnement', `${fmt(M.env.T, 4)} °C, ${fmt(M.env.P, 4)} atm`]] : [['Type de champ', OE.FTYPES[M.ftype || 'ang'] ? OE.FTYPES[M.ftype || 'ang'].l : '—']])]);
+      if (cf.notes && cf.notes.trim()) {
+        const t = cf.notes.trim(), n0 = doc.page.length, hh = doc.para(0, 0, CW - 30, t, { size: 9.5 }); doc.page.length = n0; // mesure seule
+        y += 2; doc.text(L, y + 2, 'NOTES', { size: 8, font: 'bold', color: ACC }); y += 10;
+        doc.rrect(L, y, CW, hh + 14, 4, { fill: '#f7f9fc' }); doc.rect(L, y, 3, hh + 14, { fill: ACC });
+        doc.para(L + 14, y + 16, CW - 30, t, { size: 9.5, color: '#374151' }); y += hh + 30;
+      }
+      y += 4; doc.text(L, y + 2, 'SOMMAIRE', { size: 8, font: 'bold', color: ACC }); y += 14;
+      tocBox = { y0: y };
+      page();
+    } else page();
     // ---------------- système ----------------
     if (cf.sec.system) {
-      await step('Données du système…'); if (cf.sec.cover) page(); h1('Données du système');
+      await step('Données du système…'); h1('Données du système');
       const ap = sys.aperture;
       kv([['Ouverture', `${({ EPD: 'Ø pupille d\'entrée', FNO: 'F/# image', NA: 'ON objet', NAI: 'ON image', STOP: 'demi-diamètre du diaphragme' })[ap.type]} = ${fmt(ap.value, 6)}`], ['Obstruction centrale', fmt(ap.obscuration || 0, 4)],
         ['Objet', M.objInf ? 'à l\'infini' : `à ${fx(M.t0, 3)} mm`], ['Visée des rayons', ({ none: 'pupille paraxiale', chief: 'rayon principal au centre du diaphragme', full: 'réelle (tous les rayons)' })[OE.aimMode(sys)]],
@@ -7047,8 +7109,11 @@ async function genReport() {
         return [i === 0 ? 'OBJ' : i === M.N ? 'IMA' : i, fmt(s.r, 7), fmt(s.t, 7), s.glass || '', nd, i ? fmt(s.sd, 5) : '', s.k ? fmt(s.k, 6) : '', flags, [s.comment, el].filter(Boolean).join(' · ')];
       });
       table([{ t: '#', w: 30 }, { t: 'Rayon', w: 66, a: 'right', mono: true }, { t: 'Épaisseur', w: 66, a: 'right', mono: true }, { t: 'Verre', w: 62 }, { t: 'nd', w: 46, a: 'right', mono: true }, { t: '½Ø', w: 46, a: 'right', mono: true }, { t: 'Conique', w: 48, a: 'right', mono: true }, { t: 'Options', w: 52 }, { t: 'Commentaire / élément', w: CW - 416 }], rows);
-      const asph = M.S.map((s, i) => [i, s]).filter(([, s]) => s.a4 || s.a6 || s.a8 || s.a10);
-      if (asph.length) { h2('Coefficients asphériques'); table([{ t: '#', w: 40 }, { t: 'A4', w: (CW - 40) / 4, a: 'right', mono: true }, { t: 'A6', w: (CW - 40) / 4, a: 'right', mono: true }, { t: 'A8', w: (CW - 40) / 4, a: 'right', mono: true }, { t: 'A10', w: (CW - 40) / 4, a: 'right', mono: true }], asph.map(([i, s]) => [i, fmt(s.a4, 6), fmt(s.a6, 6), fmt(s.a8, 6), fmt(s.a10, 6)])); }
+      const AK = ['a4', 'a6', 'a8', 'a10', 'a12', 'a14', 'a16', 'a18', 'a20'], asph = M.S.map((s, i) => [i, s]).filter(([, s]) => AK.some(k => s[k]));
+      if (asph.length) {
+        const used = AK.filter(k => asph.some(([, s]) => s[k])), ks = used.length > 4 ? used : AK.slice(0, Math.max(4, AK.indexOf(used[used.length - 1]) + 1)), wa = (CW - 40) / ks.length;
+        h2('Coefficients asphériques'); table([{ t: '#', w: 40 }, ...ks.map(k => ({ t: k.toUpperCase(), w: wa, a: 'right', mono: true }))], asph.map(([i, s]) => [i, ...ks.map(k => s[k] ? s[k].toExponential(ks.length > 6 ? 3 : 5) : '0')]), { size: ks.length > 6 ? 7.6 : 8.5 });
+      }
       const dec = M.S.map((s, i) => [i, s]).filter(([, s]) => isDec(s));
       if (dec.length) { h2('Décentrements et bascules'); const w6 = (CW - 90) / 6; table([{ t: '#', w: 40 }, { t: 'Mode', w: 50 }, ...['X (mm)', 'Y (mm)', 'Z (mm)', 'α (°)', 'β (°)', 'γ (°)'].map(t => ({ t, w: w6, a: 'right', mono: true }))], dec.map(([i, s]) => [i, s.dmode || 'DEC', fmt(s.dx, 6), fmt(s.dy, 6), fmt(s.dz, 6), fmt(s.tx, 6), fmt(s.ty, 6), fmt(s.tz, 6)])); }
     }
@@ -7057,33 +7122,36 @@ async function genReport() {
       await step('Layout…'); h1('Layout');
       App.view = { ...App.view, auto: true }; App.mode = '2d';
       const cv = rptCanvas((c, w, h) => { drawLayout({ c, w, h }); legend(c, 10, h - 10, sys.fields.map((_, i) => ({ col: fcol(i), l: `champ ${fl(i)}` }))); }, 780, 360);
-      image(cv, 'Coupe méridienne (plan YZ), rayons de chaque champ à la longueur d\'onde primaire.');
+      image(cv, `Coupe méridienne (plan YZ) — rayons de chaque champ à λ = ${fmt(M.wls[M.pw] * 1000, 5)} nm.`);
     }
     // ---------------- performances ----------------
     if (cf.sec.perf) {
       await step('Performances…'); h1('Performances');
-      const rows = sys.fields.map((_, i) => { const sp = OE.spot(M, i, 21), wf = OE.wavefront(M, i, M.pw, 48); return [fl(i), fx(sp.rms * 1e3, 2), fx(sp.geo * 1e3, 2), fx(wf.rms, 4), fx(wf.pv, 3), fx(OE.psf(M, i, M.pw, 64, 256).strehl, 3), sp.nv ? `${Math.round(100 * sp.nv / sp.ntot)} %` : '0 %']; });
+      const V = sys.fields.map((_, i) => ({ sp: OE.spot(M, i, 21), wf: OE.wavefront(M, i, M.pw, 48), st: OE.psf(M, i, M.pw, 64, 256).strehl }));
+      const rows = V.map((o, i) => [fl(i), fx(o.sp.rms * 1e3, 2), fx(o.sp.geo * 1e3, 2), fx(o.wf.rms, 4), fx(o.wf.pv, 3), fx(o.st, 3), o.sp.nv ? `${Math.round(100 * o.sp.nv / o.sp.ntot)} %` : '0 %']);
+      const mx = f => Math.max(...V.map(f)), mn = f => Math.min(...V.map(f)), ra = 1.22 * M.ctxs[M.pw].lmm * p.wfno * 1e3, wmax = mx(o => o.wf.rms);
+      cards([{ l: 'Spot RMS max', v: fx(mx(o => o.sp.rms * 1e3), 2), u: 'µm' }, { l: 'Rayon d\'Airy', v: fx(ra, 2), u: 'µm' }, { l: 'WFE RMS max', v: fx(wmax, 3), u: 'λ', c: wmax <= 0.0714 ? '#16a34a' : '#f59e0b' }, { l: 'Strehl min', v: fx(mn(o => o.st), 3), c: mn(o => o.st) >= 0.8 ? '#16a34a' : '#f59e0b' }]);
       const w7 = CW / 7; table(['Champ', 'Spot RMS (µm)', 'Spot GEO (µm)', 'WFE RMS (λ)', 'WFE PV (λ)', 'Strehl (FFT)', 'Vignetage'].map((t, k) => ({ t, w: w7, a: k ? 'right' : 'left', mono: k > 0 })), rows);
-      para(`Front d'onde à λ = ${fmt(M.wls[M.pw] * 1000, 5)} nm, tilt retiré ; spot polychromatique par rapport au barycentre ; rayon d'Airy ${fx(1.22 * M.ctxs[M.pw].lmm * p.wfno * 1e3, 2)} µm.`, { size: 8.5, color: MUT });
+      note(`Front d'onde à λ = ${fmt(M.wls[M.pw] * 1000, 5)} nm, tilt retiré ; spot polychromatique par rapport au barycentre. Critère de Maréchal : WFE RMS ≤ 0,0714 λ (Strehl ≥ 0,8) — repère vert sur les cartes.`);
     }
     if (cf.sec.seidel) {
       await step('Seidel…'); h1('Aberrations du 3ᵉ ordre (Seidel)');
       const sd = OE.seidel(M), keys = ['SI', 'SII', 'SIII', 'SIV', 'SV', 'CL', 'CT'], w8 = (CW - 40) / 7;
       table([{ t: 'Surf.', w: 40 }, ...['Sphérique', 'Coma', 'Astigm.', 'Petzval', 'Distorsion', 'Chrom. ax.', 'Chrom. lat.'].map(t => ({ t, w: w8, a: 'right', mono: true }))],
-        [...sd.rows.map(r => [r.j, ...keys.map(k => r[k].toExponential(3))]), ['Σ', ...keys.map(k => sd.sum[k].toExponential(3))]], { size: 8 });
-      const lm = sd.lmm; para(`Équivalents en front d'onde : W040 = ${fx(sd.sum.SI / 8 / lm, 3)} λ · W131 = ${fx(sd.sum.SII / 2 / lm, 3)} λ · W222 = ${fx(sd.sum.SIII / 2 / lm, 3)} λ · W220 = ${fx(sd.sum.SIV / 4 / lm, 3)} λ · W311 = ${fx(sd.sum.SV / 2 / lm, 3)} λ.`, { size: 8.5, color: MUT });
+        [...sd.rows.map(r => [r.j, ...keys.map(k => r[k].toExponential(3))]), ['Σ', ...keys.map(k => sd.sum[k].toExponential(3))]], { size: 8, total: true });
+      const lm = sd.lmm; note(`Équivalents en front d'onde : W040 = ${fx(sd.sum.SI / 8 / lm, 3)} λ · W131 = ${fx(sd.sum.SII / 2 / lm, 3)} λ · W222 = ${fx(sd.sum.SIII / 2 / lm, 3)} λ · W220 = ${fx(sd.sum.SIV / 4 / lm, 3)} λ · W311 = ${fx(sd.sum.SV / 2 / lm, 3)} λ.`);
     }
     // ---------------- analyses ----------------
     const renderAn = async (pp, title) => {
       await step(`Analyse : ${title}…`);
-      if (pp.type === 'zern') { const wf = OE.wavefront(M, pp.fi || 0, pp.wi ?? M.pw, 64, false), z = OE.zernFit(wf, +pp.nz || 16); h2(title, 80);
+      if (pp.type === 'zern') { const wf = OE.wavefront(M, pp.fi || 0, pp.wi ?? M.pw, 64, false), z = OE.zernFit(wf, +pp.nz || 16); h2(title, 80, true);
         table([{ t: 'Terme', w: 50 }, { t: 'n', w: 30, a: 'right' }, { t: 'Aberration', w: CW - 260 }, { t: 'Coef. (λ)', w: 90, a: 'right', mono: true }, { t: 'RMS (λ)', w: 90, a: 'right', mono: true }], z.c.map((v, i) => [`Z${i + 1}`, z.order[i], z.names[i], (v >= 0 ? '+' : '') + v.toFixed(5), i ? z.rmsTerm[i].toFixed(5) : '—']));
         kv([['RMS total (piston retiré)', `${fx(z.rmsTot, 5)} λ`], [`Résidu au-delà de Z${z.nz} (RMS / PV)`, `${fx(z.rmsRes, 5)} λ / ${fx(z.pvRes, 4)} λ`]]); return; }
       if (pp.type === 'presc') return;
       if (pp.type === 'imgsim') simSync(pp, M);
       const tall = ['spot', 'rayfan', 'opdfan'].includes(pp.type) && sys.fields.length > 2;
       const cv = rptCanvas((c, w, h) => R[pp.type](pp, M, c, w, h), 780, tall ? 560 : 430);
-      h2(title, CW * cv.height / cv.width + 6); image(cv);
+      h2(title, CW * cv.height / cv.width + 6, true); image(cv);
     };
     const anKeys = Object.keys(cf.an).filter(k => cf.an[k] && PT[k]);
     if (anKeys.length) {
@@ -7153,9 +7221,28 @@ async function genReport() {
         if (ctb.length) { h2('Principaux contributeurs (Monte-Carlo)', 120); table([{ t: 'Tolérance', w: CW - 120 }, { t: 'R² signé', w: 120, a: 'right', mono: true }], ctb.map(o => [o.it.label, fx(o.r2, 3)])); }
       }
     }
-    // pieds de page
-    const N = doc.pages.length;
-    doc.pages.forEach((pg, i) => { doc.page = pg; doc.line(L, PDF.H - 34, Rr, PDF.H - 34, { color: LINE }); doc.text(L, PDF.H - 22, `Focale — ${sys.title || ''}`.slice(0, 90), { size: 8, color: MUT }); doc.text(Rr, PDF.H - 22, `${date} · page ${i + 1} / ${N}`, { size: 8, color: MUT, align: 'right' }); });
+    // pieds de page (pas sur la page de garde)
+    const N = doc.pages.length, c0 = cf.sec.cover ? 1 : 0;
+    doc.pages.forEach((pg, i) => {
+      doc.page = pg;
+      if (i < c0) { doc.text(L, PDF.H - 26, `${date}`, { size: 8, color: MUT }); doc.text(Rr, PDF.H - 26, `${N} pages`, { size: 8, color: MUT, align: 'right' }); return; }
+      doc.line(L, PDF.H - 36, Rr, PDF.H - 36, { color: LINE }); doc.text(L, PDF.H - 22, `${sys.title || 'Focale'}`.slice(0, 80) + ` · ${date}`, { size: 7.8, color: MUT });
+      const t = `${i + 1} / ${N}`, w = PDF.measure(t, 8, 'bold') + 14; doc.rrect(Rr - w, PDF.H - 32, w, 15, 7.5, { fill: '#e8eefb' }); doc.text(Rr - w / 2, PDF.H - 21.5, t, { size: 8, font: 'bold', color: ACC2, align: 'center' });
+    });
+    // sommaire avec numéros de page (sur la page de garde)
+    if (tocBox) {
+      doc.page = doc.pages[0]; let ty = tocBox.y0; const room = BOT - 10 - ty, main = toc.filter(e => !e.sub), sub = toc.filter(e => e.sub);
+      const withSub = (main.length + sub.length) * 15 <= room, lh = Math.min(16, Math.max(11, room / Math.max(1, withSub ? main.length + sub.length : main.length)));
+      for (const e of toc) {
+        if (e.sub && !withSub) continue; if (ty > BOT - 4) break;
+        const x = e.sub ? L + 30 : L, fs = e.sub ? 8.6 : 9.8, f = e.sub ? 'reg' : 'bold', col = e.sub ? '#4b5563' : INK;
+        if (!e.sub) { doc.text(L, ty + 3, String(e.n).padStart(2, '0'), { size: 9.8, font: 'bold', color: ACC }); }
+        const label = e.sub ? e.t : e.t, x0 = e.sub ? x : L + 22; doc.text(x0, ty + 3, label, { size: fs, font: f, color: col });
+        const pg = String(e.pg), xe = Rr - PDF.measure(pg, fs, f) - 6, xs = x0 + PDF.measure(label, fs, f) + 6;
+        for (let d = xs; d < xe; d += 4) doc.rect(d, ty + 1.8, 0.9, 0.9, { fill: '#b6c0ce' });
+        doc.text(Rr, ty + 3, pg, { size: fs, font: f, color: col, align: 'right' }); ty += lh;
+      }
+    }
     await step('Écriture du PDF…');
     const bytes = doc.build({ title: `${cf.title} — ${sys.title || ''}`, author: cf.author });
     App._lastPDF = bytes;
