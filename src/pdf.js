@@ -140,8 +140,65 @@ const PDF = (() => {
       return out;
     }
   }
+  /**
+   * Aperçu : redessine une page d'un Doc (son flux de contenu) dans un canvas 2D, sans visionneuse PDF.
+   * Comprend les opérateurs produits par Doc : BT/ET Tm Tf Tj, rg RG w d J j, m l c h re f S B, q Q cm Do.
+   * imgs : images décodées (ImageBitmap) dans l'ordre de doc.images. k = pixels par point.
+   */
+  const RWIN = Object.fromEntries(Object.entries(WIN).map(([c, b]) => [b, c])), RSYM = Object.fromEntries(Object.entries(SYM).map(([c, b]) => [b, c]));
+  const CSSF = { F1: '', F2: 'bold ', F3: '', F4: '' }, FAM = { F1: 'Helvetica, Arial, "Liberation Sans", sans-serif', F2: 'Helvetica, Arial, "Liberation Sans", sans-serif', F3: '"Courier New", Courier, monospace', F4: 'Helvetica, Arial, sans-serif' };
+  function tokens(src) {
+    const out = []; let i = 0; const L = src.length;
+    while (i < L) {
+      const ch = src[i];
+      if (ch === ' ' || ch === '\n' || ch === '\r' || ch === '\t') { i++; continue; }
+      if (ch === '(') { let depth = 1, b = []; i++; while (i < L && depth) { let c = src[i];
+          if (c === '\\') { const nx = src[i + 1]; if (/[0-7]/.test(nx)) { let o = ''; let k = i + 1; while (k < L && o.length < 3 && /[0-7]/.test(src[k])) o += src[k++]; b.push(parseInt(o, 8)); i = k; continue; } b.push(nx.charCodeAt(0)); i += 2; continue; }
+          if (c === '(') depth++; else if (c === ')') { depth--; if (!depth) { i++; break; } } b.push(c.charCodeAt(0)); i++; }
+        out.push({ s: b }); continue; }
+      if (ch === '[') { const e = src.indexOf(']', i); out.push({ a: src.slice(i + 1, e).trim().split(/\s+/).filter(Boolean).map(Number) }); i = e + 1; continue; }
+      let e = i; while (e < L && !' \n\r\t()[]'.includes(src[e])) e++; const t = src.slice(i, e); i = e;
+      out.push(/^[-+.\d]/.test(t) ? +t : t);
+    }
+    return out;
+  }
+  function renderPage(doc, k, c, scale, imgs) {
+    const pg = doc.pages[k]; if (!pg) return; const s = scale;
+    c.save(); c.fillStyle = '#fff'; c.fillRect(0, 0, W * s, H * s); c.lineJoin = 'miter';
+    const X = x => x * s, Y = y => (H - y) * s; let fill = '#000', stroke = '#000', lw = 1, dash = [], st = [], font = 'F1', size = 10, tx = 0, ty = 0, path = false;
+    const rgb = (r, g, b) => `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
+    const begin = () => { if (!path) { c.beginPath(); path = true; } };
+    const stk = []; let cm = null;
+    for (const t of tokens(pg.join('\n'))) {
+      if (typeof t === 'number' || (t && (t.s || t.a)) || (typeof t === 'string' && t[0] === '/')) { stk.push(t); continue; }
+      const A = stk.splice(0);
+      switch (t) {
+        case 'rg': fill = rgb(A[0], A[1], A[2]); break; case 'RG': stroke = rgb(A[0], A[1], A[2]); break;
+        case 'w': lw = A[0]; break; case 'd': dash = (A[0] && A[0].a) || []; break; case 'J': c.lineCap = ['butt', 'round', 'square'][A[0]] || 'butt'; break; case 'j': c.lineJoin = ['miter', 'round', 'bevel'][A[0]] || 'miter'; break;
+        case 'm': begin(); c.moveTo(X(A[0]), Y(A[1])); break; case 'l': begin(); c.lineTo(X(A[0]), Y(A[1])); break;
+        case 'c': begin(); c.bezierCurveTo(X(A[0]), Y(A[1]), X(A[2]), Y(A[3]), X(A[4]), Y(A[5])); break; case 'h': if (path) c.closePath(); break;
+        case 're': begin(); c.rect(X(A[0]), Y(A[1] + A[3]), A[2] * s, A[3] * s); break;
+        case 'f': c.fillStyle = fill; c.fill(); path = false; break;
+        case 'S': c.strokeStyle = stroke; c.lineWidth = Math.max(0.35, lw * s); c.setLineDash(dash.map(v => v * s)); c.stroke(); c.setLineDash([]); path = false; break;
+        case 'B': c.fillStyle = fill; c.fill(); c.strokeStyle = stroke; c.lineWidth = Math.max(0.35, lw * s); c.setLineDash(dash.map(v => v * s)); c.stroke(); c.setLineDash([]); path = false; break;
+        case 'BT': break; case 'ET': break;
+        case 'Tm': tx = A[4]; ty = A[5]; break;
+        case 'Tf': font = String(A[0]).replace('/', ''); size = A[1]; break;
+        case 'Tj': { const b = (A[0] && A[0].s) || [], str = b.map(v => font === 'F4' ? (RSYM[String.fromCharCode(v)] || String.fromCharCode(v)) : (RWIN[v] || String.fromCharCode(v))).join('');
+          c.font = `${CSSF[font] || ''}${size * s}px ${FAM[font] || FAM.F1}`; c.fillStyle = fill; c.textBaseline = 'alphabetic'; c.fillText(str, X(tx), Y(ty));
+          tx += font === 'F3' ? str.length * 0.6 * size : c.measureText(str).width / s; break; }
+        case 'q': st.push([fill, stroke, lw, dash]); break; case 'Q': [fill, stroke, lw, dash] = st.pop() || [fill, stroke, lw, dash]; cm = null; break;
+        case 'cm': cm = A.slice(0, 6); break;
+        case 'Do': { const id = +String(A[0]).replace('/Im', ''), im = imgs && imgs[id]; if (cm) { const [w, , , h, x, y] = cm; if (im) c.drawImage(im, X(x), Y(y + h), w * s, h * s); else { c.fillStyle = '#eef2f7'; c.fillRect(X(x), Y(y + h), w * s, h * s); } } break; }
+        default: break;
+      }
+    }
+    c.restore();
+  }
+  /** images JPEG du document décodées pour l'aperçu */
+  async function decodeImages(doc) { return Promise.all(doc.images.map(im => (typeof createImageBitmap === 'function' ? createImageBitmap(new Blob([im.bytes], { type: 'image/jpeg' })) : Promise.resolve(null)).catch(() => null))); }
   /** JPEG d'un canvas (dataURL → octets) */
   function canvasJPEG(cv, q = 0.92) { const s = atob(cv.toDataURL('image/jpeg', q).split(',')[1]), b = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i); return b; }
-  return { Doc, measure, canvasJPEG, W, H };
+  return { Doc, measure, canvasJPEG, renderPage, decodeImages, W, H };
 })();
 if (typeof module !== 'undefined') module.exports = PDF;

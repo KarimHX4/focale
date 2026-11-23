@@ -2417,6 +2417,43 @@ function drawMerit() {
 /* ---------------- Tolérancement ---------------- */
 const TOL = { running: false, sens: null, inv: null, mc: null, stale: false, tabL: 'set', tabR: 'sens' };
 const tick = () => new Promise(r => setTimeout(r, 0));
+/* ---------------- Aperçu des PDF (rapports, plans) avant téléchargement ---------------- */
+const PV = { doc: null, bytes: null, name: '', imgs: null, zoom: 'fit', obs: null };
+async function previewPDF(doc, bytes, name, title) {
+  PV.doc = doc; PV.bytes = bytes; PV.name = name; PV.imgs = null;
+  let el = $('#pvw');
+  if (!el) {
+    el = document.createElement('div'); el.id = 'pvw'; el.className = 'pvw'; document.body.appendChild(el);
+    el.addEventListener('click', e => { const b = e.target.closest('[data-pv]'); if (!b) return; const a = b.dataset.pv;
+      if (a === 'close') pvClose(); if (a === 'dl') pvDownload(); if (a === 'zin' || a === 'zout') { const z = PV.zoom === 'fit' ? 1 : PV.zoom; PV.zoom = Math.max(0.5, Math.min(3, z * (a === 'zin' ? 1.25 : 0.8))); pvLayout(); } if (a === 'fit') { PV.zoom = 'fit'; pvLayout(); } });
+    window.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#pvw') && $('#pvw').classList.contains('open')) { e.stopPropagation(); pvClose(); } }, true);
+    new ResizeObserver(() => { if (el.classList.contains('open') && PV.zoom === 'fit') pvLayout(); }).observe(el);
+  }
+  const n = doc.pages.length;
+  el.innerHTML = `<div class="pvh"><b>Aperçu</b><span class="hint grow" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(title || name)} · ${n} page${n > 1 ? 's' : ''} · ${Math.round(bytes.length / 1024)} Ko</span>
+    <span class="hint" id="pvpg"></span><button class="bt" data-pv="zout" title="Réduire">−</button><button class="bt" data-pv="fit" title="Ajuster à la largeur">Ajuster</button><button class="bt" data-pv="zin" title="Agrandir">+</button>
+    <button class="tb pri" data-pv="dl" title="Télécharger ce PDF">⤓ Télécharger le PDF</button><button class="x" data-pv="close" title="Fermer l'aperçu (Échap)">✕</button></div>
+    <div class="pvb" id="pvb">${Array.from({ length: n }, (_, k) => `<div class="pvp" data-k="${k}"><canvas></canvas><span class="pvn">${k + 1} / ${n}</span></div>`).join('')}</div>`;
+  el.classList.add('open');
+  PV.imgs = await PDF.decodeImages(doc);
+  if (PV.doc !== doc) return;
+  if (PV.obs) PV.obs.disconnect();
+  PV.obs = new IntersectionObserver(es => { for (const e of es) if (e.isIntersecting) { pvDraw(+e.target.dataset.k); const pg = $('#pvpg'); if (pg) pg.textContent = `page ${+e.target.dataset.k + 1}`; } }, { root: $('#pvb'), rootMargin: '400px 0px' });
+  $$('#pvb .pvp').forEach(p => PV.obs.observe(p));
+  pvLayout();
+}
+function pvScale() { const b = $('#pvb'); const wFit = Math.max(200, Math.min(900, (b ? b.clientWidth : 800) - 40)); return (PV.zoom === 'fit' ? wFit : 700 * PV.zoom) / PDF.W; }
+function pvLayout() { const s = pvScale(); $$('#pvb .pvp').forEach(p => { p.style.width = Math.round(PDF.W * s) + 'px'; p.style.height = Math.round(PDF.H * s) + 'px'; p.dataset.done = ''; }); $$('#pvb .pvp').forEach(p => { const r = p.getBoundingClientRect(), br = $('#pvb').getBoundingClientRect(); if (r.bottom > br.top - 400 && r.top < br.bottom + 400) pvDraw(+p.dataset.k); }); }
+function pvDraw(k) {
+  const p = $(`#pvb .pvp[data-k="${k}"]`); if (!p || !PV.doc) return; const s = pvScale(), key = String(s); if (p.dataset.done === key) return; p.dataset.done = key;
+  const cv = p.querySelector('canvas'), d = window.devicePixelRatio || 1; cv.width = Math.round(PDF.W * s * d); cv.height = Math.round(PDF.H * s * d); cv.style.width = Math.round(PDF.W * s) + 'px'; cv.style.height = Math.round(PDF.H * s) + 'px';
+  try { PDF.renderPage(PV.doc, k, cv.getContext('2d'), s * d, PV.imgs); } catch (e) { console.error(e); }
+}
+function pvClose() { const el = $('#pvw'); if (el) el.classList.remove('open'); if (PV.obs) PV.obs.disconnect(); }
+async function pvDownload() {
+  if (!PV.bytes) return; const ok = await download(PV.name, new Blob([PV.bytes], { type: 'application/pdf' }));
+  if (ok !== false) toast(TOP ? `${PV.name} téléchargé` : `${PV.name} : confirmez le téléchargement dans la fenêtre de Claude (si rien n'apparaît, ouvrez Focale depuis GitHub Pages ou l'application installée)`, 6000);
+}
 /* ---------------- Multi-configuration (zoom) ---------------- */
 const mcName = (s, k) => (s.mc && s.mc.names && s.mc.names[k]) || `Config ${k + 1}`;
 function mcGo(k) {
@@ -2954,6 +2991,8 @@ function openAbout() {
 
 /* ---------------- Initialisation ---------------- */
 function init() {
+  window.addEventListener('error', e => { if (e && e.message && !/ResizeObserver/.test(e.message)) toast('Erreur : ' + e.message, 6000); });
+  window.addEventListener('unhandledrejection', e => { const m = e && e.reason && (e.reason.message || String(e.reason)); if (m && !(e.reason && (e.reason.cancel || e.reason.stale))) toast('Erreur : ' + m, 6000); });
   setTimeout(dlCap, 0);
   document.addEventListener('click', e => { const g = e.target.closest('[data-mcgo]'); if (g && !g.disabled) { const v = g.dataset.mcgo; mcGo(v === 'prev' || v === 'next' ? v : +v); } });
   document.addEventListener('change', e => { if (e.target.matches('[data-mcsel]')) mcGo(+e.target.value); });

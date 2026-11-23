@@ -254,6 +254,7 @@ table.ht{border-collapse:collapse;width:100%;font-size:12.5px}table.ht td,table.
 .ogrid{display:grid;grid-template-columns:minmax(300px,360px) minmax(0,1fr);gap:18px;flex:1;min-height:0}
 .oL,.oR{display:flex;flex-direction:column;min-height:0;min-width:0}
 .oL{overflow:auto;padding-right:4px}
+.pvw{position:fixed;inset:0;z-index:300;background:rgba(15,23,42,.72);display:none;flex-direction:column}.pvw.open{display:flex}.pvh{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line)}.pvb{flex:1;overflow:auto;padding:18px 0;display:flex;flex-direction:column;align-items:center;gap:16px}.pvp{position:relative;background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.35);flex:none}.pvp canvas{display:block}.pvn{position:absolute;right:8px;bottom:6px;font-size:11px;color:#6b7686;background:rgba(255,255,255,.85);padding:1px 6px;border-radius:8px}
 .gtip{position:absolute;pointer-events:none;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:11.5px;box-shadow:var(--shadow);z-index:5;max-width:230px}
 .hlist{flex:1;overflow:auto;border:1px solid var(--line);border-radius:8px;min-height:120px}.hrow{display:flex;align-items:center;gap:8px;padding:4px 8px;border-bottom:1px solid var(--line);font-size:12px;cursor:pointer}.hrow:hover{background:var(--panel2)}.hrow.cur{background:var(--sel);font-weight:600}.hrow.fut{opacity:.5}.hrow .hn{width:28px;color:var(--mut);font-family:var(--mono)}.hrow .ht{width:62px;color:var(--mut);font-family:var(--mono)}.hrow .hl{flex:1;min-width:0}
 .owt{display:flex;flex-wrap:wrap;gap:4px 8px;margin:3px 0}.owt label{display:inline-flex;align-items:center;gap:3px;font-size:11.5px;color:var(--mut)}.owt input{width:46px;height:22px}
@@ -384,7 +385,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 <div class="toast" id="toast"></div>
 <input type="file" id="fileIn" accept=".json,.zmx,.seq,.txt,.agf" style="display:none">
 <div class="drop" id="drop">Déposez un fichier .zmx, .seq, .json ou .agf</div>
-<script>const FOCALE_VERSION = '7a9cf2e1';</script>
+<script>const FOCALE_VERSION = 'eb7172de';</script>
 <script id="js-engine">
 'use strict';
 /* =====================================================================
@@ -3821,7 +3822,7 @@ const HELP = [
 <li><b>Points de sauvegarde</b> : donnez un nom à l'état actuel (★ Créer) pour y revenir plus tard, <b>même après avoir fermé Focale</b> (conservés dans le navigateur, 40 au plus). Charger un point de sauvegarde est lui-même annulable.</li></ul>` },
 
   { id: 'plans', t: 'Plans de fabrication ISO 10110', h: `
-<p><i>Fichier → Plans de fabrication ISO 10110 (PDF)…</i> : un plan A4 par lentille (paires de dioptres séparées par un verre ; les lentilles collées sont dessinées séparément et signalées).</p>
+<p><i>Fichier → Plans de fabrication ISO 10110 (PDF)…</i>, puis <b>Aperçu des plans</b> (téléchargement depuis l'aperçu) : un plan A4 par lentille (paires de dioptres séparées par un verre ; les lentilles collées sont dessinées séparément et signalées).</p>
 <ul><li><b>Coupe à l'échelle</b> (échelle normalisée 1:1, 2:1, 5:1…) : contour réel des faces (asphères comprises), diamètres utiles en bleu, axe optique, cotes de l'<b>épaisseur au centre</b> (avec sa tolérance), de l'<b>épaisseur au bord</b> (référence ; alerte si elle est faible), du <b>diamètre extérieur</b> (diamètre utile maximal + 2 × la surépaisseur de bord, ajustement h9) et du diamètre utile, rayons avec CX (convexe) / CC (concave), constante de conicité pour les asphères, chanfreins de protection.</li>
 <li><b>Tableau ISO 10110</b> à trois colonnes : surface gauche | matériau | surface droite. Surfaces : rayon, diamètre utile, traitement, <b>3/</b> A(B) (puissance et irrégularité en franges), <b>4/</b> centrage (minutes d'arc), <b>5/</b> défauts de surface, <b>6/</b> tenue au flux laser. Matériau : verre et fabricant, nd ± Δn, νd ± %, <b>0/</b> biréfringence, <b>1/</b> bulles et inclusions, <b>2/</b> homogénéité et stries, épaisseur, décentrement de l'élément.</li>
 <li>Les tolérances viennent de la <b>liste du tolérancement</b> (TFRN, TIRR, TST*, TET*, TTHI, TIND, TABB, TED*) quand elle existe ; sinon des valeurs par défaut de la fenêtre (mémorisées). Cartouche : titre, élément, échelle, date, dessinateur, feuille.</li></ul>
@@ -3920,7 +3921,8 @@ const HELP = [
 <p>L'extrémité de la fibre (gaine, cœur, cône d'ouverture) est dessinée dans le layout au plan objet.</p>` },
 
   { id: 'rapport', t: 'Rapports PDF', h: `
-<p>Bouton <b>Rapport</b> (ou <i>Fichier → Rapport PDF…</i>) : composez le rapport puis cliquez sur <b>Générer le PDF</b>.</p>
+<p>Bouton <b>Rapport</b> (ou <i>Fichier → Rapport PDF…</i>) : composez le rapport puis cliquez sur <b>Aperçu du rapport</b>.</p>
+<p><b>Aperçu</b> : tous les documents PDF (rapport, rapport de tolérancement, plans ISO 10110) s'ouvrent d'abord dans une visionneuse plein écran, page par page, rendue par Focale elle-même (elle fonctionne aussi dans claude.ai). Zoom −/+ et « Ajuster » (largeur de la fenêtre), défilement, numéro de page. <b>⤓ Télécharger le PDF</b> enregistre le fichier ; ✕ ou Échap ferme l'aperçu pour modifier les réglages et régénérer. Dans claude.ai, Claude demande une confirmation avant le téléchargement.</p>
 <ul><li><b>Titre, auteur, notes</b> : repris en page de garde (avec date, version de Focale et chiffres clés) et dans les pieds de page.</li>
 <li><b>Sections</b> : données du système et paraxiales, prescription (avec asphères et décentrements), multi-configuration (paramètres, synthèse et layout de chaque configuration), layout 2D, performances par champ (spot, front d'onde, Strehl, vignetage), coefficients de Seidel, détecteur, source / fibre, tableau des tolérances de fabrication, tolérancement (résultats déjà calculés : sensibilités, RSS, Monte-Carlo avec histogramme). Voir aussi <i>Rapport de tolérancement</i> (Tolérancement) et <i>Plans de fabrication ISO 10110</i>.</li>
 <li><b>Analyses</b> : cochez celles à inclure ; « un graphique par champ » les répète pour chaque champ. « Fenêtres d'analyse ouvertes » reprend exactement vos fenêtres avec leurs réglages.</li>
@@ -4862,9 +4864,66 @@ const PDF = (() => {
       return out;
     }
   }
+  /**
+   * Aperçu : redessine une page d'un Doc (son flux de contenu) dans un canvas 2D, sans visionneuse PDF.
+   * Comprend les opérateurs produits par Doc : BT/ET Tm Tf Tj, rg RG w d J j, m l c h re f S B, q Q cm Do.
+   * imgs : images décodées (ImageBitmap) dans l'ordre de doc.images. k = pixels par point.
+   */
+  const RWIN = Object.fromEntries(Object.entries(WIN).map(([c, b]) => [b, c])), RSYM = Object.fromEntries(Object.entries(SYM).map(([c, b]) => [b, c]));
+  const CSSF = { F1: '', F2: 'bold ', F3: '', F4: '' }, FAM = { F1: 'Helvetica, Arial, "Liberation Sans", sans-serif', F2: 'Helvetica, Arial, "Liberation Sans", sans-serif', F3: '"Courier New", Courier, monospace', F4: 'Helvetica, Arial, sans-serif' };
+  function tokens(src) {
+    const out = []; let i = 0; const L = src.length;
+    while (i < L) {
+      const ch = src[i];
+      if (ch === ' ' || ch === '\n' || ch === '\r' || ch === '\t') { i++; continue; }
+      if (ch === '(') { let depth = 1, b = []; i++; while (i < L && depth) { let c = src[i];
+          if (c === '\\') { const nx = src[i + 1]; if (/[0-7]/.test(nx)) { let o = ''; let k = i + 1; while (k < L && o.length < 3 && /[0-7]/.test(src[k])) o += src[k++]; b.push(parseInt(o, 8)); i = k; continue; } b.push(nx.charCodeAt(0)); i += 2; continue; }
+          if (c === '(') depth++; else if (c === ')') { depth--; if (!depth) { i++; break; } } b.push(c.charCodeAt(0)); i++; }
+        out.push({ s: b }); continue; }
+      if (ch === '[') { const e = src.indexOf(']', i); out.push({ a: src.slice(i + 1, e).trim().split(/\s+/).filter(Boolean).map(Number) }); i = e + 1; continue; }
+      let e = i; while (e < L && !' \n\r\t()[]'.includes(src[e])) e++; const t = src.slice(i, e); i = e;
+      out.push(/^[-+.\d]/.test(t) ? +t : t);
+    }
+    return out;
+  }
+  function renderPage(doc, k, c, scale, imgs) {
+    const pg = doc.pages[k]; if (!pg) return; const s = scale;
+    c.save(); c.fillStyle = '#fff'; c.fillRect(0, 0, W * s, H * s); c.lineJoin = 'miter';
+    const X = x => x * s, Y = y => (H - y) * s; let fill = '#000', stroke = '#000', lw = 1, dash = [], st = [], font = 'F1', size = 10, tx = 0, ty = 0, path = false;
+    const rgb = (r, g, b) => `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
+    const begin = () => { if (!path) { c.beginPath(); path = true; } };
+    const stk = []; let cm = null;
+    for (const t of tokens(pg.join('\n'))) {
+      if (typeof t === 'number' || (t && (t.s || t.a)) || (typeof t === 'string' && t[0] === '/')) { stk.push(t); continue; }
+      const A = stk.splice(0);
+      switch (t) {
+        case 'rg': fill = rgb(A[0], A[1], A[2]); break; case 'RG': stroke = rgb(A[0], A[1], A[2]); break;
+        case 'w': lw = A[0]; break; case 'd': dash = (A[0] && A[0].a) || []; break; case 'J': c.lineCap = ['butt', 'round', 'square'][A[0]] || 'butt'; break; case 'j': c.lineJoin = ['miter', 'round', 'bevel'][A[0]] || 'miter'; break;
+        case 'm': begin(); c.moveTo(X(A[0]), Y(A[1])); break; case 'l': begin(); c.lineTo(X(A[0]), Y(A[1])); break;
+        case 'c': begin(); c.bezierCurveTo(X(A[0]), Y(A[1]), X(A[2]), Y(A[3]), X(A[4]), Y(A[5])); break; case 'h': if (path) c.closePath(); break;
+        case 're': begin(); c.rect(X(A[0]), Y(A[1] + A[3]), A[2] * s, A[3] * s); break;
+        case 'f': c.fillStyle = fill; c.fill(); path = false; break;
+        case 'S': c.strokeStyle = stroke; c.lineWidth = Math.max(0.35, lw * s); c.setLineDash(dash.map(v => v * s)); c.stroke(); c.setLineDash([]); path = false; break;
+        case 'B': c.fillStyle = fill; c.fill(); c.strokeStyle = stroke; c.lineWidth = Math.max(0.35, lw * s); c.setLineDash(dash.map(v => v * s)); c.stroke(); c.setLineDash([]); path = false; break;
+        case 'BT': break; case 'ET': break;
+        case 'Tm': tx = A[4]; ty = A[5]; break;
+        case 'Tf': font = String(A[0]).replace('/', ''); size = A[1]; break;
+        case 'Tj': { const b = (A[0] && A[0].s) || [], str = b.map(v => font === 'F4' ? (RSYM[String.fromCharCode(v)] || String.fromCharCode(v)) : (RWIN[v] || String.fromCharCode(v))).join('');
+          c.font = `${CSSF[font] || ''}${size * s}px ${FAM[font] || FAM.F1}`; c.fillStyle = fill; c.textBaseline = 'alphabetic'; c.fillText(str, X(tx), Y(ty));
+          tx += font === 'F3' ? str.length * 0.6 * size : c.measureText(str).width / s; break; }
+        case 'q': st.push([fill, stroke, lw, dash]); break; case 'Q': [fill, stroke, lw, dash] = st.pop() || [fill, stroke, lw, dash]; cm = null; break;
+        case 'cm': cm = A.slice(0, 6); break;
+        case 'Do': { const id = +String(A[0]).replace('/Im', ''), im = imgs && imgs[id]; if (cm) { const [w, , , h, x, y] = cm; if (im) c.drawImage(im, X(x), Y(y + h), w * s, h * s); else { c.fillStyle = '#eef2f7'; c.fillRect(X(x), Y(y + h), w * s, h * s); } } break; }
+        default: break;
+      }
+    }
+    c.restore();
+  }
+  /** images JPEG du document décodées pour l'aperçu */
+  async function decodeImages(doc) { return Promise.all(doc.images.map(im => (typeof createImageBitmap === 'function' ? createImageBitmap(new Blob([im.bytes], { type: 'image/jpeg' })) : Promise.resolve(null)).catch(() => null))); }
   /** JPEG d'un canvas (dataURL → octets) */
   function canvasJPEG(cv, q = 0.92) { const s = atob(cv.toDataURL('image/jpeg', q).split(',')[1]), b = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i); return b; }
-  return { Doc, measure, canvasJPEG, W, H };
+  return { Doc, measure, canvasJPEG, renderPage, decodeImages, W, H };
 })();
 if (typeof module !== 'undefined') module.exports = PDF;
 
@@ -7289,6 +7348,43 @@ function drawMerit() {
 /* ---------------- Tolérancement ---------------- */
 const TOL = { running: false, sens: null, inv: null, mc: null, stale: false, tabL: 'set', tabR: 'sens' };
 const tick = () => new Promise(r => setTimeout(r, 0));
+/* ---------------- Aperçu des PDF (rapports, plans) avant téléchargement ---------------- */
+const PV = { doc: null, bytes: null, name: '', imgs: null, zoom: 'fit', obs: null };
+async function previewPDF(doc, bytes, name, title) {
+  PV.doc = doc; PV.bytes = bytes; PV.name = name; PV.imgs = null;
+  let el = $('#pvw');
+  if (!el) {
+    el = document.createElement('div'); el.id = 'pvw'; el.className = 'pvw'; document.body.appendChild(el);
+    el.addEventListener('click', e => { const b = e.target.closest('[data-pv]'); if (!b) return; const a = b.dataset.pv;
+      if (a === 'close') pvClose(); if (a === 'dl') pvDownload(); if (a === 'zin' || a === 'zout') { const z = PV.zoom === 'fit' ? 1 : PV.zoom; PV.zoom = Math.max(0.5, Math.min(3, z * (a === 'zin' ? 1.25 : 0.8))); pvLayout(); } if (a === 'fit') { PV.zoom = 'fit'; pvLayout(); } });
+    window.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#pvw') && $('#pvw').classList.contains('open')) { e.stopPropagation(); pvClose(); } }, true);
+    new ResizeObserver(() => { if (el.classList.contains('open') && PV.zoom === 'fit') pvLayout(); }).observe(el);
+  }
+  const n = doc.pages.length;
+  el.innerHTML = `<div class="pvh"><b>Aperçu</b><span class="hint grow" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(title || name)} · ${n} page${n > 1 ? 's' : ''} · ${Math.round(bytes.length / 1024)} Ko</span>
+    <span class="hint" id="pvpg"></span><button class="bt" data-pv="zout" title="Réduire">−</button><button class="bt" data-pv="fit" title="Ajuster à la largeur">Ajuster</button><button class="bt" data-pv="zin" title="Agrandir">+</button>
+    <button class="tb pri" data-pv="dl" title="Télécharger ce PDF">⤓ Télécharger le PDF</button><button class="x" data-pv="close" title="Fermer l'aperçu (Échap)">✕</button></div>
+    <div class="pvb" id="pvb">${Array.from({ length: n }, (_, k) => `<div class="pvp" data-k="${k}"><canvas></canvas><span class="pvn">${k + 1} / ${n}</span></div>`).join('')}</div>`;
+  el.classList.add('open');
+  PV.imgs = await PDF.decodeImages(doc);
+  if (PV.doc !== doc) return;
+  if (PV.obs) PV.obs.disconnect();
+  PV.obs = new IntersectionObserver(es => { for (const e of es) if (e.isIntersecting) { pvDraw(+e.target.dataset.k); const pg = $('#pvpg'); if (pg) pg.textContent = `page ${+e.target.dataset.k + 1}`; } }, { root: $('#pvb'), rootMargin: '400px 0px' });
+  $$('#pvb .pvp').forEach(p => PV.obs.observe(p));
+  pvLayout();
+}
+function pvScale() { const b = $('#pvb'); const wFit = Math.max(200, Math.min(900, (b ? b.clientWidth : 800) - 40)); return (PV.zoom === 'fit' ? wFit : 700 * PV.zoom) / PDF.W; }
+function pvLayout() { const s = pvScale(); $$('#pvb .pvp').forEach(p => { p.style.width = Math.round(PDF.W * s) + 'px'; p.style.height = Math.round(PDF.H * s) + 'px'; p.dataset.done = ''; }); $$('#pvb .pvp').forEach(p => { const r = p.getBoundingClientRect(), br = $('#pvb').getBoundingClientRect(); if (r.bottom > br.top - 400 && r.top < br.bottom + 400) pvDraw(+p.dataset.k); }); }
+function pvDraw(k) {
+  const p = $(`#pvb .pvp[data-k="${k}"]`); if (!p || !PV.doc) return; const s = pvScale(), key = String(s); if (p.dataset.done === key) return; p.dataset.done = key;
+  const cv = p.querySelector('canvas'), d = window.devicePixelRatio || 1; cv.width = Math.round(PDF.W * s * d); cv.height = Math.round(PDF.H * s * d); cv.style.width = Math.round(PDF.W * s) + 'px'; cv.style.height = Math.round(PDF.H * s) + 'px';
+  try { PDF.renderPage(PV.doc, k, cv.getContext('2d'), s * d, PV.imgs); } catch (e) { console.error(e); }
+}
+function pvClose() { const el = $('#pvw'); if (el) el.classList.remove('open'); if (PV.obs) PV.obs.disconnect(); }
+async function pvDownload() {
+  if (!PV.bytes) return; const ok = await download(PV.name, new Blob([PV.bytes], { type: 'application/pdf' }));
+  if (ok !== false) toast(TOP ? `${PV.name} téléchargé` : `${PV.name} : confirmez le téléchargement dans la fenêtre de Claude (si rien n'apparaît, ouvrez Focale depuis GitHub Pages ou l'application installée)`, 6000);
+}
 /* ---------------- Multi-configuration (zoom) ---------------- */
 const mcName = (s, k) => (s.mc && s.mc.names && s.mc.names[k]) || `Config ${k + 1}`;
 function mcGo(k) {
@@ -7826,6 +7922,8 @@ function openAbout() {
 
 /* ---------------- Initialisation ---------------- */
 function init() {
+  window.addEventListener('error', e => { if (e && e.message && !/ResizeObserver/.test(e.message)) toast('Erreur : ' + e.message, 6000); });
+  window.addEventListener('unhandledrejection', e => { const m = e && e.reason && (e.reason.message || String(e.reason)); if (m && !(e.reason && (e.reason.cancel || e.reason.stale))) toast('Erreur : ' + m, 6000); });
   setTimeout(dlCap, 0);
   document.addEventListener('click', e => { const g = e.target.closest('[data-mcgo]'); if (g && !g.disabled) { const v = g.dataset.mcgo; mcGo(v === 'prev' || v === 'next' ? v : +v); } });
   document.addEventListener('change', e => { if (e.target.matches('[data-mcsel]')) mcGo(+e.target.value); });
@@ -7949,7 +8047,7 @@ function openReport() {
     <div class="rgrid">${an.map(k => `<label><input type="checkbox" data-ra="${k}" ${c.an[k] ? 'checked' : ''}>${PT[k].l}</label>`).join('')}</div>
     <label class="hint" style="display:flex;gap:6px;margin-top:8px"><input type="checkbox" data-r="perField" ${c.perField ? 'checked' : ''}>Un graphique par champ pour les analyses qui dépendent du champ (front d'onde, PSF, énergie encerclée, polarisation…)</label>
     <div class="hint" style="margin-top:6px">Les analyses sont rendues en haute résolution sur fond blanc ; textes et tableaux sont vectoriels. Le rapport utilise le système et les réglages actuels (détecteur, source, tolérancement déjà calculé).</div></div>
-    <div class="df"><span class="hint grow" id="rptMsg"></span><button class="tb pri" data-d="rgen">Générer le PDF</button></div>`, true);
+    <div class="df"><span class="hint grow" id="rptMsg"></span><button class="tb pri" data-d="rgen" title="Génère le rapport et l'affiche en aperçu ; le téléchargement se fait depuis l'aperçu">Aperçu du rapport</button></div>`, true);
   const box = $('#dlg');
   box.oninput = box.onchange = e => {
     const t = e.target, cf = rptCfg();
@@ -8277,8 +8375,8 @@ async function genReport(ov) {
     await step('Écriture du PDF…');
     const bytes = doc.build({ title: `${cf.title} — ${sys.title || ''}`, author: cf.author });
     App._lastPDF = bytes;
-    download(`${fileBase()}_${ov && ov.fname ? ov.fname : 'rapport'}.pdf`, new Blob([bytes], { type: 'application/pdf' }));
-    msg(`PDF généré : ${N} pages, ${Math.round(bytes.length / 1024)} Ko`); toast('Rapport PDF téléchargé');
+    msg(`PDF prêt : ${N} pages, ${Math.round(bytes.length / 1024)} Ko — aperçu ouvert`);
+    previewPDF(doc, bytes, `${fileBase()}_${ov && ov.fname ? ov.fname : 'rapport'}.pdf`, `${cf.title || 'Rapport'} — ${sys.title || ''}`);
   } catch (e) { console.error(e); msg('Erreur : ' + e.message); toast('Erreur pendant la génération du rapport'); }
   finally { App.forceLight = false; App.view = savedView; App.mode = savedMode; readTheme(); drawLayout(); }
 }
@@ -8312,7 +8410,7 @@ function openTolReport() {
     <div class="row"><label style="width:120px">Notes</label><textarea class="in" id="trno" rows="3" style="flex:1">${esc(TR.notes || '')}</textarea></div>
     <label class="row"><input type="checkbox" id="trinv" ${TR.useInv ? 'checked' : ''} ${TOL.inv ? '' : 'disabled'}> ajouter la colonne des tolérances retenues (calcul inverse, arrondies)</label>
     <div class="row" style="gap:8px"><button class="bt" data-d="tolopen">Ouvrir le tolérancement…</button><button class="bt" data-d="dwopen">Plans ISO 10110…</button></div></div>
-    <div class="df"><span class="hint grow" id="trmsg"></span><button class="tb pri" data-d="trgen">Générer le PDF</button></div>`, true, { w: 720, h: 480 });
+    <div class="df"><span class="hint grow" id="trmsg"></span><button class="tb pri" data-d="trgen" title="Génère le rapport et l'affiche en aperçu ; le téléchargement se fait depuis l'aperçu">Aperçu du rapport</button></div>`, true, { w: 720, h: 480 });
   $('#trau').addEventListener('change', e => TR.author = e.target.value); $('#trno').addEventListener('change', e => TR.notes = e.target.value); $('#trinv').addEventListener('change', e => TR.useInv = e.target.checked);
 }
 
@@ -8347,8 +8445,8 @@ function drwTols(e, cf) {
   return { s1: surf(e.i), s2: surf(e.k), dt: tv('TTHI', e.i) ?? cf.dt, dn: tv('TIND', e.i) ?? cf.dn, dv: tv('TABB', e.i) ?? cf.dv, ed: Math.max(tv('TEDX', e.i) || 0, tv('TEDY', e.i) || 0), fromTol: L.length > 0 };
 }
 function openDrawings() {
-  const M = App.M; if (!M || !M.ok) { toast('Système invalide'); return; }
-  const E = lensElems(M), cf = drwCfg(); if (!E.length) { toast('Aucune lentille dans le système'); return; }
+  const M = App.M, cf = drwCfg(), E = M && M.ok ? lensElems(M) : [];
+  if (!E.length) { dlg(`<h2>Plans de fabrication (ISO 10110) <button class="x" data-d="close">✕</button></h2><div class="db"><p>${M && M.ok ? 'Ce système ne contient aucune lentille (paire de dioptres séparés par un verre) : rien à dessiner. Les miroirs, réseaux et lentilles idéales n\'ont pas de plan de lentille.' : 'Le système est invalide : corrigez-le avant de générer les plans.'}</p></div>`, true, { w: 620, h: 220 }); return; }
   const sel = cf.sel && cf.sel.length === E.length ? cf.sel : E.map(() => true);
   const inp = (k, l, w = 90, title = '') => `<label class="row" title="${esc(title)}" style="gap:6px"><span style="width:190px">${l}</span><input class="in" data-dw="${k}" value="${esc(String(cf[k] ?? ''))}" style="width:${w}px"></label>`;
   dlg(`<h2>Plans de fabrication (ISO 10110) <button class="x" data-d="close">✕</button></h2><div class="db" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px">
@@ -8360,7 +8458,7 @@ function openDrawings() {
       ${inp('fr', '3/ Puissance (franges)', 60)}${inp('irr', '3/ Irrégularité (franges)', 60)}${inp('cent', '4/ Centrage (minutes d\'arc)', 60)}${inp('dt', 'Épaisseur au centre ± (mm)', 60)}
       ${inp('dn', 'Indice nd ±', 60)}${inp('dv', 'Constringence νd ± (%)', 60)}${inp('imp', '5/ Défauts de surface', 90, 'ISO 10110-7, ex. 3×0,16')}${inp('coat', 'Traitement', 150)}
       ${inp('stress', 'Biréfringence (0/, nm/cm)', 90)}${inp('bub', 'Bulles et inclusions (1/)', 90)}${inp('inh', 'Homogénéité, stries (2/)', 90)}${inp('laser', '6/ Tenue au flux laser', 150, 'Laisser vide si sans objet')}</div></div>
-    <div class="df"><span class="hint grow" id="dwmsg"></span><button class="tb pri" data-d="dwgen">Générer le PDF</button></div>`, true, { w: 980, h: 640 });
+    <div class="df"><span class="hint grow" id="dwmsg"></span><button class="tb pri" data-d="dwgen" title="Génère les plans et les affiche en aperçu ; le téléchargement se fait depuis l'aperçu">Aperçu des plans</button></div>`, true, { w: 980, h: 640 });
 }
 function drwEvent(t) {
   const cf = drwCfg();
@@ -8441,8 +8539,8 @@ async function genDrawings() {
   }
   if (!pages) { msg('Aucune lentille sélectionnée'); return; }
   const bytes = doc.build({ title: `Plans de fabrication — ${App.sys.title || ''}`, author: cf.author }); App._lastDrw = bytes;
-  await download(`${fileBase()}_plans_ISO10110.pdf`, new Blob([bytes], { type: 'application/pdf' }));
-  msg(`PDF généré : ${pages} plan(s)`);
+  msg(`PDF prêt : ${pages} plan(s) — aperçu ouvert`);
+  previewPDF(doc, bytes, `${fileBase()}_plans_ISO10110.pdf`, `Plans de fabrication — ${App.sys.title || ''}`);
 }
 
 </script>

@@ -31,7 +31,7 @@ function openReport() {
     <div class="rgrid">${an.map(k => `<label><input type="checkbox" data-ra="${k}" ${c.an[k] ? 'checked' : ''}>${PT[k].l}</label>`).join('')}</div>
     <label class="hint" style="display:flex;gap:6px;margin-top:8px"><input type="checkbox" data-r="perField" ${c.perField ? 'checked' : ''}>Un graphique par champ pour les analyses qui dépendent du champ (front d'onde, PSF, énergie encerclée, polarisation…)</label>
     <div class="hint" style="margin-top:6px">Les analyses sont rendues en haute résolution sur fond blanc ; textes et tableaux sont vectoriels. Le rapport utilise le système et les réglages actuels (détecteur, source, tolérancement déjà calculé).</div></div>
-    <div class="df"><span class="hint grow" id="rptMsg"></span><button class="tb pri" data-d="rgen">Générer le PDF</button></div>`, true);
+    <div class="df"><span class="hint grow" id="rptMsg"></span><button class="tb pri" data-d="rgen" title="Génère le rapport et l'affiche en aperçu ; le téléchargement se fait depuis l'aperçu">Aperçu du rapport</button></div>`, true);
   const box = $('#dlg');
   box.oninput = box.onchange = e => {
     const t = e.target, cf = rptCfg();
@@ -359,8 +359,8 @@ async function genReport(ov) {
     await step('Écriture du PDF…');
     const bytes = doc.build({ title: `${cf.title} — ${sys.title || ''}`, author: cf.author });
     App._lastPDF = bytes;
-    download(`${fileBase()}_${ov && ov.fname ? ov.fname : 'rapport'}.pdf`, new Blob([bytes], { type: 'application/pdf' }));
-    msg(`PDF généré : ${N} pages, ${Math.round(bytes.length / 1024)} Ko`); toast('Rapport PDF téléchargé');
+    msg(`PDF prêt : ${N} pages, ${Math.round(bytes.length / 1024)} Ko — aperçu ouvert`);
+    previewPDF(doc, bytes, `${fileBase()}_${ov && ov.fname ? ov.fname : 'rapport'}.pdf`, `${cf.title || 'Rapport'} — ${sys.title || ''}`);
   } catch (e) { console.error(e); msg('Erreur : ' + e.message); toast('Erreur pendant la génération du rapport'); }
   finally { App.forceLight = false; App.view = savedView; App.mode = savedMode; readTheme(); drawLayout(); }
 }
@@ -394,6 +394,6 @@ function openTolReport() {
     <div class="row"><label style="width:120px">Notes</label><textarea class="in" id="trno" rows="3" style="flex:1">${esc(TR.notes || '')}</textarea></div>
     <label class="row"><input type="checkbox" id="trinv" ${TR.useInv ? 'checked' : ''} ${TOL.inv ? '' : 'disabled'}> ajouter la colonne des tolérances retenues (calcul inverse, arrondies)</label>
     <div class="row" style="gap:8px"><button class="bt" data-d="tolopen">Ouvrir le tolérancement…</button><button class="bt" data-d="dwopen">Plans ISO 10110…</button></div></div>
-    <div class="df"><span class="hint grow" id="trmsg"></span><button class="tb pri" data-d="trgen">Générer le PDF</button></div>`, true, { w: 720, h: 480 });
+    <div class="df"><span class="hint grow" id="trmsg"></span><button class="tb pri" data-d="trgen" title="Génère le rapport et l'affiche en aperçu ; le téléchargement se fait depuis l'aperçu">Aperçu du rapport</button></div>`, true, { w: 720, h: 480 });
   $('#trau').addEventListener('change', e => TR.author = e.target.value); $('#trno').addEventListener('change', e => TR.notes = e.target.value); $('#trinv').addEventListener('change', e => TR.useInv = e.target.checked);
 }

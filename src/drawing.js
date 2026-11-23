@@ -27,8 +27,8 @@ function drwTols(e, cf) {
   return { s1: surf(e.i), s2: surf(e.k), dt: tv('TTHI', e.i) ?? cf.dt, dn: tv('TIND', e.i) ?? cf.dn, dv: tv('TABB', e.i) ?? cf.dv, ed: Math.max(tv('TEDX', e.i) || 0, tv('TEDY', e.i) || 0), fromTol: L.length > 0 };
 }
 function openDrawings() {
-  const M = App.M; if (!M || !M.ok) { toast('Système invalide'); return; }
-  const E = lensElems(M), cf = drwCfg(); if (!E.length) { toast('Aucune lentille dans le système'); return; }
+  const M = App.M, cf = drwCfg(), E = M && M.ok ? lensElems(M) : [];
+  if (!E.length) { dlg(`<h2>Plans de fabrication (ISO 10110) <button class="x" data-d="close">✕</button></h2><div class="db"><p>${M && M.ok ? 'Ce système ne contient aucune lentille (paire de dioptres séparés par un verre) : rien à dessiner. Les miroirs, réseaux et lentilles idéales n\'ont pas de plan de lentille.' : 'Le système est invalide : corrigez-le avant de générer les plans.'}</p></div>`, true, { w: 620, h: 220 }); return; }
   const sel = cf.sel && cf.sel.length === E.length ? cf.sel : E.map(() => true);
   const inp = (k, l, w = 90, title = '') => `<label class="row" title="${esc(title)}" style="gap:6px"><span style="width:190px">${l}</span><input class="in" data-dw="${k}" value="${esc(String(cf[k] ?? ''))}" style="width:${w}px"></label>`;
   dlg(`<h2>Plans de fabrication (ISO 10110) <button class="x" data-d="close">✕</button></h2><div class="db" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px">
@@ -40,7 +40,7 @@ function openDrawings() {
       ${inp('fr', '3/ Puissance (franges)', 60)}${inp('irr', '3/ Irrégularité (franges)', 60)}${inp('cent', '4/ Centrage (minutes d\'arc)', 60)}${inp('dt', 'Épaisseur au centre ± (mm)', 60)}
       ${inp('dn', 'Indice nd ±', 60)}${inp('dv', 'Constringence νd ± (%)', 60)}${inp('imp', '5/ Défauts de surface', 90, 'ISO 10110-7, ex. 3×0,16')}${inp('coat', 'Traitement', 150)}
       ${inp('stress', 'Biréfringence (0/, nm/cm)', 90)}${inp('bub', 'Bulles et inclusions (1/)', 90)}${inp('inh', 'Homogénéité, stries (2/)', 90)}${inp('laser', '6/ Tenue au flux laser', 150, 'Laisser vide si sans objet')}</div></div>
-    <div class="df"><span class="hint grow" id="dwmsg"></span><button class="tb pri" data-d="dwgen">Générer le PDF</button></div>`, true, { w: 980, h: 640 });
+    <div class="df"><span class="hint grow" id="dwmsg"></span><button class="tb pri" data-d="dwgen" title="Génère les plans et les affiche en aperçu ; le téléchargement se fait depuis l'aperçu">Aperçu des plans</button></div>`, true, { w: 980, h: 640 });
 }
 function drwEvent(t) {
   const cf = drwCfg();
@@ -121,6 +121,6 @@ async function genDrawings() {
   }
   if (!pages) { msg('Aucune lentille sélectionnée'); return; }
   const bytes = doc.build({ title: `Plans de fabrication — ${App.sys.title || ''}`, author: cf.author }); App._lastDrw = bytes;
-  await download(`${fileBase()}_plans_ISO10110.pdf`, new Blob([bytes], { type: 'application/pdf' }));
-  msg(`PDF généré : ${pages} plan(s)`);
+  msg(`PDF prêt : ${pages} plan(s) — aperçu ouvert`);
+  previewPDF(doc, bytes, `${fileBase()}_plans_ISO10110.pdf`, `Plans de fabrication — ${App.sys.title || ''}`);
 }
