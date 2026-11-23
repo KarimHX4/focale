@@ -222,6 +222,28 @@ const P = []; OE.ray(M, 1, 20, 0, 1, { pts: P }); near('Visée réelle sur diaph
   near('Monte-Carlo : tirages imposés ≡ tirage direct', OE.tolTrialD(B, items, 'WFE', true, D).c, a1.c, 1e-12);
   const J = require('../src/jobs.js'); global.OE = OE; const jm = await J.mtf({ sys: t, o: { N: 32 } });
   near('Tâche « mtf » ≡ OE.mtf', jm.res[1].T[40], OE.mtf(M, 1, { fmax: jm.fmax, N: 32 }).T[40], 1e-12);
+  // surfaces toriques, diffractives, images fantômes, propriétés des verres, opérandes
+  { const b = S['Lentille plan-convexe f=100'](), M0 = OE.prepare(b);
+    const t = structuredClone(b); Object.assign(t.surfaces[1], { type: 'TOR', rx: b.surfaces[1].r, kx: 0 }); const Mt = OE.prepare(t);
+    near('Biconique Rx = Ry ≡ sphère (mm)', Math.hypot(OE.ray(Mt, 1, { x: 1, y: 2 }, 0.3, 0.6).x - OE.ray(M0, 1, { x: 1, y: 2 }, 0.3, 0.6).x, OE.ray(Mt, 1, { x: 1, y: 2 }, 0.3, 0.6).y - OE.ray(M0, 1, { x: 1, y: 2 }, 0.3, 0.6).y), 0, 1e-9);
+    const cy = structuredClone(b); Object.assign(cy.surfaces[1], { type: 'TOR', rx: Infinity }); const Mc = OE.prepare(cy), rx = OE.ray(Mc, 1, { x: 0, y: 0 }, 0.5, 0);
+    near('Cylindre : rayon en X non dévié', rx.L, 0, 1e-12);
+    const d = structuredClone(b); Object.assign(d.surfaces[2], { elem: 'doe', dm: 1, dnr: 10, da: [-200] }); const Md = OE.prepare(d), r = OE.ray(Md, Md.pw, { x: 0, y: 0 }, 0, 0.01);
+    near('DOE : foyer réel (petite ouverture) = foyer paraxial (mm)', Md.S[Md.N - 1].t - r.y / (r.M / r.N), Md.par.imgDist, 1e-3);
+    const l = Md.wls[Md.pw] * 1e-3; near('DOE : puissance paraxiale = −mλA1/(πR²)', 1 / Md.par.efl - 1 / M0.par.efl, l * 200 / (Math.PI * 100), 2e-5);
+    const z = IO.parseZMX(IO.toZMX(d).text).sys.surfaces[2]; near('DOE : aller-retour Zemax BINARY_2', z.da[0], -200, 1e-9);
+    const zt = IO.parseZMX(IO.toZMX(cy).text).sys.surfaces[1]; near('Cylindre : aller-retour Zemax BICONIC', zt.type === 'TOR' && !isFinite(zt.rx) ? 1 : 0, 1, 0); }
+  { const M = OE.prepare(S['Triplet de Cooke f=50 F/5']()), g = OE.ghosts(M);
+    near('Images fantômes : 15 paires pour 6 dioptres', g.n, 15, 0); near('Images fantômes : R = (Δn/Σn)² au carré', g.rows[0].R, ((1.62041 - 1) / (2.62041)) ** 4, 2e-4); }
+  near('Transmission interne N-BK7, 10 mm à 400 nm', OE.glassTau('N-BK7', 0.4, 10), 0.997, 2e-3);
+  near('Transmission interne : loi de Beer (25 mm)', OE.glassTau('N-BK7', 0.35, 25), Math.pow(OE.glassTau('N-BK7', 0.35, 10), 2.5), 1e-12);
+  { const r = OE.parseAGF('NM AGF2 2 517642 1.5168 64.17 0 0\nED 7.1 8.3 2.51 -0.0009 0\nCD 1.03961212 0.00600069867 0.231792344 0.0200179144 1.01046945 103.560653 0 0 0 0\nOD 1.0 1 0 1 2.3 2.3\nIT 0.4 0.998 25\n', 'AGFT'); OE.addGlasses(r, true);
+    near('AGF : prix relatif (OD)', OE.glassProps('AGF2').cost, 1, 0); near('AGF : transmission interne (IT, ramenée à 10 mm)', OE.glassTau('AGF2', 0.4, 25), 0.998, 1e-9); }
+  { const c = S['Triplet de Cooke f=50 F/5'](), M = OE.prepare(c);
+    near('Opérande MTFT champ 1 ≡ FTM', OE.opValue(M, { type: 'MTFT', p: 30, fi: 1 }).val, OE.mtf(M, 0, { freqs: [30], N: 24 }).T[0], 1e-12);
+    near('Opérande CTHK', OE.opValue(M, { type: 'CTHK', p: 3 }).val, Math.abs(M.S[3].t), 1e-12);
+    c.merit = { image: 'SPOT', ops: [], fw: [0, 0, 1] }; const r1 = OE.residuals(c), c3 = structuredClone(c); c3.fields = [c.fields[2]]; delete c3.merit.fw;
+    near('Poids de champ du critère : seul le champ 3 compte', OE.meritOf(r1.f), OE.meritOf(OE.residuals(c3).f), 1e-12); }
   console.log(fail ? `${fail} échec(s)` : 'Tous les tests passent'); process.exit(fail ? 1 : 0);
 })();
 

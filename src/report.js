@@ -4,7 +4,7 @@
    ===================================================================== */
 const RPT_DEF = {
   title: 'Rapport de conception optique', author: '', notes: '',
-  sec: { cover: true, system: true, presc: true, mc: true, layout: true, perf: true, seidel: true, panes: false, det: true, src: true, tol: true },
+  sec: { cover: true, system: true, presc: true, tolfab: false, mc: true, layout: true, perf: true, seidel: true, panes: false, det: true, src: true, tol: true },
   an: { spot: true, mtf: true, field: true, tfmtf: false, mtffield: false, relillum: false, distgrid: false, thermal: false, wfe: false, psf: false, rayfan: false, opdfan: false, zern: false, ee: false, footprint: false, chrom: false, polar: false, detector: false, source: false, imgsim: false, glass: false },
   perField: false,
 };
@@ -16,7 +16,7 @@ function rptCfg() {
 }
 function rptSave() { try { localStorage.setItem('focale.rpt', JSON.stringify(App.rpt)); } catch (e) { } }
 const RPT_SEC = [['cover', 'Page de garde et notes'], ['system', 'Données du système et paraxial'], ['presc', 'Prescription (surfaces)'], ['mc', 'Multi-configuration (si définie)'], ['layout', 'Layout 2D'], ['perf', 'Performances par champ'],
-  ['seidel', 'Coefficients de Seidel'], ['panes', 'Fenêtres d\'analyse ouvertes (avec leurs réglages)'], ['det', 'Détecteur (si actif)'], ['src', 'Source / fibre (si définie)'], ['tol', 'Tolérancement (si calculé)']];
+  ['seidel', 'Coefficients de Seidel'], ['panes', 'Fenêtres d\'analyse ouvertes (avec leurs réglages)'], ['det', 'Détecteur (si actif)'], ['src', 'Source / fibre (si définie)'], ['tolfab', 'Tableau des tolérances de fabrication'], ['tol', 'Tolérancement (si calculé)']];
 function openReport() {
   const c = rptCfg(), an = Object.keys(RPT_DEF.an).filter(k => PT[k]);
   dlg(`<h2>Rapport PDF <button class="x" data-d="close">✕</button></h2><div class="db">
@@ -47,9 +47,9 @@ function rptCanvas(fn, w = 780, h = 430, k = 2) {
   const c = cv.getContext('2d'); c.setTransform(k, 0, 0, k, 0, 0); c.fillStyle = '#fff'; c.fillRect(0, 0, w, h);
   fn(c, w, h); return cv;
 }
-async function genReport() {
+async function genReport(ov) {
   if (!App.M || !App.M.ok) { toast('Système invalide : impossible de générer le rapport'); return; }
-  const cf = rptCfg(), msg = t => { const e = $('#rptMsg'); if (e) e.textContent = t; };
+  const cf = ov ? { ...rptCfg(), ...ov } : rptCfg(), msg = t => { const e = $('#rptMsg') || $('#trmsg'); if (e) e.textContent = t; };
   const M = App.M, sys = App.sys, doc = new PDF.Doc(), L = 42, Rr = PDF.W - 42, CW = Rr - L, BOT = PDF.H - 48;
   const ACC = '#2563eb', ACC2 = '#1e3a8a', INK = '#111827', MUT = '#6b7686', LINE = '#dde3ea', SOFT = '#f4f7fb', DARK = '#0f172a';
   const date = new Date().toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -286,6 +286,25 @@ async function genReport() {
       await renderAn({ type: 'source', fi: 0, pix: false }, 'Image de la source');
     }
     // ---------------- tolérancement ----------------
+    // ---------------- tableau des tolérances de fabrication ----------------
+    if (cf.sec.tolfab) {
+      await step('Tolérances de fabrication…'); h1('Tolérances de fabrication');
+      const c = tolCfg(), L = (Array.isArray(c.list) ? c.list : OE.tolGen(sys, c)).filter(it => it.on !== false && (+it.min || +it.max));
+      const inv = TOL.inv && !TOL.stale ? TOL.inv : null, useInv = inv && cf.useInv;
+      para(`Critère : ${tolCritLabel(c)} · compensateurs : ${tolCompLabel(c)}${TOL.mc && TOL.mc.c.comp && TOL.mc.foc.length ? ` (course de mise au point observée au Monte-Carlo : ${fx(Math.min(...TOL.mc.foc) * 1e3, 0)} à ${fx(Math.max(...TOL.mc.foc) * 1e3, 0)} µm)` : ''}. Puissance et irrégularité en franges à 632,8 nm sur le diamètre utile ; bascules converties en minutes d'arc.${useInv ? ' Colonne « Retenue » : valeurs arrondies du calcul inverse.' : ''}`, { size: 9 });
+      const E = lensElems(M), elOf = j => { const e = E.find(q => q.i === j || q.k === j); return e ? `L${e.n}` : '—'; };
+      const nomOf = it => { const x = M.S[it.j]; switch (it.type) { case 'TFRN': case 'TRAD': case 'TIRR': return isFinite(x.r) ? `R ${fmt(x.r, 6)}` : 'plan'; case 'TTHI': return `${fmt(x.t, 6)} mm`; case 'TIND': return `nd ${fx(OE.glassN(x.glass, 0.5875618), 5)}`; case 'TABB': return `νd ${fx(OE.glassInfo(x.glass).vd, 2)}`; case 'TCON': return `k ${fmt(x.k || 0, 5)}`; default: return '0'; } };
+      const tv = it => { const v = Math.max(Math.abs(+it.min || 0), Math.abs(+it.max || 0)), u = OE.TOLT[it.type].unit, asym = Math.abs((+it.min || 0) + (+it.max || 0)) > 1e-12;
+        const s = u === '°' ? `${fx(v * 60, 2)}′` : `${fmt(v, 4)} ${u}`; return asym ? `${fmt(+it.min, 4)} / +${fmt(+it.max, 4)} ${u}` : '± ' + s; };
+      const iso = it => it.type === 'TFRN' ? '3/ A' : it.type === 'TIRR' ? '3/ (B)' : /^TST|^TET/.test(it.type) ? '4/' : '';
+      const rows = L.sort((a, b) => a.j - b.j).map(it => { const r = useInv ? inv.rows.find(q => q.it.type === it.type && q.it.j === it.j) : null;
+        return [elOf(it.j), OE.tolLabel(it.type, it.j), nomOf(it), tv(it), iso(it), ...(useInv ? [r ? '± ' + fmt(r.tr, 3) + (OE.TOLT[it.type].unit === '°' ? '° (' + fx(r.tr * 60, 1) + '′)' : ' ' + OE.TOLT[it.type].unit) : '—'] : [])]; });
+      table([{ t: 'Élément', w: 48 }, { t: 'Tolérance', w: useInv ? 160 : 190 }, { t: 'Nominal', w: 92, mono: true }, { t: 'Tolérance', w: useInv ? 92 : 112, a: 'right', mono: true }, { t: 'ISO 10110', w: useInv ? 52 : CW - 442 }, ...(useInv ? [{ t: 'Retenue', w: CW - 444 }] : [])], rows, { size: 7.8 });
+      if (TOL.sens && !TOL.stale) {
+        const Sx = TOL.sens, u = tolUnit(Sx.c.crit), w = Sx.rows.map(r => Math.max(r.lo ? r.lo.d : 0, r.hi ? r.hi.d : 0)), rss = Math.sqrt(w.reduce((a, v) => a + Math.max(0, v) ** 2, 0));
+        kv([['Critère nominal', `${fx(Sx.B.nominal, 4)} ${u}`], ['Dégradation RSS (sensibilités)', `${fx(rss, 4)} ${u}`], ...(TOL.mc ? (st => [['Monte-Carlo : 90 % des systèmes', `${fx(st.q(0.9), 4)} ${u}`], ...(st.yieldP != null ? [['Rendement estimé', `${fx(100 * st.yieldP, 1)} %`]] : [])])(mcStats(TOL.mc)) : [])]);
+      }
+    }
     if (cf.sec.tol && (TOL.sens || TOL.mc || TOL.inv)) {
       await step('Tolérancement…'); h1('Tolérancement');
       const C0 = (TOL.sens || TOL.mc || TOL.inv).c;
@@ -340,7 +359,7 @@ async function genReport() {
     await step('Écriture du PDF…');
     const bytes = doc.build({ title: `${cf.title} — ${sys.title || ''}`, author: cf.author });
     App._lastPDF = bytes;
-    download(`${fileBase()}_rapport.pdf`, new Blob([bytes], { type: 'application/pdf' }));
+    download(`${fileBase()}_${ov && ov.fname ? ov.fname : 'rapport'}.pdf`, new Blob([bytes], { type: 'application/pdf' }));
     msg(`PDF généré : ${N} pages, ${Math.round(bytes.length / 1024)} Ko`); toast('Rapport PDF téléchargé');
   } catch (e) { console.error(e); msg('Erreur : ' + e.message); toast('Erreur pendant la génération du rapport'); }
   finally { App.forceLight = false; App.view = savedView; App.mode = savedMode; readTheme(); drawLayout(); }
@@ -358,4 +377,23 @@ function lensMark(doc, x, y, k = 1) {
   doc.poly(ring(31), { stroke: '#3c659c', w: 6 * q, close: true });
   doc.poly(ring(16), { fill: '#60a5fa', close: true });
   doc.poly(ring(6), { fill: '#f59e0b', close: true });
+}
+
+/* ---------------- Rapport de tolérancement autonome (pour le fabricant) ---------------- */
+const TR = { useInv: true, author: '', notes: '' };
+function tolRptOverride() {
+  return { title: 'Rapport de tolérancement', author: TR.author || rptCfg().author, notes: TR.notes, fname: 'tolerances', useInv: TR.useInv,
+    sec: { cover: true, system: true, presc: true, tolfab: true, mc: false, layout: true, perf: false, seidel: false, panes: false, det: false, src: false, tol: true }, an: {}, perField: false };
+}
+function openTolReport() {
+  const st = [TOL.sens ? 'sensibilités' : '', TOL.inv ? 'tolérances inverses' : '', TOL.mc ? 'Monte-Carlo' : ''].filter(Boolean);
+  dlg(`<h2>Rapport de tolérancement <button class="x" data-d="close">✕</button></h2><div class="db">
+    <p>Document à transmettre au fabricant : page de garde, données et prescription du système, layout, <b>tableau des tolérances de fabrication</b> par lentille (valeur nominale, tolérance, notation ISO 10110, valeurs retenues du calcul inverse), compensateurs et leur course, puis les résultats d'analyse.</p>
+    <p class="hint">Résultats disponibles : ${st.length ? st.join(', ') : 'aucun — lancez au moins une analyse dans la fenêtre Tolérancer (le tableau des tolérances est produit dans tous les cas)'}${TOL.stale ? ' (calculés avant la dernière modification du système)' : ''}.</p>
+    <div class="row"><label style="width:120px">Auteur</label><input class="in" id="trau" value="${esc(TR.author || rptCfg().author || '')}" style="flex:1"></div>
+    <div class="row"><label style="width:120px">Notes</label><textarea class="in" id="trno" rows="3" style="flex:1">${esc(TR.notes || '')}</textarea></div>
+    <label class="row"><input type="checkbox" id="trinv" ${TR.useInv ? 'checked' : ''} ${TOL.inv ? '' : 'disabled'}> ajouter la colonne des tolérances retenues (calcul inverse, arrondies)</label>
+    <div class="row" style="gap:8px"><button class="bt" data-d="tolopen">Ouvrir le tolérancement…</button><button class="bt" data-d="dwopen">Plans ISO 10110…</button></div></div>
+    <div class="df"><span class="hint grow" id="trmsg"></span><button class="tb pri" data-d="trgen">Générer le PDF</button></div>`, true, { w: 720, h: 480 });
+  $('#trau').addEventListener('change', e => TR.author = e.target.value); $('#trno').addEventListener('change', e => TR.notes = e.target.value); $('#trinv').addEventListener('change', e => TR.useInv = e.target.checked);
 }

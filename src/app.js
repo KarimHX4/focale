@@ -45,12 +45,12 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 const newSurf = (o = {}) => ({ r: Infinity, t: 5, glass: '', sd: 0, sdFixed: false, k: 0, a4: 0, a6: 0, a8: 0, a10: 0, a12: 0, a14: 0, a16: 0, a18: 0, a20: 0, stop: false, comment: '', vr: false, vt: false, vk: false, tsolve: '',
   dx: 0, dy: 0, dz: 0, tx: 0, ty: 0, tz: 0, dmode: 'DEC', ...o });
 const isDec = s => !!(s.dx || s.dy || s.dz || s.tx || s.ty || s.tz);
-const ELEM = [['refr', 'Dioptre'], ['mirror', 'Miroir'], ['grating', 'Réseau (T)'], ['rgrating', 'Réseau (R)'], ['ideal', 'Lentille idéale'], ['polarizer', 'Polariseur'], ['waveplate', 'Lame d\'onde']];
+const ELEM = [['refr', 'Dioptre'], ['mirror', 'Miroir'], ['grating', 'Réseau (T)'], ['rgrating', 'Réseau (R)'], ['doe', 'Diffractif (DOE)'], ['ideal', 'Lentille idéale'], ['polarizer', 'Polariseur'], ['waveplate', 'Lame d\'onde']];
 const elemOf = s => s.elem === 'grating' ? (OE.isMirror(s) ? 'rgrating' : 'grating') : s.elem || (OE.isMirror(s) ? 'mirror' : 'refr');
 
 /* ---------------- État ---------------- */
 const App = {
-  sys: null, M: null, sel: 1, hist: [], hi: -1, focus: null,
+  sys: null, M: null, sel: 1, hist: [], hmeta: [], hi: -1, focus: null,
   panes: [{ type: 'spot' }, { type: 'wfe', fi: 0 }, { type: 'mtf' }, { type: 'psf', fi: 0 }, { type: 'rayfan' }, { type: 'footprint' }],
   grid: 4, mode: '2d', view: { auto: true, s: 1, ox: 0, oy: 0, yaw: 0.55, pitch: 0.32 }, nRays: 7, showAsph: false, qf: { crit: 'SPOT', wl: 'central' }, asst: true, fw: {},
 };
@@ -77,17 +77,62 @@ function normalize(s) {
   if (s.userGlass) { OE.addGlasses(Object.values(s.userGlass).map(g => ({ ...g, user: true })), false); delete s.userGlass; rebuildGlassList(); }
   return s;
 }
-function pushHist() {
+/** historique des modifications : App.hist (états JSON) et App.hmeta ({ t, label, name }) en parallèle */
+function pushHist(label) {
   const s = toJSON(App.sys);
   if (App.hist[App.hi] === s) return;
-  App.hist.splice(App.hi + 1); App.hist.push(s);
-  if (App.hist.length > 300) App.hist.shift();
-  App.hi = App.hist.length - 1; save();
+  const prev = App.hist[App.hi]; let lab = label;
+  if (!lab) { try { lab = prev ? histDiff(fromJSON(prev), App.sys) : 'Système initial'; } catch (e) { lab = 'Modification'; } }
+  App.hmeta = App.hmeta || [];
+  App.hist.splice(App.hi + 1); App.hmeta.splice(App.hi + 1); App.hist.push(s); App.hmeta.push({ t: Date.now(), label: lab });
+  if (App.hist.length > 300) { App.hist.shift(); App.hmeta.shift(); }
+  App.hi = App.hist.length - 1; save(); if (WIN.key === 'Historique') renderHist();
 }
-function commit(mut, opts = {}) { mut(App.sys); pushHist(); refresh(opts); }
-function undo() { if (App.hi > 0) { App.hi--; App.sys = fromJSON(App.hist[App.hi]); refresh(); toast('Annulé'); } }
-function redo() { if (App.hi < App.hist.length - 1) { App.hi++; App.sys = fromJSON(App.hist[App.hi]); refresh(); toast('Rétabli'); } }
-function loadSystem(s, msg) { App.sys = normalize(s); App.sel = 1; App.view.auto = true; pushHist(); refresh(); if (msg) toast(msg); }
+function commit(mut, opts = {}) { mut(App.sys); pushHist(opts.label); refresh(opts); }
+const histGo = k => { if (k < 0 || k >= App.hist.length || k === App.hi) return; App.hi = k; App.sys = fromJSON(App.hist[k]); refresh(); if (WIN.key === 'Historique') renderHist(); };
+function undo() { if (App.hi > 0) { const l = (App.hmeta[App.hi] || {}).label; histGo(App.hi - 1); toast('Annulé' + (l ? ' : ' + l : '')); } }
+function redo() { if (App.hi < App.hist.length - 1) { histGo(App.hi + 1); const l = (App.hmeta[App.hi] || {}).label; toast('Rétabli' + (l ? ' : ' + l : '')); } }
+function loadSystem(s, msg) { App.sys = normalize(s); App.sel = 1; App.view.auto = true; pushHist('Chargement : ' + (App.sys.title || 'système')); refresh(); if (msg) toast(msg); }
+/** description courte de la différence entre deux états du système */
+const HKEYS = { r: 'rayon', t: 'épaisseur', glass: 'verre', k: 'conique', sd: '½Ø', sdFixed: '½Ø fixe', comment: 'commentaire', elem: 'élément', type: 'forme', stop: 'diaphragme', tsolve: 'solve M',
+  dx: 'décentrement X', dy: 'décentrement Y', dz: 'décentrement Z', tx: 'bascule α', ty: 'bascule β', tz: 'bascule γ', dmode: 'mode de décentrement', vr: 'variable R', vt: 'variable T', vk: 'variable K', vg: 'verre variable',
+  rx: 'rayon X', kx: 'conique X', da: 'coefficients DOE', dm: 'ordre DOE', dnr: 'rayon de normalisation DOE', lpmm: 'traits/mm', gm: 'ordre', fid: 'focale idéale', tce: 'CTE' };
+function histDiff(a, b) {
+  const v = x => x === Infinity || x === -Infinity ? '∞' : typeof x === 'number' ? fmt(x, 6) : x === true ? 'oui' : x === false || x == null || x === '' ? '—' : Array.isArray(x) ? '[…]' : String(x);
+  const SA = a.surfaces, SB = b.surfaces;
+  if (SA.length !== SB.length) return SB.length > SA.length ? `Surface insérée (${SB.length - 2} surfaces)` : `Surface supprimée (${SB.length - 2} surfaces)`;
+  const ch = [];
+  for (let j = 0; j < SB.length; j++) for (const k of new Set([...Object.keys(SA[j]), ...Object.keys(SB[j])])) {
+    if (JSON.stringify(SA[j][k]) === JSON.stringify(SB[j][k])) continue;
+    const nm = HKEYS[k] || (/^a\d+$/.test(k) ? k.toUpperCase() : /^v/.test(k) ? 'variable ' + k.slice(1) : k);
+    ch.push(/^v|stop|sdFixed/.test(k) && typeof SB[j][k] === 'boolean' ? `S${j} ${nm} ${SB[j][k] ? 'activé' : 'désactivé'}` : `S${j} ${nm} ${v(SA[j][k])} → ${v(SB[j][k])}`);
+  }
+  if (ch.length) return ch.length > 2 ? `${ch.slice(0, 2).join(' · ')} (+${ch.length - 2})` : ch.join(' · ');
+  const P = [['fields', 'Champs'], ['wavelengths', 'Longueurs d\'onde'], ['primary', 'λ primaire'], ['aperture', 'Ouverture'], ['ftype', 'Type de champ'], ['merit', 'Fonction de mérite'], ['tol', 'Tolérancement'], ['mc', 'Multi-configuration'], ['env', 'Environnement'], ['title', 'Titre'], ['det', 'Détecteur'], ['src', 'Source'], ['apod', 'Apodisation'], ['aimMode', 'Visée'], ['rayAiming', 'Visée']];
+  for (const [k, l] of P) if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) { if (k === 'mc' && a.mc && b.mc && a.mc.cur !== b.mc.cur) return `Configuration active : ${mcName(b, b.mc.cur | 0)}`; if (k === 'title') return `Titre : ${b.title}`; return l; }
+  return 'Modification';
+}
+/* --- fenêtre Historique : états de la session et points de sauvegarde nommés (conservés entre les sessions) --- */
+const SNAPS = { list: null };
+function snapsLoad() { if (SNAPS.list) return SNAPS.list; try { SNAPS.list = JSON.parse(localStorage.getItem('focale.snaps') || '[]'); } catch (e) { SNAPS.list = []; } return SNAPS.list; }
+function snapsSave() { try { localStorage.setItem('focale.snaps', JSON.stringify(SNAPS.list.slice(0, 40))); } catch (e) { toast('Mémoire du navigateur pleine : point de sauvegarde non conservé'); } }
+function openHist() { dlg(`<h2>Historique <button class="x" data-d="close">✕</button></h2><div class="db" id="hw" style="display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px;min-height:0"></div>`, true, { w: 980, h: 600 }); renderHist(); }
+function renderHist() {
+  const el = $('#hw'); if (!el) return; const H = App.hist, Mt = App.hmeta || [], L = snapsLoad(), hm = t => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const rows = H.map((_, k) => k).reverse().map(k => { const m = Mt[k] || {}; return `<div class="hrow ${k === App.hi ? 'cur' : k > App.hi ? 'fut' : ''}" data-hgo="${k}" title="${k === App.hi ? 'État actuel' : 'Revenir à cet état'}"><span class="hn">${k + 1}</span><span class="ht">${m.t ? hm(m.t) : ''}</span><span class="hl">${m.name ? `<b>★ ${esc(m.name)}</b> · ` : ''}${esc(m.label || '—')}</span></div>`; }).join('');
+  el.innerHTML = `<div style="display:flex;flex-direction:column;min-height:0"><h4 class="th4" style="margin-top:0">Modifications de la session <span class="hint">(${H.length}, la plus récente en haut)</span></h4>
+      <div class="hlist">${rows}</div><div class="hint" style="margin-top:6px">Cliquez sur une ligne pour revenir à cet état ; les états plus récents restent disponibles (en grisé) tant qu'aucune nouvelle modification n'est faite. Ctrl+Z / Ctrl+Y parcourent la liste pas à pas.</div></div>
+    <div style="display:flex;flex-direction:column;min-height:0"><h4 class="th4" style="margin-top:0">Points de sauvegarde <span class="hint">(conservés entre les sessions)</span></h4>
+      <div class="row"><input class="in" id="snapName" placeholder="Nom (ex. « avant optimisation »)" style="flex:1"><button class="bt" data-hact="snap">★ Créer</button></div>
+      <div class="hlist">${L.length ? L.map((q, k) => `<div class="hrow"><span class="hl"><b>${esc(q.name)}</b><br><span class="hint">${esc(q.title || '')} · ${new Date(q.t).toLocaleString('fr-FR')}</span></span><button class="bt" data-hact="sload" data-i="${k}" style="height:22px">Charger</button><button class="x" data-hact="sdel" data-i="${k}" title="Supprimer">✕</button></div>`).join('') : '<div class="hint" style="padding:8px">Aucun point de sauvegarde. Nommez l\'état actuel pour pouvoir y revenir plus tard, même après avoir fermé Focale.</div>'}</div></div>`;
+  const c = el.querySelector('.hrow.cur'); if (c) c.scrollIntoView({ block: 'nearest' });
+}
+function histAction(b) {
+  const a = b.dataset.hact;
+  if (a === 'snap') { const nm = ($('#snapName').value || '').trim() || `Point ${new Date().toLocaleString('fr-FR')}`; snapsLoad().unshift({ name: nm, t: Date.now(), title: App.sys.title || '', sys: toJSON(App.sys) }); snapsSave(); if (App.hmeta[App.hi]) App.hmeta[App.hi].name = nm; renderHist(); toast(`Point de sauvegarde « ${nm} » créé`); }
+  if (a === 'sload') { const q = snapsLoad()[+b.dataset.i]; if (q) { App.sys = normalize(fromJSON(q.sys)); pushHist(`Point de sauvegarde chargé : ${q.name}`); refresh(); toast(`« ${q.name} » chargé (Ctrl+Z pour revenir)`); } }
+  if (a === 'sdel') { snapsLoad().splice(+b.dataset.i, 1); snapsSave(); renderHist(); }
+}
 
 /* ---------------- Assistant (module facultatif assistant.js, chargé à la demande) ---------------- */
 function applyAsstPref() { const b = $('#asstBtn'), m = $('#asstShow'); if (b) b.style.display = App.asst ? '' : 'none'; if (m) m.textContent = App.asst ? 'Masquer le bouton Assistant' : 'Afficher le bouton Assistant'; }
@@ -137,7 +182,8 @@ function renderLDE() {
     const obj = i === 0, img = i === N, mir = OE.isMirror(s);
     let badge = obj ? '<span class="b">OBJ</span>' : img ? '<span class="b">IMA</span>' : s.stop ? '<span class="b st">STO</span>' : mir ? '<span class="b mi">MIR</span>' : '';
     if (isDec(s)) badge += `<span class="b de" title="${{ DEC: 'Décentrement', DAR: 'Décentrement et retour', BEN: 'Pliage' }[s.dmode || 'DEC']}">${s.dmode || 'DEC'}</span>`;
-    if (s.type && s.type !== 'STD') badge += `<span class="b fr">${s.type === 'XY' ? 'XY' : 'ZRN'}</span>`;
+    if (s.type && s.type !== 'STD') badge += `<span class="b fr">${s.type === 'XY' ? 'XY' : s.type === 'TOR' ? (isFinite(+s.rx) && +s.rx ? 'TOR' : 'CYL') : 'ZRN'}</span>`;
+    if (s.elem === 'doe') badge += '<span class="b fr" title="Surface diffractive">DOE</span>';
     // valeurs de la prescription ; seules les grandeurs calculées (solve M, demi-diamètre automatique) viennent du modèle préparé
     const tVal = MS && s.tsolve === 'M' ? MS[i].t : s.t, sdVal = MS && !s.sdFixed ? MS[i].sd : s.sd;
     const gOK = mir || OE.isAir(s.glass) || isFinite(OE.glassN(s.glass, 0.5876));
@@ -171,7 +217,8 @@ function commitCell(i, k, raw) {
       if (elemOf(s) === raw) return false;
       commit(S => {
         const x = S.surfaces[i], wasM = OE.isMirror(x);
-        x.elem = ({ grating: 'grating', rgrating: 'grating', ideal: 'ideal', polarizer: 'polarizer', waveplate: 'waveplate' })[raw] || '';
+        x.elem = ({ grating: 'grating', rgrating: 'grating', ideal: 'ideal', polarizer: 'polarizer', waveplate: 'waveplate', doe: 'doe' })[raw] || '';
+        if (x.elem === 'doe') { if (x.dm == null) x.dm = 1; if (!(x.dnr > 0)) x.dnr = Math.max(1, +(App.M && App.M.ok ? App.M.S[i].sd : 10).toPrecision(3)); if (!Array.isArray(x.da)) x.da = [0, 0, 0, 0]; }
         if (raw === 'mirror' || raw === 'rgrating') x.glass = 'MIRROR'; else if (wasM) x.glass = '';
         if (x.elem === 'grating') { x.lpmm = x.lpmm || 600; if (x.gm == null) x.gm = 1; }
         if (x.elem === 'ideal') { x.fid = x.fid || 100; x.r = Infinity; }
@@ -396,39 +443,99 @@ function importAGF(name, text) {
 }
 function loadStoredAGF() { try { const st = JSON.parse(localStorage.getItem('focale.agf') || '{}'); for (const [cat, t] of Object.entries(st)) OE.addGlasses(OE.parseAGF(t, cat), true); } catch (e) { } }
 var GLW = { pick: null, refresh: null };
+/** données étendues d'un verre (mises en cache) : propriétés, Pg,F */
+function glassExt(g) {
+  GLW.ext = GLW.ext || new Map(); if (GLW.ext.has(g.name)) return GLW.ext.get(g.name);
+  const n = l => OE.glassN(g.name, l), nF = n(0.4861327), nC = n(0.6562725), ng = n(0.4358343), p = OE.glassProps(g.name) || {};
+  const o = { pgf: (ng - nF) / (nF - nC), dens: p.dens, cost: p.cost, res: p.res, dpgf: p.dpgf, it: p.it };
+  GLW.ext.set(g.name, o); return o;
+}
 function openGlasses() {
-  const cats = OE.cats(); GLW.pick = null;
+  const cats = OE.cats(); GLW.pick = null; GLW.view = GLW.view || 'list'; GLW.tl = GLW.tl || 0.4; GLW.col = GLW.col || 'cat'; GLW.ax = GLW.ax || 'nd';
   dlg(`<h2>Catalogue de verres <button class="x" data-d="close">✕</button></h2><div class="db" style="display:flex;flex-direction:column">
-    <div class="row"><input class="in" id="gq" style="flex:1" placeholder="Rechercher (nom, ex. BK7, LAH, FK…)"><select class="in" id="gc"><option value="">Tous les catalogues</option>${cats.map(c => `<option>${c}</option>`).join('')}</select>
-      <label class="hint"><input type="checkbox" id="go"> obsolètes</label><button class="bt" data-d="agf">Importer un AGF…</button></div>
+    <div class="row" style="flex-wrap:wrap;gap:6px"><span class="seg sm"><button data-gv="list" class="${GLW.view === 'list' ? 'on' : ''}">Liste</button><button data-gv="map" class="${GLW.view === 'map' ? 'on' : ''}">Diagramme</button></span>
+      <input class="in" id="gq" style="flex:1;min-width:140px" placeholder="Rechercher (nom, ex. BK7, LAH, FK…)"><select class="in" id="gc"><option value="">Tous les catalogues</option>${cats.map(c => `<option>${c}</option>`).join('')}</select>
+      <label class="hint"><input type="checkbox" id="gp"> préférentiels</label><label class="hint"><input type="checkbox" id="go"> obsolètes</label>
+      <label class="hint" title="Longueur d'onde de la transmission interne affichée">τ à <input class="in" id="gtl" value="${GLW.tl}" style="width:46px"> µm</label>
+      <label class="hint" title="Transmission interne minimale pour 10 mm (0 à 1) ; vide = pas de filtre">τ₁₀ ≥ <input class="in" id="gtm" value="${GLW.tm ?? ''}" style="width:42px" placeholder="—"></label>
+      <button class="bt" data-d="agf">Importer un AGF…</button></div>
+    <div class="row" id="gmapopt" style="display:${GLW.view === 'map' ? 'flex' : 'none'};gap:8px"><label class="hint">Axes <select class="in" id="gax"><option value="nd" ${GLW.ax === 'nd' ? 'selected' : ''}>nd / νd</option><option value="pgf" ${GLW.ax === 'pgf' ? 'selected' : ''}>Pg,F / νd (dispersion partielle)</option></select></label>
+      <label class="hint">Couleur <select class="in" id="gcol">${[['cat', 'catalogue'], ['tau', 'transmission τ₁₀'], ['cost', 'prix relatif'], ['dens', 'densité'], ['dpgf', 'ΔPg,F']].map(([k, l]) => `<option value="${k}" ${GLW.col === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label><span class="hint">survol : détails · clic : choisir · molette : zoom · glisser : déplacer · double-clic : vue entière</span></div>
     <div class="hint" id="gn"></div>
-    <div id="gwrap" style="flex:1 1 auto;min-height:120px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:6px"><table class="mt gtab" id="gt" style="font-size:12px"></table></div>
-    <div class="hint" style="margin-top:6px">Cliquez sur un verre pour le sélectionner, puis validez pour l'affecter à la surface sélectionnée dans l'éditeur (milieu après la surface) ; la fenêtre reste ouverte, vous pouvez changer de surface. Données : refractiveindex.info (CC0) d'après les catalogues fabricants ; les fichiers AGF importés (Zemax, formules 1–13) sont conservés dans ce navigateur.</div></div>
-    <div class="df" id="gconf"></div>`, true, { h: 640 });
+    <div id="gwrap" style="flex:1 1 auto;min-height:120px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:6px;position:relative"><table class="mt gtab" id="gt" style="font-size:12px"></table><canvas id="gmap" style="display:none;width:100%;height:100%"></canvas><div id="gtip" class="gtip" style="display:none"></div></div>
+    <div class="hint" style="margin-top:6px">Cliquez sur un verre pour le sélectionner, puis validez pour l'affecter à la surface sélectionnée dans l'éditeur (milieu après la surface) ; la fenêtre reste ouverte, vous pouvez changer de surface. τ₁₀ : transmission interne pour 10 mm d'épaisseur ; prix relatif à N-BK7 (fourni par les fichiers AGF des fabricants).</div>
+    <div class="df" id="gconf"></div>`, true, { h: 680 });
   const surf = () => { const j = App.sel, N = App.sys.surfaces.length - 1; return j >= 0 && j < N ? j : -1; };
   const key = n => String(n || '').toUpperCase().replace(/[\s\-_]/g, '');
   const conf = () => {
     const el = $('#gconf'); if (!el) return; const j = surf(), g = GLW.pick && OE.catalog().find(x => x.name === GLW.pick);
     const cur = j >= 0 ? (App.sys.surfaces[j].glass || 'air') : '';
-    if (!g) { el.innerHTML = `<span class="hint" style="margin-right:auto">${j >= 0 ? `Surface ${j} — verre actuel : <b>${esc(cur)}</b>. Sélectionnez un verre dans la liste.` : 'Sélectionnez une surface (pas l\'image) dans l\'éditeur de lentilles.'}</span>`; return; }
-    el.innerHTML = `<span style="margin-right:auto">${j >= 0 ? `Affecter <b>${esc(g.name)}</b> <span class="hint">(${g.cat} · nd ${g.nd.toFixed(5)} · νd ${g.vd.toFixed(2)})</span> à la surface <b>${j}</b> <span class="hint">— actuellement ${esc(cur)}</span> ?` : '<span class="hint">Sélectionnez une surface (pas l\'image) dans l\'éditeur de lentilles.</span>'}</span>
+    if (!g) { el.innerHTML = `<span class="hint" style="margin-right:auto">${j >= 0 ? `Surface ${j} — verre actuel : <b>${esc(cur)}</b>. Sélectionnez un verre dans la liste ou le diagramme.` : 'Sélectionnez une surface (pas l\'image) dans l\'éditeur de lentilles.'}</span>`; return; }
+    const e = glassExt(g), tau = OE.glassTau(g.name, GLW.tl, 10);
+    el.innerHTML = `<span style="margin-right:auto">${j >= 0 ? `Affecter <b>${esc(g.name)}</b> <span class="hint">(${g.cat} · nd ${g.nd.toFixed(5)} · νd ${g.vd.toFixed(2)}${isFinite(tau) ? ` · τ₁₀ ${fx(tau, 3)} à ${GLW.tl} µm` : ''}${e.cost != null ? ` · prix ×${fmt(e.cost, 3)}` : ''})</span> à la surface <b>${j}</b> <span class="hint">— actuellement ${esc(cur)}</span>` : 'Sélectionnez une surface (pas l\'image).'}</span>
       <button class="bt" id="gno">Annuler</button><button class="tb pri" id="gyes" ${j >= 0 ? '' : 'disabled'}>Valider</button>`;
     $('#gno').onclick = () => { GLW.pick = null; mark(); conf(); };
-    $('#gyes').onclick = () => { const jj = surf(); if (jj < 0) return toast('Sélectionnez une surface (pas l\'image)'); const n = GLW.pick; commit(S => S.surfaces[jj].glass = n); toast(`${n} → surface ${jj}`); GLW.pick = null; mark(); conf(); };
+    $('#gyes').onclick = () => { const jj = surf(); if (jj < 0) return toast('Sélectionnez une surface (pas l\'image)'); const n = GLW.pick; commit(S => S.surfaces[jj].glass = n, { label: `S${jj} verre → ${n}` }); toast(`${n} → surface ${jj}`); GLW.pick = null; mark(); conf(); };
   };
-  const mark = () => { const j = surf(), cur = j >= 0 ? key(App.sys.surfaces[j].glass) : ''; $$('#gt tr[data-g]').forEach(tr => { tr.classList.toggle('gsel', tr.dataset.g === GLW.pick); tr.classList.toggle('gcur', !!cur && key(tr.dataset.g) === cur); }); };
+  const mark = () => { const j = surf(), cur = j >= 0 ? key(App.sys.surfaces[j].glass) : ''; $$('#gt tr[data-g]').forEach(tr => { tr.classList.toggle('gsel', tr.dataset.g === GLW.pick); tr.classList.toggle('gcur', !!cur && key(tr.dataset.g) === cur); }); if (GLW.view === 'map') drawMap(); };
+  const list = () => {
+    const q = key($('#gq').value.trim()), c = $('#gc').value, ob = $('#go').checked, pf = $('#gp').checked, tm = parseFloat(String($('#gtm').value).replace(',', '.'));
+    return OE.catalog().filter(g => (!c || g.cat === c) && (ob || g.st !== 'o') && (!pf || g.st === 'p') && (!q || key(g.name).includes(q)) && (!(tm > 0) || OE.glassTau(g.name, GLW.tl, 10) >= tm));
+  };
+  const resTxt = r => r && r.some(v => v >= 0) ? r.map(v => v >= 0 ? fmt(v, 2) : '–').join(' / ') : '—';
+  const drawList = L => {
+    $('#gt').innerHTML = `<tr><th>Nom</th><th>Catalogue</th><th>nd</th><th>νd</th><th title="Dispersion partielle relative">Pg,F</th><th title="Transmission interne pour 10 mm à ${GLW.tl} µm">τ₁₀ (${GLW.tl} µm)</th><th title="Prix relatif à N-BK7 (fichiers AGF)">Prix</th><th>Densité</th><th title="Résistances chimiques CR / FR / SR / AR / PR (plus petit = meilleur)">Résistances</th><th>Domaine (µm)</th><th>Statut</th></tr>` + L.slice(0, 400).map(g => { const e = glassExt(g), t = OE.glassTau(g.name, GLW.tl, 10);
+      return `<tr data-g="${esc(g.name)}" tabindex="-1"><td><b>${esc(g.name)}</b></td><td><span class="sw" style="background:${catCol(g.cat)}"></span> ${g.cat}</td><td class="mono">${g.nd.toFixed(5)}</td><td class="mono">${g.vd.toFixed(2)}</td><td class="mono">${isFinite(e.pgf) ? e.pgf.toFixed(4) : '—'}</td><td class="mono" style="${isFinite(t) && t < 0.9 ? 'color:var(--warn)' : ''}">${isFinite(t) ? t.toFixed(3) : '—'}</td><td class="mono">${e.cost != null ? '×' + fmt(e.cost, 3) : '—'}</td><td class="mono">${e.dens ? fx(e.dens, 2) : '—'}</td><td class="mono" style="font-size:11px">${resTxt(e.res)}</td><td class="mono">${g.lmin ?? '—'} – ${g.lmax ?? '—'}</td><td>${{ s: 'standard', p: 'préférentiel', o: 'obsolète', i: 'inquiry' }[g.st] || g.st}</td></tr>`; }).join('');
+  };
+  // --- diagramme interactif ---
+  const val = g => { const e = glassExt(g); return GLW.col === 'tau' ? OE.glassTau(g.name, GLW.tl, 10) : GLW.col === 'cost' ? e.cost : GLW.col === 'dens' ? e.dens : GLW.col === 'dpgf' ? e.dpgf : null; };
+  const yOf = g => GLW.ax === 'pgf' ? glassExt(g).pgf : g.nd;
+  let pts = [], view = null;
+  const drawMap = () => {
+    const cv = $('#gmap'); if (!cv || GLW.view !== 'map') return; readTheme(); const { c, w, h } = prepCanvas(cv); const L = GLW.L || [];
+    if (!view) { const ys = L.map(yOf).filter(isFinite); view = { x: [100, 15], y: GLW.ax === 'pgf' ? [Math.min(...ys, 0.5) - 0.005, Math.max(...ys, 0.6) + 0.005] : [1.4, 2.08] }; }
+    const A = axes(c, { x: 0, y: 0, w, h }, view.x, view.y, { xl: 'Constringence νd', yl: GLW.ax === 'pgf' ? 'Pg,F' : 'nd', title: `${L.length} verres — ${({ cat: 'couleur : catalogue', tau: `couleur : τ₁₀ à ${GLW.tl} µm (rouge < 0,9)`, cost: 'couleur : prix relatif (AGF)', dens: 'couleur : densité', dpgf: 'couleur : ΔPg,F' })[GLW.col]}` });
+    GLW.A = A; const vs = L.map(val).filter(v => v != null && isFinite(v)), v0 = Math.min(...vs), v1 = Math.max(...vs), Lc = lut('vir');
+    const colOf = g => { if (GLW.col === 'cat') return catCol(g.cat); const v = val(g); if (v == null || !isFinite(v)) return 'rgba(140,140,140,.35)';
+      if (GLW.col === 'tau') return v < 0.9 ? '#dc2626' : v < 0.98 ? '#f59e0b' : '#16a34a'; const k = Math.round(255 * (v - v0) / Math.max(1e-12, v1 - v0)); return `rgb(${Lc[k * 3]},${Lc[k * 3 + 1]},${Lc[k * 3 + 2]})`; };
+    clip(c, A.P); pts = [];
+    for (const g of L) { const y = yOf(g); if (!isFinite(y)) continue; const X = A.X(g.vd), Y = A.Y(y); pts.push([X, Y, g]); c.globalAlpha = g.st === 'o' ? 0.35 : 0.8; c.fillStyle = colOf(g); c.beginPath(); c.arc(X, Y, g.st === 'p' ? 3.2 : 2.4, 0, 7); c.fill(); }
+    c.globalAlpha = 1;
+    const used = new Set(App.sys.surfaces.map(x => OE.glassKey(x.glass)).filter(Boolean));
+    for (const [X, Y, g] of pts) { const sel = g.name === GLW.pick, u = used.has(g.name); if (!sel && !u) continue; c.strokeStyle = sel ? TH.acc : '#ea580c'; c.lineWidth = 2; c.beginPath(); c.arc(X, Y, sel ? 7 : 5.5, 0, 7); c.stroke(); text(c, g.name, X + 8, Y - 7, { size: 10.5, col: sel ? TH.acc : '#ea580c', b: true }); }
+    c.restore();
+    if (GLW.col !== 'cat' && GLW.col !== 'tau' && vs.length) cbar(c, w - 26, 40, 10, Math.max(40, h - 90), v0, v1, 'vir', '');
+    if (GLW.col === 'cat') legend(c, 56, h - 8, [...new Set(L.map(g => g.cat))].map(k => ({ col: catCol(k), l: k })));
+  };
+  const near = (mx, my) => { let b = null, bd = 9; for (const p of pts) { const d = Math.hypot(p[0] - mx, p[1] - my); if (d < bd) { bd = d; b = p; } } return b; };
   const draw = () => {
-    const q = key($('#gq').value.trim()), c = $('#gc').value, ob = $('#go').checked;
-    const L = OE.catalog().filter(g => (!c || g.cat === c) && (ob || g.st !== 'o') && (!q || key(g.name).includes(q)));
-    $('#gn').textContent = `${L.length} verres`;
-    $('#gt').innerHTML = `<tr><th>Nom</th><th>Catalogue</th><th>nd</th><th>νd</th><th>Domaine (µm)</th><th>Statut</th></tr>` + L.slice(0, 400).map(g => `<tr data-g="${esc(g.name)}" tabindex="-1"><td><b>${esc(g.name)}</b></td><td><span class="sw" style="background:${catCol(g.cat)}"></span> ${g.cat}</td><td style="font-family:var(--mono)">${g.nd.toFixed(5)}</td><td style="font-family:var(--mono)">${g.vd.toFixed(2)}</td><td style="font-family:var(--mono)">${g.lmin ?? '—'} – ${g.lmax ?? '—'}</td><td>${{ s: 'standard', p: 'préférentiel', o: 'obsolète', i: 'inquiry' }[g.st] || g.st}</td></tr>`).join('');
-    mark();
+    const L = GLW.L = list(); $('#gn').textContent = `${L.length} verres`;
+    $('#gt').style.display = GLW.view === 'list' ? '' : 'none'; $('#gmap').style.display = GLW.view === 'map' ? 'block' : 'none'; $('#gmapopt').style.display = GLW.view === 'map' ? 'flex' : 'none'; $('#gwrap').style.overflow = GLW.view === 'map' ? 'hidden' : 'auto';
+    if (GLW.view === 'list') drawList(L); else drawMap(); mark();
   };
   GLW.refresh = () => { if (!$('#gconf')) return (GLW.refresh = null); mark(); conf(); };
-  $('#gq').addEventListener('input', draw); $('#gc').addEventListener('change', draw); $('#go').addEventListener('change', draw);
+  $('#gq').addEventListener('input', draw); $('#gc').addEventListener('change', draw); $('#go').addEventListener('change', draw); $('#gp').addEventListener('change', draw);
+  $('#gtl').addEventListener('change', e => { const v = parseFloat(String(e.target.value).replace(',', '.')); if (v > 0.2 && v < 3) GLW.tl = v; else e.target.value = GLW.tl; draw(); conf(); });
+  $('#gtm').addEventListener('change', e => { const v = parseFloat(String(e.target.value).replace(',', '.')); GLW.tm = v > 0 && v <= 1 ? v : null; draw(); });
+  $('#gax').addEventListener('change', e => { GLW.ax = e.target.value; view = null; drawMap(); });
+  $('#gcol').addEventListener('change', e => { GLW.col = e.target.value; drawMap(); });
+  $$('#dlg [data-gv]').forEach(b => b.addEventListener('click', () => { GLW.view = b.dataset.gv; $$('#dlg [data-gv]').forEach(x => x.classList.toggle('on', x === b)); draw(); }));
   $('#gt').addEventListener('mousedown', e => { const tr = e.target.closest('[data-g]'); if (!tr || e.button !== 0) return; GLW.pick = tr.dataset.g; mark(); conf(); });
   $('#gt').addEventListener('dblclick', e => { if (e.target.closest('[data-g]')) $('#gyes')?.focus(); });
-  $('#gq').addEventListener('keydown', e => { if (e.key === 'Enter' && GLW.pick && $('#gyes') && !$('#gyes').disabled) $('#gyes').click(); });
+  const cv = $('#gmap'), tip = $('#gtip');
+  cv.addEventListener('mousemove', e => { const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+    if (GLW.drag) { const A = GLW.A, dx = (mx - GLW.drag.x) / A.P.w * (view.x[1] - view.x[0]), dy = (my - GLW.drag.y) / A.P.h * (view.y[1] - view.y[0]); view = { x: [GLW.drag.v.x[0] - dx, GLW.drag.v.x[1] - dx], y: [GLW.drag.v.y[0] + dy, GLW.drag.v.y[1] + dy] }; GLW.drag.moved = true; drawMap(); return; }
+    const p = near(mx, my); if (!p) { tip.style.display = 'none'; cv.style.cursor = 'crosshair'; return; } cv.style.cursor = 'pointer';
+    const g = p[2], ex = glassExt(g), t = OE.glassTau(g.name, GLW.tl, 10);
+    tip.innerHTML = `<b>${esc(g.name)}</b> <span class="hint">${g.cat} · ${{ s: 'standard', p: 'préférentiel', o: 'obsolète' }[g.st] || g.st}</span><br>nd ${g.nd.toFixed(5)} · νd ${g.vd.toFixed(2)} · Pg,F ${isFinite(ex.pgf) ? ex.pgf.toFixed(4) : '—'}<br>τ₁₀ ${isFinite(t) ? t.toFixed(3) : '—'} à ${GLW.tl} µm · densité ${ex.dens ? fx(ex.dens, 2) : '—'}${ex.cost != null ? ` · prix ×${fmt(ex.cost, 3)}` : ''}`;
+    tip.style.display = 'block'; tip.style.left = Math.min(mx + 14, r.width - 230) + 'px'; tip.style.top = Math.max(4, my - 10) + 'px'; });
+  cv.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+  cv.addEventListener('mousedown', e => { const r = cv.getBoundingClientRect(); GLW.drag = { x: e.clientX - r.left, y: e.clientY - r.top, v: JSON.parse(JSON.stringify(view)), moved: false }; });
+  window.addEventListener('mouseup', function up(e) { if (!GLW.drag) return; const d = GLW.drag; GLW.drag = null; if (!d.moved) { const p = near(d.x, d.y); if (p) { GLW.pick = p[2].name; mark(); conf(); } } if (!$('#gmap')) window.removeEventListener('mouseup', up); });
+  cv.addEventListener('wheel', e => { e.preventDefault(); const A = GLW.A, r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, k = e.deltaY < 0 ? 0.8 : 1.25;
+    const vx = view.x[0] + (mx - A.P.x) / A.P.w * (view.x[1] - view.x[0]), vy = view.y[0] + (A.P.y + A.P.h - my) / A.P.h * (view.y[1] - view.y[0]);
+    view = { x: [vx + (view.x[0] - vx) * k, vx + (view.x[1] - vx) * k], y: [vy + (view.y[0] - vy) * k, vy + (view.y[1] - vy) * k] }; drawMap(); }, { passive: false });
+  cv.addEventListener('dblclick', () => { view = null; drawMap(); });
   draw(); conf(); $('#gq').focus();
 }
 function elemEditor(x, j, N) {
@@ -441,6 +548,12 @@ function elemEditor(x, j, N) {
       + (j + 1 < N && !OE.isMirror(x) ? '<div class="chips"><button class="chip" data-a="galign">Aligner la suite sur l\'ordre m (λ primaire)</button></div>' : '');
   } else if (e === 'ideal') {
     h = head('Lentille idéale (mince, parfaitement stigmatique)') + inp('fid', 'Focale', 'mm', x.fid ?? 100) + '<div class="hint">Le rayon de courbure et la forme sont ignorés. Imagerie parfaite pour un objet à l\'infini.</div>';
+  } else if (e === 'doe') {
+    const A = Array.isArray(x.da) ? x.da : [], M = App.M, l = M && M.ok ? M.wls[M.pw] : 0.5876, R = +x.dnr > 0 ? +x.dnr : 10, m = x.dm ?? 1, P = -m * l * 1e-3 * (+A[0] || 0) / (Math.PI * R * R);
+    h = head('Surface diffractive (DOE, phase de révolution)') + inp('dm', 'Ordre de diffraction', 'm', m) + inp('dnr', 'Rayon de normalisation', 'mm', R)
+      + [0, 1, 2, 3, 4, 5].map(k => `<div class="row"><label>A${k + 1} <span style="opacity:.7">(ρ${['²', '⁴', '⁶', '⁸', '¹⁰', '¹²'][k]}, rad)</span></label><input class="in mini" data-f="doe" data-k="${k}" value="${fmt(+A[k] || 0, 7)}"></div>`).join('')
+      + `<div class="row"><label>Variables (optimisation)</label><select class="in mini" data-f="vdoe"><option value="0">aucune</option>${[1, 2, 3, 4].map(n => `<option value="${n}" ${(+x.vdoe || 0) === n ? 'selected' : ''}>A1…A${n}</option>`).join('')}</select></div>`
+      + `<div class="hint">Phase φ = Σ Aᵢ ρ²ⁱ (radians), ρ = r / R ; le rayon reçoit en plus le gradient de m·λ·φ/2π (comme la surface « Binary 2 » de Zemax). Puissance paraxiale à ${fmt(l * 1000, 5)} nm : <b>${P ? fmt(P * 1000, 4) + ' dioptries (f = ' + fmt(1 / P, 5) + ' mm)' : '0'}</b>, proportionnelle à λ (dispersion opposée à celle des verres : νd équivalent ≈ −3,45). A1 &lt; 0 : convergente pour m = 1.</div>`;
   } else if (e === 'polarizer') {
     h = head('Polariseur linéaire idéal') + inp('pang', 'Axe de transmission', '° / X local', x.pang || 0) + '<div class="hint">Ne transmet que la composante du champ selon l\'axe (loi de Malus). Utilisez l\'analyse « Polarisation ».</div>';
   } else if (e === 'waveplate') {
@@ -522,7 +635,13 @@ function inspector() {
   let h = `<div class="row"><label>Forme</label><select class="in" data-f="stype" style="width:150px">
       <option value="STD" ${ty === 'STD' ? 'selected' : ''}>Standard (conique + asphère)</option>
       <option value="XY" ${ty === 'XY' ? 'selected' : ''}>Polynôme XY</option>
-      <option value="ZERN" ${ty === 'ZERN' ? 'selected' : ''}>Zernike (Fringe)</option></select></div>`;
+      <option value="ZERN" ${ty === 'ZERN' ? 'selected' : ''}>Zernike (Fringe)</option>
+      <option value="TOR" ${ty === 'TOR' ? 'selected' : ''}>Torique / cylindrique (biconique)</option></select></div>`;
+  if (ty === 'TOR') { const rx = x.rx === undefined ? x.r : x.rx;
+    h += `<div class="row"><label>Rayon X <span style="opacity:.7">(mm)</span></label><input class="in mini" data-f="tor" data-k="rx" value="${isFinite(+rx) && +rx ? fmt(+rx, 7) : 'Infini'}"><button class="tg ${x.vrx ? 'on' : ''}" data-a="vrx" title="Variable (optimisation)">V</button></div>
+      <div class="row"><label>Conique X</label><input class="in mini" data-f="tor" data-k="kx" value="${fmt(+x.kx || 0, 6)}"></div>
+      <div class="chips"><button class="chip" data-a="torcyl">Cylindre (Rx = ∞)</button><button class="chip" data-a="torsph">Rx = R (sphère)</button></div>
+      <div class="hint">Le rayon et la conique de l'éditeur s'appliquent à la section Y ; ceux-ci à la section X. Rx infini : cylindre de puissance en Y. Asphères A4… sur r². Le paraxial et les Seidel utilisent la section Y.</div>`; }
   h = elemEditor(x, j, N) + h;
   if (typeof freeformEditor === 'function') h += freeformEditor(x);
   h += `<div class="hint" style="margin:8px 0 2px;font-weight:600;color:var(--fg)">Décentrement / bascule</div>
@@ -558,6 +677,9 @@ function setupSide() {
         commit(s => { const g = s.surfaces[j]; s.surfaces.splice(j + 1, 0, newSurf({ t: g.t, tx: +(-a * Math.cos(ga)).toFixed(5), ty: +(-a * Math.sin(ga)).toFixed(5), dmode: 'DEC', comment: `Axe de l'ordre ${g.gm ?? 1}` })); g.t = 0; });
         toast(`Surface d'axe insérée : la suite est basculée de ${a.toFixed(3)}° pour suivre l'ordre ${x.gm ?? 1}`); break;
       }
+      case 'vrx': commit(s => { const x = s.surfaces[App.sel]; x.vrx = !x.vrx; if (x.vrx && !(isFinite(+x.rx) && +x.rx)) x.rx = 1e4; }); break;
+      case 'torcyl': commit(s => { s.surfaces[App.sel].rx = Infinity; }); break;
+      case 'torsph': commit(s => { const x = s.surfaces[App.sel]; x.rx = x.r; x.kx = x.k || 0; }); break;
       case 'dreset': commit(s => { const x = s.surfaces[App.sel]; x.dx = x.dy = x.dz = x.tx = x.ty = x.tz = 0; x.dmode = 'DEC'; }); break;
       case 'wadd': commit(s => s.wavelengths.push({ um: 0.55, w: 1 })); break;
       case 'wdel': if (App.sys.wavelengths.length > 1) commit(s => { s.wavelengths.splice(i, 1); s.primary = Math.min(s.primary, s.wavelengths.length - 1); }); break;
@@ -582,11 +704,14 @@ function setupSide() {
       case 'fy': if ((v = num()) != null) commit(s => s.fields[i].y = v); break;
       case 'fx': if ((v = num()) != null) commit(s => s.fields[i].x = v); break;
       case 'dmode': commit(s => s.surfaces[App.sel].dmode = t.value); break;
-      case 'stype': commit(s => { const x = s.surfaces[App.sel]; x.type = t.value; if (t.value === 'ZERN' && !x.zr) x.zr = Math.max(1, App.M && App.M.ok ? +App.M.S[App.sel].sd.toPrecision(3) : 10); }); break;
+      case 'stype': commit(s => { const x = s.surfaces[App.sel]; x.type = t.value; if (t.value === 'TOR' && x.rx === undefined) { x.rx = Infinity; x.kx = 0; } if (t.value === 'ZERN' && !x.zr) x.zr = Math.max(1, App.M && App.M.ok ? +App.M.S[App.sel].sd.toPrecision(3) : 10); }); break;
       case 'dec': if ((v = num()) != null) commit(s => s.surfaces[App.sel][t.dataset.k] = v); break;
       case 'src': { const k = t.dataset.k; if (k === 'type' || k === 'fib') { commit(s => { s.src[k] = t.value; if (k === 'fib' && t.value === 'sm' && s.src.core > 12) Object.assign(s.src, { core: 8.2, na: 0.14 }); }); break; }
         if (t.value.trim() === '') { commit(s => s.src[k] = null); break; } if ((v = num(x => x > 0)) != null) commit(s => s.src[k] = v); break; }
       case 'det': { const k = t.dataset.k; if (k === 'on' || k === 'noise') { commit(s => s.det[k] = t.checked); break; } if ((v = num(x => x > 0)) != null) commit(s => s.det[k] = ['nx', 'ny', 'bits'].includes(k) ? Math.round(v) : v); break; }
+      case 'tor': { const k = t.dataset.k; v = k === 'rx' ? parseNum(t.value, true) : parseNum(t.value, false); if (!(isFinite(v) || (k === 'rx' && Math.abs(v) === Infinity))) { toast('Valeur invalide'); renderSide(); break; } commit(s => s.surfaces[App.sel][k] = v); break; }
+      case 'doe': { v = t.value.trim() === '' ? 0 : parseNum(t.value, false); if (!isFinite(v)) { toast('Valeur invalide'); renderSide(); break; } const k = +t.dataset.k; commit(s => { const x = s.surfaces[App.sel]; x.da = Array.isArray(x.da) ? x.da : []; while (x.da.length <= k) x.da.push(0); x.da[k] = v; }); break; }
+      case 'vdoe': commit(s => { s.surfaces[App.sel].vdoe = +t.value || 0; }); break;
       case 'ep': if ((v = num()) != null) { if (t.dataset.k === 'fid' && v === 0) { toast('Focale non nulle requise'); renderSide(); break; } commit(s => s.surfaces[App.sel][t.dataset.k] = v); } break;
       case 'coef': { const k = t.dataset.k; v = t.value.trim() === '' ? 0 : parseNum(t.value, false); if (!isFinite(v)) { toast('Valeur invalide'); renderSide(); break; }
         commit(s => { const x = s.surfaces[App.sel]; if (k === 'zr') x.zr = v; else if (k.startsWith('z')) { x.zc = x.zc || []; x.zc[+k.slice(1)] = v; } else { x.xy = x.xy || {}; if (v) x.xy[k] = v; else delete x.xy[k]; } }); break; }
@@ -959,20 +1084,21 @@ const PT = {
   relillum: { l: 'Éclairement relatif', w: 1, job: (p, M) => ({ name: 'relillum', args: { o: { n: 21, wi: p.wi ?? M.pw, grid: 40 } } }) },
   distgrid: { l: 'Grille de distorsion', w: 1 },
   mcsum: { l: 'Multi-configuration : synthèse', html: 1 },
+  ghost: { l: 'Images fantômes (réflexions doubles)', html: 1 },
 };
 /** section (et repère) de l'aide pour chaque type d'analyse */
-const HELPAN = { tfmtf: ['analyses', 'FTM through-focus'], mtffield: ['analyses', 'FTM selon le champ'], relillum: ['analyses', 'Éclairement relatif'], distgrid: ['analyses', 'Grille de distorsion'], mcsum: ['multiconfig'], spot: ['analyses', 'Diagramme de spot'], rayfan: ['analyses', 'Ray fan'], opdfan: ['analyses', 'OPD fan'], wfe: ['analyses', 'Carte WFE'], zern: ['analyses', 'Zernike'], psf: ['analyses', 'PSF'],
+const HELPAN = { ghost: ['analyses', 'Images fantômes'], tfmtf: ['analyses', 'FTM through-focus'], mtffield: ['analyses', 'FTM selon le champ'], relillum: ['analyses', 'Éclairement relatif'], distgrid: ['analyses', 'Grille de distorsion'], mcsum: ['multiconfig'], spot: ['analyses', 'Diagramme de spot'], rayfan: ['analyses', 'Ray fan'], opdfan: ['analyses', 'OPD fan'], wfe: ['analyses', 'Carte WFE'], zern: ['analyses', 'Zernike'], psf: ['analyses', 'PSF'],
   mtf: ['analyses', 'FTM / MTF'], ee: ['analyses', 'Énergie encerclée'], footprint: ['analyses', 'Footprint'], field: ['analyses', 'Courbure de champ'], seidel: ['analyses', 'Seidel'], chrom: ['analyses', 'Décalage focal chromatique'],
   glass: ['analyses', 'Carte des verres'], polar: ['polarisation'], detector: ['detecteur'], source: ['source'], imgsim: ['imgsim'], presc: ['analyses', 'Prescription'], thermal: ['donnees', 'Analyse thermique'] };
 /** aide des fenêtres (par titre) */
-const HELPDLG = [['Catalogue de verres', 'verres'], ['Optimisation', 'optimisation'], ['Données système', 'donnees'], ['Tolérancement', 'tolerancement'], ['Rapport', 'rapport'], ['Export', 'fichiers'], ['Import', 'fichiers'], ['Assistant', 'assistant'], ['Multi-configuration', 'multiconfig'], ['À propos', 'demarrage']];
+const HELPDLG = [['Catalogue de verres', 'verres'], ['Optimisation', 'optimisation'], ['Données système', 'donnees'], ['Tolérancement', 'tolerancement'], ['Rapport', 'rapport'], ['Export', 'fichiers'], ['Import', 'fichiers'], ['Assistant', 'assistant'], ['Multi-configuration', 'multiconfig'], ['Historique', 'historique'], ['Plans de fabrication', 'plans'], ['Rapport de tolérancement', 'tolerancement'], ['À propos', 'demarrage']];
 /** choix du nombre de termes de Zernike Fringe (ordre radial et azimutal) */
 const ZNOPTS = [[4, 'défocalisation'], [9, '3ᵉ ordre'], [16, '5ᵉ ordre'], [25, '7ᵉ ordre'], [36, '9ᵉ ordre'], [37, '9ᵉ ordre + sphérique 11ᵉ']];
 /** groupes du menu des fenêtres d'analyse */
 const PTG = [
   ['Image et aberrations', ['spot', 'rayfan', 'opdfan', 'wfe', 'zern']],
   ['Diffraction', ['psf', 'mtf', 'tfmtf', 'mtffield', 'ee']],
-  ['Système', ['field', 'distgrid', 'relillum', 'seidel', 'chrom', 'footprint', 'thermal', 'polar', 'mcsum']],
+  ['Système', ['field', 'distgrid', 'relillum', 'ghost', 'seidel', 'chrom', 'footprint', 'thermal', 'polar', 'mcsum']],
   ['Capteur et simulation', ['detector', 'source', 'imgsim']],
   ['Données et outils', ['glass', 'presc']],
 ];
@@ -1014,6 +1140,7 @@ function paneHeader(pi) {
   if (p.type === 'mtf') h += `<select data-p="mt" title="Méthode de calcul de la FTM"><option value="diff" ${p.mt !== 'geo' ? 'selected' : ''}>Diffraction</option><option value="geo" ${p.mt === 'geo' ? 'selected' : ''}>Géométrique</option></select>${p.mt === 'geo' ? `<label title="Multiplier par la FTM d'une pupille parfaite (recommandé)"><input type="checkbox" data-p="gdl" ${p.gdl !== false ? 'checked' : ''}>× diffraction</label>` : `<select data-p="ns" title="Échantillonnage de la pupille (front d'onde N×N)">${[32, 64, 128, 256].map(n => `<option value="${n}" ${(+p.ns || 64) === n ? 'selected' : ''}>${n}×${n}</option>`).join('')}</select>`}<label>f max <input class="in" data-p="fmax" style="width:56px;height:22px" value="${p.fmax || ''}" placeholder="auto"></label>`;
   if (p.type === 'spot') h += `<label><input type="checkbox" data-p="chief" ${p.chief ? 'checked' : ''}>réf. principal</label>`;
   const nsSel = d => `<select data-p="ns" title="Échantillonnage de la pupille (front d'onde N×N) : 32 rapide, 64 précis">${[32, 64, 128].map(n => `<option value="${n}" ${(+p.ns || d) === n ? 'selected' : ''}>${n}×${n}</option>`).join('')}</select>`;
+  if (p.type === 'ghost') h += `<select data-p="coat" title="Réflectance des dioptres"><option value="0" ${!+p.coat ? 'selected' : ''}>Non traités (Fresnel)</option>${[[0.01, 'AR 1 %'], [0.005, 'AR 0,5 %'], [0.0025, 'AR 0,25 %'], [0.001, 'AR 0,1 %']].map(([v, l]) => `<option value="${v}" ${+p.coat === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
   if (p.type === 'tfmtf') h += `<label>f <input class="in" data-p="tff" style="width:46px;height:22px" value="${p.tff || 30}"> cy/mm</label><label title="Demi-étendue de la défocalisation (vide : automatique, au moins 8 λF² et englobant le meilleur foyer)">± <input class="in" data-p="tfh" style="width:52px;height:22px" value="${p.tfh || ''}" placeholder="auto"> µm</label>${nsSel(32)}<button class="bt" data-p="tfapply" style="height:24px" title="Déplacer le plan image au meilleur foyer trouvé (épaisseur avant l'image)">Appliquer le meilleur foyer</button>`;
   if (p.type === 'mtffield') h += `<label title="Fréquences spatiales (cycles/mm), séparées par des virgules ou des espaces">f <input class="in" data-p="mff" style="width:96px;height:22px" value="${esc(mffList(p).join(', '))}"> cy/mm</label>${nsSel(32)}`;
   if (p.type === 'distgrid') h += `<select data-p="dgn" title="Nombre de lignes de la grille">${[7, 11, 15, 21].map(n => `<option value="${n}" ${(+p.dgn || 11) === n ? 'selected' : ''}>${n}×${n}</option>`).join('')}</select><label title="Coché : les coins de la grille correspondent au champ maximal (diagonale du capteur). Décoché : le bord de la grille correspond au champ maximal."><input type="checkbox" data-p="diag" ${p.diag !== false ? 'checked' : ''}>coins = champ max</label><label title="Amplifier les écarts pour les rendre visibles"><input type="checkbox" data-p="dgx" ${p.dgx ? 'checked' : ''}>écarts ×10</label>`;
@@ -1050,6 +1177,7 @@ function setupPaneEvents(el) {
     else if (['log', 'tilt', 'chief', 'fresnel', 'upright', 'pix', 'det', 'grid', 'gdl', 'diag', 'dgx'].includes(k)) p[k] = t.checked;
     else if (k === 'tff' || k === 'tfh') { const v = parseFloat(String(t.value).replace(',', '.')); p[k] = isFinite(v) && v > 0 ? v : null; }
     else if (k === 'mff') p.mff = t.value;
+    else if (k === 'coat') p.coat = +t.value;
     else if (['stype', 'phase', 'mt'].includes(k)) p[k] = t.value;
     else if (['sd', 'sna', 'sw', 'sh'].includes(k)) { const v = parseFloat(String(t.value).replace(',', '.')); p[k] = isFinite(v) && v >= 0 ? v : null; }
     else if (k === 'st' || k === 'src') p[k] = t.value;
@@ -1365,6 +1493,15 @@ const R = {
     c.fillStyle = TH.acc; for (const q of P) if (q) { c.beginPath(); c.arc(A.X(q[0]), A.Y(q[1]), 1.8, 0, 7); c.fill(); }
     legend(c, 8, h - 8, [{ col: TH.mut, dash: [3, 3], l: 'Grille idéale (paraxiale)' }, { col: TH.acc, l: 'Rayons principaux réels' }]);
   },
+  ghost(p, M) {
+    const g = OE.ghosts(M, { coat: +p.coat || 0 }); if (!g.rows.length) return '<div class="hint" style="padding:10px">Aucune paire de dioptres réfléchissants (au moins deux dioptres avec changement d\'indice).</div>';
+    const lg = v => Math.log10(Math.max(v, 1e-12)), mx = lg(g.rows[0].rel), mn = Math.min(-9, mx - 4), w = v => Math.max(2, 100 * (lg(v) - mn) / Math.max(1e-9, mx - mn));
+    const dof = 2 * M.ctxs[M.pw].lmm * M.par.wfno * M.par.wfno;
+    return `<table style="width:100%"><tr><th>Réflexions</th><th title="Produit des réflectances Rᵢ·Rⱼ">R</th><th title="Demi-diamètre du faisceau fantôme sur l'image">Ø/2 sur image (mm)</th><th title="Position du foyer fantôme par rapport au plan image">Foyer (mm)</th><th style="text-align:left">Éclairement relatif estimé</th></tr>
+      ${g.rows.slice(0, 40).map(r => { const near = Math.abs(r.dz) < Math.max(10 * dof, 0.5); return `<tr><td>S${r.j} → S${r.i}${r.inGlass != null ? ` <span title="Foyer intermédiaire dans le verre après S${r.inGlass} (risque pour les lasers de puissance)" style="color:var(--warn)">⚠ verre</span>` : ''}</td><td class="mono">${r.R.toExponential(2)}</td><td class="mono">${fx(r.y, 3)}</td><td class="mono" style="${near ? 'color:var(--err);font-weight:600' : ''}">${isFinite(r.dz) ? (r.dz >= 0 ? '+' : '') + fx(r.dz, 2) : '∞'}</td>
+        <td style="text-align:left"><span style="display:inline-block;height:8px;width:${w(r.rel)}px;max-width:100px;background:${r.rel > 1e-4 ? 'var(--err)' : r.rel > 1e-6 ? 'var(--warn)' : 'var(--acc)'};border-radius:2px;vertical-align:middle"></span> <span class="mono">${r.rel.toExponential(2)}</span></td></tr>`; }).join('')}</table>
+      <p class="hint">${g.n} paires de dioptres, triées par éclairement relatif estimé : R · (r_signal / max(r_signal, r_fantôme))², r_signal = ${fx(g.rs * 1e3, 2)} µm (max du rayon d'Airy et du spot RMS sur l'axe). Calcul paraxial du rayon marginal (λ primaire, sur l'axe). En rouge : foyer fantôme à moins de ${fx(Math.max(10 * dof, 0.5), 2)} mm du plan image (fantôme focalisé, le plus gênant). ⚠ verre : le faisceau fantôme focalise à l'intérieur d'une lentille.</p>`;
+  },
   mcsum(p, M) {
     if (!OE.mcOn(App.sys)) return `<div class="hint" style="padding:10px">Ce système n'a qu'une configuration. Ouvrez <b>Système → Multi-configuration…</b> pour en créer plusieurs (zoom, mise au point, changement de filtre…).</div>`;
     const S = OE.mcSummary(App.sys), cur = App.sys.mc.cur | 0, nm = k => esc((App.sys.mc.names || [])[k] || `Config ${k + 1}`);
@@ -1649,14 +1786,19 @@ function openOptim() {
       <div class="row"><select class="in grow" id="mfImg"><option value="SPOT" ${mf.image === 'SPOT' ? 'selected' : ''}>Spot RMS (barycentre)</option><option value="WFE" ${mf.image === 'WFE' ? 'selected' : ''}>Front d'onde RMS</option><option value="NONE" ${mf.image === 'NONE' ? 'selected' : ''}>Aucun (opérandes seuls)</option></select></div>
       <div class="row"><label style="flex:none">Longueurs d'onde</label><select class="in grow" id="mfWl">${wlOpts.map(([k, l]) => `<option value="${k}" ${wsel === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <div class="hint">Quadrature de Gauss 3 anneaux × 8 bras sur tous les champs (pondérés). Choisir une seule λ permet par exemple d'optimiser une mise au point à la longueur d'onde centrale ; les opérandes de chromatisme utilisent toujours toutes les λ.</div>
+      <div class="hint" style="margin-top:6px;font-weight:600;color:var(--fg)">Poids du critère <span style="font-weight:400">(vide = poids du champ / de la λ)</span></div>
+      <div class="owt">${s.fields.map((f, i) => `<label title="Poids du champ ${i + 1} dans le critère image">C${i + 1} <input class="in" data-ow="fw" data-i="${i}" value="${Array.isArray(mf.fw) && mf.fw[i] != null && mf.fw[i] !== '' ? mf.fw[i] : ''}" placeholder="${f.w ?? 1}"></label>`).join('')}</div>
+      <div class="owt">${W.map((w, i) => `<label title="Poids de ${fmt(w.um * 1000, 5)} nm dans le critère image">λ${i + 1} <input class="in" data-ow="ww" data-i="${i}" value="${Array.isArray(mf.ww) && mf.ww[i] != null && mf.ww[i] !== '' ? mf.ww[i] : ''}" placeholder="${w.w ?? 1}"></label>`).join('')}</div>
       <h4 class="th4">Mise au point</h4>
       <div class="row"><button class="bt" data-d="oqf">⌖ Quick focus</button><span class="hint">${App.qf.crit === 'WFE' ? 'front d\'onde' : 'spot'} RMS · ${qfWlLabel()} (options dans l'éditeur ▾)</span></div>
+      <h4 class="th4">Meilleures solutions <span class="hint">(recherche globale)</span></h4>
+      <div id="osols">${optSolsHTML()}</div>
     </div>
     <div class="oR">
       <h4 class="th4" style="margin-top:0">Opérandes</h4>
       <div class="oscroll"><table class="mt otab"><tr><th>Opérande</th><th>Param.</th><th></th><th>Cible</th><th>Poids</th>${OE.mcOn(App.sys) ? '<th title="Configuration où l\'opérande s\'applique (multi-configuration)">Config.</th>' : ''}<th>Valeur</th><th title="Part de la fonction de mérite (somme des carrés)">%</th><th></th></tr>
       ${mf.ops.map((o, i) => { const d = OE.OPS[o.type] || {}; const cmp = o.cmp || d.kind; return `<tr><td><select class="in" data-o="type" data-i="${i}" title="${esc(d.label || '')}">${ops.map(([k, v]) => `<option value="${k}" ${k === o.type ? 'selected' : ''}>${k} — ${v.label}</option>`).join('')}</select></td>
-        <td>${d.p ? `<input class="in" data-o="p" data-i="${i}" value="${o.p ?? d.pdef}" title="${d.p}" style="width:56px">` : ''}</td>
+        <td>${d.p ? `<input class="in" data-o="p" data-i="${i}" value="${o.p ?? d.pdef}" title="${d.p}" style="width:56px">` : ''}${d.f ? `<select class="in" data-o="fi" data-i="${i}" style="width:62px" title="Champ (tous : la contrainte s'applique à chaque champ)"><option value="0">tous</option>${s.fields.map((_, k) => `<option value="${k + 1}" ${+o.fi === k + 1 ? 'selected' : ''}>C${k + 1}</option>`).join('')}</select>` : ''}</td>
         <td><select class="in" data-o="cmp" data-i="${i}" style="width:44px" title="Égal, au moins (≥) ou au plus (≤)">${[['eq', '='], ['ge', '≥'], ['le', '≤']].map(([k, l]) => `<option value="${k}" ${cmp === k ? 'selected' : ''}>${l}</option>`).join('')}</select></td>
         <td><input class="in" data-o="target" data-i="${i}" value="${o.target}" style="width:70px"></td><td><input class="in" data-o="weight" data-i="${i}" value="${o.weight}" style="width:48px"></td>
         ${OE.mcOn(App.sys) ? `<td><select class="in" data-o="cfg" data-i="${i}" style="width:64px"><option value="0">toutes</option>${Array.from({ length: App.sys.mc.n }, (_, k) => `<option value="${k + 1}" ${+o.cfg === k + 1 ? 'selected' : ''}>${k + 1}</option>`).join('')}</select></td>` : ''}
@@ -1670,7 +1812,7 @@ function openOptim() {
     </div>
   </div>
   <div class="orow"><span>Itérations max</span><input class="in" id="maxIt" value="${OPT.maxIt || 100}" style="width:60px">
-    <span style="margin-left:18px">Recherche globale :</span><span class="hint">cycles</span><input class="in" id="gCyc" value="${OPT.gCyc || 10}" style="width:50px"><span class="hint">amplitude</span><input class="in" id="gAmp" value="${OPT.gAmp || 20}" style="width:50px"><span class="hint">% (perturbation relative des variables)</span></div>
+    <span style="margin-left:18px">Recherche globale :</span><select class="in" id="gMode" title="Méthode de recherche globale">${[['hammer', 'Perturbation du meilleur (Hammer)'], ['anneal', 'Recuit simulé'], ['multi', 'Départs multiples']].map(([k, l]) => `<option value="${k}" ${(OPT.gMode || 'hammer') === k ? 'selected' : ''}>${l}</option>`).join('')}</select><span class="hint">essais</span><input class="in" id="gCyc" value="${OPT.gCyc || 10}" style="width:50px"><span class="hint">amplitude</span><input class="in" id="gAmp" value="${OPT.gAmp || 20}" style="width:50px"><span class="hint">% (perturbation relative des variables)</span></div>
   </div>
   <div class="df"><span class="hint grow" id="omsg"></span>
     <button class="bt" data-d="revert" title="Revient au système d'avant la dernière optimisation">Restaurer l'état initial</button>
@@ -2110,12 +2252,15 @@ function setupDlg() {
     if (t.dataset.gs) { const k = t.dataset.gs; commit(s => { const g = s.merit.gsub = { cats: null, pref: false, k: 6, passes: 2, ...(s.merit.gsub || {}) };
       if (k === 'cat') { const all = OE.cats(), cur = new Set(g.cats && g.cats.length ? g.cats : all); t.checked ? cur.add(t.value) : cur.delete(t.value); g.cats = cur.size === all.length ? null : [...cur]; }
       else if (k === 'pref') g.pref = t.checked; else g[k] = Math.max(1, Math.min(k === 'k' ? 30 : 5, parseInt(t.value) || g[k])); }); openOptim(); }
+    if (t.dataset.ow) { const k = t.dataset.ow, i = +t.dataset.i, raw = t.value.trim(), v = raw === '' ? null : parseFloat(raw.replace(',', '.')); if (raw !== '' && !(v >= 0)) { toast('Poids invalide'); return; }
+      commit(s => { const a = s.merit[k] = Array.isArray(s.merit[k]) ? s.merit[k] : []; a[i] = v; if (a.every(x => x == null)) delete s.merit[k]; }); openOptim(); }
+    if (t.id === 'gMode') OPT.gMode = t.value;
     if (t.id === 'gCyc') OPT.gCyc = Math.max(1, Math.min(200, parseInt(t.value) || 10));
     if (t.id === 'gAmp') OPT.gAmp = Math.max(1, Math.min(100, parseFloat(String(t.value).replace(',', '.')) || 20));
     if (t.dataset.o) { const i = +t.dataset.i, k = t.dataset.o; commit(s => { const o = s.merit.ops[i]; if (k === 'type') { o.type = t.value; delete o.cmp; const d = OE.OPS[t.value]; if (d.p) o.p = o.p ?? d.pdef; else delete o.p; } else if (k === 'cmp') o.cmp = t.value; else o[k] = parseFloat(String(t.value).replace(',', '.')) || 0; }); openOptim(); }
   });
-  $('#dlg').addEventListener('change', e => { if (e.target.dataset.sd) sdChange(e.target); if (e.target.closest('#mcw')) mcEvent(e); });
-  $('#dlg').addEventListener('click', e => { const b = e.target.closest('#mcw [data-mcact]'); if (b) mcAction(b); });
+  $('#dlg').addEventListener('change', e => { if (e.target.dataset.dw != null || e.target.dataset.dws != null) drwEvent(e.target); if (e.target.dataset.sd) sdChange(e.target); if (e.target.closest('#mcw')) mcEvent(e); });
+  $('#dlg').addEventListener('click', e => { const b = e.target.closest('#mcw [data-mcact]'); if (b) mcAction(b); const h = e.target.closest('#hw [data-hgo]'); if (h) histGo(+h.dataset.hgo); const ha = e.target.closest('#hw [data-hact]'); if (ha) histAction(ha); });
   $('#dlg').addEventListener('click', e => { const t = e.target.closest('[data-sdt]'); if (t) { SD.tab = t.dataset.sdt; renderSD(); return; } const b = e.target.closest('[data-sda]'); if (b) sdAction(b); });
   $('#dlg').addEventListener('click', e => {
     const tb = e.target.closest('[data-tl],[data-tr]'); if (tb) { if (tb.dataset.tl) { TOL.tabL = tb.dataset.tl; renderTolL(); } else { TOL.tabR = tb.dataset.tr; renderTolRes(); } return; }
@@ -2123,6 +2268,10 @@ function setupDlg() {
     const a = b.dataset.d;
     if (a === 'close') closeDlg();
     if (a === 'rgen') genReport();
+    if (a === 'dwgen') genDrawings();
+    if (a === 'trgen') genReport(tolRptOverride());
+    if (a === 'tolopen') openTol();
+    if (a === 'dwopen') openDrawings();
     if (a === 'tsens') runSens();
     if (a === 'tmc') runMC();
     if (a === 'tinv') runInv();
@@ -2141,12 +2290,14 @@ function setupDlg() {
     if (a === 'odel') { commit(s => s.merit.ops.splice(+b.dataset.i, 1)); openOptim(); }
     if (a === 'run') runOpt();
     if (a === 'glob') runGlobal();
+    if (a === 'osol') { const q = (OPT.sols || [])[+b.dataset.i]; if (q) { App.sys = normalize(fromJSON(q.sys)); pushHist(`Solution chargée (${q.m.toExponential(3)})`); refresh(); optLive(); toast('Solution chargée (Ctrl+Z pour revenir)'); } }
+    if (a === 'osolclr') { OPT.sols = []; const el = $('#osols'); if (el) el.innerHTML = optSolsHTML(); }
     if (a === 'oqf') quickFocusUI();
     if (a === 'ovclear') { commit(s => s.surfaces.forEach(x => { x.vr = x.vt = x.vk = x.vg = false; for (const k of OE.ASPK) x['v' + k] = false; })); OPT.x0 = null; openOptim(); }
     if (a === 'gsub') runSubst();
     if (a === 'grgla') { commit(s => { s.merit.ops.push({ type: 'RGLA', target: 0, weight: 0.002, cmp: 'le' }); }); openOptim(); }
-    if (a === 'stop') { OPT.running = false; }
-    if (a === 'revert') { if (OPT.snap) { OPT.running = false; App.sys = fromJSON(OPT.snap); pushHist(); refresh(); OPT.x0 = optSnapVars(App.sys); toast('État initial restauré'); openOptim(); } }
+    if (a === 'stop') { OPT.running = false; bgCancel('optg'); }
+    if (a === 'revert') { if (OPT.snap) { OPT.running = false; App.sys = fromJSON(OPT.snap); pushHist('Retour à l\'état d\'avant l\'optimisation'); refresh(); OPT.x0 = optSnapVars(App.sys); toast('État initial restauré'); openOptim(); } }
     if (a === 'copy') { const ta = $('#dlg textarea'); navigator.clipboard?.writeText(ta.value).then(() => toast('Copié dans le presse-papiers'), () => { ta.select(); toast('Sélectionné — Ctrl+C pour copier'); }); }
     if (a === 'fmtjson') { $('#exTxt').value = toJSON(App.sys); $('#exHint').textContent = 'JSON Focale (format natif complet).'; }
     if (a === 'fmtseq') { const r = IO.toSeq(App.sys); $('#exTxt').value = r.text; $('#exHint').textContent = r.warnings.length ? '⚠ ' + r.warnings.join(' · ') : 'CODE V séquentiel (.seq).'; }
@@ -2173,33 +2324,64 @@ function runOpt() {
     if (r.done || OPT.it >= maxIt) { OPT.running = false; finish(r.msg || (OPT.it >= maxIt ? 'Nombre max d\'itérations atteint' : 'Convergé')); return; }
     setTimeout(loop, 0);
   };
-  const finish = (msg) => { pushHist(); refresh({ fast: true }); optLive(); const o = $('#omsg'); if (o) o.textContent = msg + ` — ${OPT.it} itérations`; toast('Optimisation : ' + msg); };
+  const finish = (msg) => { pushHist('Optimisation (' + msg + ')'); refresh({ fast: true }); optLive(); const o = $('#omsg'); if (o) o.textContent = msg + ` — ${OPT.it} itérations`; toast('Optimisation : ' + msg); };
   setTimeout(loop, 0);
 }
 /** recherche globale : perturbations aléatoires des variables + moindres carrés, on garde le meilleur (type « Hammer ») */
+/** perturbation aléatoire des variables (amplitude relative amp) */
+function optPerturb(s, amp) {
+  for (const v of OE.getVars(s)) { const g = 2 * Math.random() - 1, x = OE.getVal(s, v), o = s.surfaces[v.si];
+    if (v.kind === 'nd' || v.kind === 'vd') { const m = OE.parseModel(o.glass); if (m) { m[v.kind] += v.kind === 'nd' ? amp * g * 0.3 : amp * g * 40; o.glass = OE.fmtModel(Math.min(2.2, Math.max(1.35, m.nd)), Math.min(100, Math.max(15, m.vd))); } continue; }
+    const nx = v.kind === 'c' || v.kind === 'cx' ? x * (1 + amp * g) + (Math.abs(x) < 1e-6 ? amp * g * 0.01 : 0) : v.kind === 't' ? Math.sign(x || 1) * Math.max(0.05, Math.abs(x) * (1 + amp * g)) : v.kind === 'k' ? x + amp * g * 2 : x * (1 + amp * g) + (Math.abs(x) < 1e-12 ? amp * g * 1e-6 : 0);
+    OE.setVal(s, v, nx); }
+  return s;
+}
+/** meilleures solutions distinctes trouvées par la recherche globale */
+function optKeep(sys, m, tag) {
+  if (!isFinite(m)) return; const L = OPT.sols = OPT.sols || [];
+  if (L.some(q => Math.abs(q.m - m) <= 1e-6 * Math.max(m, 1e-12))) return;
+  L.push({ m, sys: toJSON(sys), tag, t: new Date().toLocaleTimeString('fr-FR') }); L.sort((a, b) => a.m - b.m); L.length = Math.min(L.length, 12);
+  const el = $('#osols'); if (el) el.innerHTML = optSolsHTML();
+}
+function optSolsHTML() {
+  const L = OPT.sols || []; if (!L.length) return '<div class="hint">Lancez une recherche globale : les 12 meilleures solutions distinctes s\'affichent ici et peuvent être rechargées.</div>';
+  return L.map((q, k) => `<div class="osol"><b>${k + 1}</b><span class="mono">${q.m.toExponential(4)}</span><span class="hint grow">${esc(q.tag)} · ${q.t}</span><button class="bt" data-d="osol" data-i="${k}" style="height:22px" title="Charger cette solution dans l'éditeur (Ctrl+Z pour revenir)">Charger</button></div>`).join('') + '<div class="row"><button class="bt" data-d="osolclr" style="height:22px">Effacer la liste</button></div>';
+}
+/**
+ * Recherche globale, essais calculés en parallèle dans les workers :
+ *  hammer : perturbation du meilleur point, gardé s'il s'améliore ;
+ *  anneal : recuit simulé (on accepte parfois un point moins bon, température décroissante) ;
+ *  multi  : départs multiples, perturbations fortes du point de départ.
+ */
 async function runGlobal() {
   if (OPT.running) return; const vars = OE.getVars(App.sys);
   if (!vars.length) { $('#omsg').textContent = 'Définissez au moins une variable (bouton V).'; return; }
-  const cyc = OPT.gCyc = Math.max(1, Math.min(200, parseInt($('#gCyc').value) || 10)), amp = (OPT.gAmp = Math.max(1, Math.min(100, parseFloat(String($('#gAmp').value).replace(',', '.')) || 20))) / 100, maxIt = Math.max(5, Math.min(200, parseInt($('#maxIt').value) || 100));
+  const mode = OPT.gMode = ($('#gMode') && $('#gMode').value) || OPT.gMode || 'hammer';
+  const cyc = OPT.gCyc = Math.max(1, Math.min(500, parseInt($('#gCyc').value) || 10)), amp = (OPT.gAmp = Math.max(1, Math.min(100, parseFloat(String($('#gAmp').value).replace(',', '.')) || 20))) / 100, maxIt = Math.max(5, Math.min(200, parseInt($('#maxIt').value) || 100));
   OPT.snap = toJSON(App.sys); OPT.x0 = optSnapVars(App.sys); OPT.running = true; OPT.it = 0;
-  const run = async st => { let r, n = 0, t = performance.now(); do { r = OE.optStep(st); n++; OPT.it++; if (performance.now() - t > 80) { await tick(); t = performance.now(); if (!OPT.running) break; } } while (!r.done && n < maxIt); return st.merit ?? OE.meritOf(OE.residuals(st.sys).f); };
-  // point de départ : optimum local du système actuel
-  let best = { sys: structuredClone(App.sys), mu: 1e-3 }; let bm = await run(best); best = best.sys; OPT.hist.push(bm);
-  App.sys = structuredClone(best); App.M = OE.prepare(App.sys); App.sysKey = null; renderLDE(); drawLayout(); optLive();
-  let improved = 0;
-  for (let c = 0; c < cyc && OPT.running; c++) {
-    const s = structuredClone(best);
-    for (const v of OE.getVars(s)) { const g = 2 * Math.random() - 1, x = OE.getVal(s, v);
-      const o = s.surfaces[v.si];
-      if (v.kind === 'nd' || v.kind === 'vd') { const m = OE.parseModel(o.glass); if (m) { m[v.kind] += v.kind === 'nd' ? amp * g * 0.3 : amp * g * 40; o.glass = OE.fmtModel(Math.min(2.2, Math.max(1.35, m.nd)), Math.min(100, Math.max(15, m.vd))); } continue; }
-      const nx = v.kind === 'c' ? x * (1 + amp * g) + (Math.abs(x) < 1e-6 ? amp * g * 0.01 : 0) : v.kind === 't' ? Math.sign(x || 1) * Math.max(0.05, Math.abs(x) * (1 + amp * g)) : v.kind === 'k' ? x + amp * g * 2 : x * (1 + amp * g);
-      OE.setVal(s, v, nx); }
-    const st = { sys: s, mu: 1e-3 }; const m = await run(st);
-    if (isFinite(m) && m < bm * (1 - 1e-6)) { bm = m; best = st.sys; improved++; App.sys = structuredClone(best); App.M = OE.prepare(App.sys); App.sysKey = null; renderLDE(); drawLayout(); }
-    OPT.hist.push(bm); if ($('#mval')) { optLive(); $('#mit').textContent = `cycle ${c + 1} / ${cyc}`; $('#omsg').textContent = `Recherche globale : cycle ${c + 1} / ${cyc} — ${improved} amélioration(s)`; }
-  }
-  OPT.running = false; App.sys = best; pushHist(); refresh({ fast: true }); optLive();
-  const msg = `Recherche globale terminée — ${improved} amélioration(s), mérite ${bm.toExponential(4)}`; if ($('#omsg')) $('#omsg').textContent = msg; toast(msg);
+  const msg = t => { if ($('#omsg')) $('#omsg').textContent = t; };
+  const local = (sys, tag) => runJob('optLocal', { sys, maxIt }, { group: 'optg' }).then(r => { OPT.it += r.it; optKeep(r.sys, r.merit, tag); return r; });
+  try {
+    msg('Recherche globale : optimisation locale du point de départ…');
+    const r0 = await local(structuredClone(App.sys), 'départ');
+    let best = r0.sys, bm = r0.merit, cur = r0.sys, cm = r0.merit, improved = 0, done = 0; const start = r0.sys;
+    OPT.hist.push(bm); App.sys = structuredClone(best); App.M = OE.prepare(App.sys); App.sysKey = null; renderLDE(); drawLayout(); optLive();
+    const B = BG.ok === false ? 1 : bgMax(), T0 = 0.3;
+    while (done < cyc && OPT.running) {
+      const nb = Math.min(B, cyc - done), temp = T0 * (1 - done / cyc);
+      const base = mode === 'anneal' ? cur : mode === 'multi' ? start : best, a = mode === 'multi' ? Math.min(1, amp * 2.5) : mode === 'anneal' ? amp * (0.4 + 0.6 * (1 - done / cyc)) : amp;
+      const res = await Promise.all(Array.from({ length: nb }, (_, k) => local(optPerturb(structuredClone(base), a), `${({ hammer: 'perturbation', anneal: 'recuit', multi: 'départ' })[mode]} ${done + k + 1}`).catch(e => { if (e && e.cancel) throw e; return null; })));
+      for (const r of res) {
+        done++; if (!r || !isFinite(r.merit)) continue;
+        if (r.merit < bm * (1 - 1e-6)) { bm = r.merit; best = r.sys; improved++; App.sys = structuredClone(best); App.M = OE.prepare(App.sys); App.sysKey = null; renderLDE(); drawLayout(); }
+        if (mode === 'anneal') { const d = (r.merit - cm) / Math.max(cm, 1e-15); if (d < 0 || Math.random() < Math.exp(-d / Math.max(temp, 1e-6))) { cur = r.sys; cm = r.merit; } }
+      }
+      OPT.hist.push(bm); if ($('#mval')) { optLive(); $('#mit').textContent = `essai ${done} / ${cyc}`; }
+      msg(`Recherche globale (${({ hammer: 'perturbation du meilleur', anneal: `recuit, T = ${temp.toFixed(3)}`, multi: 'départs multiples' })[mode]}) : ${done} / ${cyc} essais${B > 1 ? ` · ${B} en parallèle` : ''} — ${improved} amélioration(s), meilleur ${bm.toExponential(4)}`);
+    }
+    App.sys = best; const fin = `Recherche globale terminée — ${improved} amélioration(s), mérite ${bm.toExponential(4)}`; msg(fin); toast(fin);
+  } catch (e) { if (!(e && e.cancel)) { console.error(e); msg('Erreur : ' + e.message); } else msg('Recherche globale arrêtée — meilleure solution gardée'); }
+  OPT.running = false; pushHist('Recherche globale'); refresh({ fast: true }); optLive();
 }
 /** libellé de la sélection de longueurs d'onde du quick focus */
 function qfWlLabel() { const s = App.sys, k = App.qf.wl, W = s.wavelengths; if (k === 'all') return 'toutes les λ'; const i = OE.wlSel(s, k)[0]; return `${k === 'central' ? 'λ centrale' : k === 'primary' ? 'λ primaire' : 'λ' + (i + 1)} ${fmt(W[i].um * 1000, 5)} nm`; }
@@ -2296,7 +2478,7 @@ const BG = { workers: [], queue: [], seq: 0, ok: null, url: null, mainBusy: fals
 const bgMax = () => Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1));
 function bgSource() {
   const t = id => (document.getElementById(id) || {}).textContent || '';
-  return [t('js-glasses'), t('js-glassth'), t('js-engine'), t('js-jobs')].join('\n;\n') + `
+  return [t('js-glasses'), t('js-glassth'), t('js-glassprop'), t('js-engine'), t('js-jobs')].join('\n;\n') + `
 ;self.onmessage = async e => { const m = e.data; if (m.ping) { self.postMessage({ pong: 1 }); return; }
   try { if (m.ug && m.ug.length) OE.addGlasses(m.ug, true); const r = await JOBS[m.name](m.args, (d, n, part) => { self.postMessage({ id: m.id, prog: [d, n], part }); }); self.postMessage({ id: m.id, res: r }); }
   catch (err) { self.postMessage({ id: m.id, err: String(err && err.message || err) }); } };`;
@@ -2781,7 +2963,7 @@ function init() {
   if (!App.sys) App.sys = normalize(SAMPLES['Triplet de Cooke f=50 F/5']());
   App.showAsph = App.sys.surfaces.some(s => OE.ASPK.some(a => +s[a])); $('#showAsph').checked = App.showAsph;
   setupLDE(); setupSide(); setupLayout(); setupPanes(); setupDlg();
-  pushHist(); buildPanes(); refresh(); applyAsstPref();
+  pushHist('Ouverture de Focale'); buildPanes(); refresh(); applyAsstPref();
   // header
   document.addEventListener('click', e => {
     const mb = e.target.closest('[data-menu]');
@@ -2810,6 +2992,9 @@ function init() {
       case 'glasses': openGlasses(); break;
       case 'sysdata': openSysData(); break;
       case 'mconf': openMC(); break;
+      case 'hist': openHist(); break;
+      case 'drawings': openDrawings(); break;
+      case 'tolrpt': openTolReport(); break;
       case 'newpane': newFloatPane(); break;
       case 'qfocus': quickFocusUI(); break;
       case 'qfopt': qfMenu(a); break;
@@ -2843,6 +3028,7 @@ function init() {
     else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'a') { e.preventDefault(); openAssistant(); }
     else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'd') { e.preventDefault(); openSysData(); }
     else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'm') { e.preventDefault(); openMC(); }
+    else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'h') { e.preventDefault(); openHist(); }
     else if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'PageUp' || e.key === 'PageDown') && OE.mcOn(App.sys)) { e.preventDefault(); mcGo(e.key === 'PageUp' ? 'prev' : 'next'); }
     else if (e.key === 'Insert') { e.preventDefault(); lde('insA'); }
     else if ((e.ctrlKey || e.metaKey) && e.key === 'Delete') { e.preventDefault(); lde('del'); }

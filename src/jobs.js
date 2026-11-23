@@ -22,6 +22,12 @@ const JOBS = {
   tfmtf: (a, prog) => OE.throughFocus(a.sys, a.o, prog),
   mtffield: (a, prog) => OE.mtfField(a.sys, a.o, prog),
   relillum: (a, prog) => OE.relIllum(a.sys, a.o, prog),
+  /** optimisation locale (moindres carrés amortis) jusqu'à convergence ou maxIt itérations */
+  async optLocal(a, prog) {
+    const st = { sys: a.sys, mu: 1e-3 }; let n = 0, r;
+    do { r = OE.optStep(st); n++; if (prog && n % 4 === 0) await prog(n, a.maxIt || 100); } while (!r.done && n < (a.maxIt || 100));
+    const rr = OE.residuals(st.sys); return { sys: st.sys, merit: st.merit ?? (rr ? OE.meritOf(rr.f) : Infinity), it: n };
+  },
   mcsum: async a => OE.mcSummary(a.sys).map(o => { const r = { ...o }; delete r.M; return r; }),
   /** tolérancement : système nominal compensé */
   tolBase: async a => OE.tolBase(a.sys, a.crit, a.comp, a.o),

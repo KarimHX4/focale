@@ -254,6 +254,10 @@ table.ht{border-collapse:collapse;width:100%;font-size:12.5px}table.ht td,table.
 .ogrid{display:grid;grid-template-columns:minmax(300px,360px) minmax(0,1fr);gap:18px;flex:1;min-height:0}
 .oL,.oR{display:flex;flex-direction:column;min-height:0;min-width:0}
 .oL{overflow:auto;padding-right:4px}
+.gtip{position:absolute;pointer-events:none;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:11.5px;box-shadow:var(--shadow);z-index:5;max-width:230px}
+.hlist{flex:1;overflow:auto;border:1px solid var(--line);border-radius:8px;min-height:120px}.hrow{display:flex;align-items:center;gap:8px;padding:4px 8px;border-bottom:1px solid var(--line);font-size:12px;cursor:pointer}.hrow:hover{background:var(--panel2)}.hrow.cur{background:var(--sel);font-weight:600}.hrow.fut{opacity:.5}.hrow .hn{width:28px;color:var(--mut);font-family:var(--mono)}.hrow .ht{width:62px;color:var(--mut);font-family:var(--mono)}.hrow .hl{flex:1;min-width:0}
+.owt{display:flex;flex-wrap:wrap;gap:4px 8px;margin:3px 0}.owt label{display:inline-flex;align-items:center;gap:3px;font-size:11.5px;color:var(--mut)}.owt input{width:46px;height:22px}
+.osol{display:flex;align-items:center;gap:6px;font-size:12px;padding:2px 0;border-bottom:1px solid var(--line)}.osol .mono{font-family:var(--mono)}
 .oscroll{overflow:auto;border:1px solid var(--line);border-radius:8px;margin:4px 0;min-height:60px;max-height:100%;flex:0 1 auto}
 .oR .oscroll{flex:1 1 auto}
 table.otab select.in{max-width:210px}
@@ -300,6 +304,8 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
       <button data-act="export">Afficher / copier le texte (JSON / .zmx / .seq)…</button>
       <hr>
       <button data-act="report">Rapport PDF…</button>
+      <button data-act="tolrpt">Rapport de tolérancement (PDF)…</button>
+      <button data-act="drawings">Plans de fabrication ISO 10110 (PDF)…</button>
       <hr>
       <button data-act="asstShow" id="asstShow">Masquer le bouton Assistant</button>
       <button data-act="about">À propos / version</button>
@@ -309,6 +315,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
   <div class="sep"></div>
   <button class="tb" data-act="undo" title="Annuler (Ctrl+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 010 10h-3"/></svg></button>
   <button class="tb" data-act="redo" title="Rétablir (Ctrl+Y)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 000 10h3"/></svg></button>
+  <button class="tb" data-act="hist" title="Historique des modifications et points de sauvegarde (Ctrl+H)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg></button>
   <div class="sep"></div>
   <button class="tb" data-act="sysdata" title="Données système (CODE V) : pupille, longueurs d'onde, champs et vignetage, température et pression, matériaux — Ctrl+Maj+D"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>Système</button>
   <button class="tb" data-act="mconf" title="Multi-configuration (zoom, mise au point…) — Ctrl+Maj+M"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="7" height="7" rx="1"/><rect x="14" y="4" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17.5h7M17.5 14v7"/></svg>Configs</button>
@@ -387,6 +394,9 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 <script id="js-glassth">
 /*__GLASSTH__*/
 </script>
+<script id="js-glassprop">
+/*__GLASSPROP__*/
+</script>
 <script id="js-jobs">
 /*__JOBS__*/
 </script>
@@ -407,6 +417,9 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 </script>
 <script>
 /*__REPORT__*/
+</script>
+<script>
+/*__DRAWING__*/
 </script>
 </body>
 </html>

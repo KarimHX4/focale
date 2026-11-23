@@ -91,8 +91,8 @@ const IO = (() => {
     PIK: 'Reprises (PIK) non prises en charge : valeurs courantes conservées',
     PUY: 'Solve CODE V (PUY/PUX/PUC/PCY…) non pris en charge : valeur courante conservée', PUX: 'Solve CODE V (PUY/PUX/PUC/PCY…) non pris en charge : valeur courante conservée',
     PUC: 'Solve CODE V (PUY/PUX/PUC/PCY…) non pris en charge : valeur courante conservée', PCY: 'Solve CODE V (PUY/PUX/PUC/PCY…) non pris en charge : valeur courante conservée',
-    CUX: 'Surfaces anamorphiques / toriques (CUX, RDX, CYL, XTO, YTO) : seul le profil Y est importé', RDX: 'Surfaces anamorphiques / toriques (CUX, RDX, CYL, XTO, YTO) : seul le profil Y est importé',
-    CYL: 'Surfaces anamorphiques / toriques (CUX, RDX, CYL, XTO, YTO) : seul le profil Y est importé', XTO: 'Surfaces anamorphiques / toriques (CUX, RDX, CYL, XTO, YTO) : seul le profil Y est importé', YTO: 'Surfaces anamorphiques / toriques (CUX, RDX, CYL, XTO, YTO) : seul le profil Y est importé',
+
+
     DIF: 'Surfaces diffractives / hologrammes (DIF, HOE, HCO…) non prises en charge : surfaces importées sans leur phase', HOE: 'Surfaces diffractives / hologrammes (DIF, HOE, HCO…) non prises en charge : surfaces importées sans leur phase',
     HCO: 'Surfaces diffractives / hologrammes (DIF, HOE, HCO…) non prises en charge : surfaces importées sans leur phase', HOR: 'Surfaces diffractives / hologrammes (DIF, HOE, HCO…) non prises en charge : surfaces importées sans leur phase',
     HWL: 'Surfaces diffractives / hologrammes (DIF, HOE, HCO…) non prises en charge : surfaces importées sans leur phase', HCT: 'Surfaces diffractives / hologrammes (DIF, HOE, HCO…) non prises en charge : surfaces importées sans leur phase',
@@ -249,6 +249,10 @@ const IO = (() => {
             let found = false; for (let d = 1; d <= 10 && !found; d++) for (let nn = 0; nn <= d; nn++) { const mm = d - nn; if (((d * d + mm + 3 * nn) / 2 + 1) === j) { if (v) tgt.xy[`${mm},${nn}`] = v; found = true; break; } } }
           break; }
         case 'TCE': if (tgt && isFinite(n(0))) tgt.tce = n(0); break;
+        case 'CYL': if (tgt) { tgt.type = 'TOR'; if (tgt.rx === undefined) tgt.rx = Infinity; tgt.kx = tgt.kx || 0; } break;
+        case 'XTO': case 'YTO': if (tgt) { tgt.type = 'TOR'; if (tgt.rx === undefined) tgt.rx = Infinity; tgt.kx = tgt.kx || 0; note('Surfaces toriques CODE V (XTO/YTO) approchées par une biconique (rayon X au sommet)'); } break;
+        case 'RDX': if (tgt) { tgt.type = 'TOR'; tgt.rx = n(0) ? n(0) : Infinity; tgt.kx = tgt.kx || 0; } break;
+        case 'CUX': if (tgt) { tgt.type = 'TOR'; tgt.rx = n(0) ? 1 / n(0) : Infinity; tgt.kx = tgt.kx || 0; } break;
         default:
           if (SEQ_SILENT.has(cmd)) break;
           if (SEQ_UNSUP[cmd]) { note(SEQ_UNSUP[cmd]); break; }
@@ -326,7 +330,9 @@ const IO = (() => {
       if (x.elem === 'grating') { const a = (x.gang || 0) * Math.PI / 180; body.push(`  GRT; GRO ${x.gm ?? 1}; GRS ${fmtN(1 / (x.lpmm || 600))}; GRX ${fmtN(-Math.sin(a))}; GRY ${fmtN(Math.cos(a))}; GRZ 0`); W.push(`S${i} : réseau exporté en GRT/GRO/GRS (à vérifier dans CODE V)`); }
       if (x.elem === 'ideal') { body.push(`! S${i} : lentille idéale f = ${x.fid} non exportée`); W.push(`S${i} : lentille idéale non exportée (surface plane)`); }
       if (x.elem === 'polarizer' || x.elem === 'waveplate') { body.push(`! S${i} : ${x.elem === 'polarizer' ? 'polariseur' : 'lame d\'onde'} non exporté`); W.push(`S${i} : élément de polarisation non exporté`); }
-      if (x.type && x.type !== 'STD') { body.push(`! S${i} : surface ${x.type} non exportée (base conique seule)`); W.push(`S${i} : forme ${x.type === 'XY' ? 'polynôme XY' : 'Zernike'} non exportée`); }
+      if (x.type === 'TOR') { body.push(isFinite(+x.rx) && +x.rx ? `  YTO; RDX ${fmtN(+x.rx)}` : '  CYL'); if (+x.kx) W.push(`S${i} : conique X non exportée vers CODE V`); W.push(`S${i} : surface torique exportée en ${isFinite(+x.rx) && +x.rx ? 'YTO + RDX (biconique approchée)' : 'cylindre CYL'}`); }
+      else if (x.elem === 'doe') { body.push(`! S${i} : surface diffractive (DOE) non exportée`); W.push(`S${i} : surface diffractive non exportée vers CODE V (à ressaisir : DOE / HOE)`); }
+      if (x.type && x.type !== 'STD' && x.type !== 'TOR') { body.push(`! S${i} : surface ${x.type} non exportée (base conique seule)`); W.push(`S${i} : forme ${x.type === 'XY' ? 'polynôme XY' : 'Zernike'} non exportée`); }
     }
     body.push(`SI ${r(S[N].r)} 0`);
     L.push('RDM;LEN', `TITLE '${(s.title || 'Focale').replace(/'/g, ' ')}'`);
@@ -437,6 +443,11 @@ const IO = (() => {
           if (r.parm[6]) { const nt = [s.tx, s.ty, s.tz].filter(v => v).length; if (nt > 1 || (nt && (s.dx || s.dy))) W.push(`S${i} : coordinate break en ordre inverse approché (décentrement puis bascules)`); }
           s._cb = true; break;
         case 'PARAXIAL': s.elem = 'ideal'; s.fid = r.parm[1] || 100; s.r = Infinity; break;
+        case 'BICONIC': case 'BICONICX': s.type = 'TOR'; s.rx = r.parm[1] ? r.parm[1] : Infinity; s.kx = r.parm[2] || 0;
+          if (r.type === 'BICONICX') W.push(`S${i} : BICONICX importée en biconique (termes en x non lus)`); break;
+        case 'TOROIDAL': s.type = 'TOR'; s.rx = r.parm[1] ? r.parm[1] : Infinity; s.kx = 0; W.push(`S${i} : surface TOROIDAL approchée par une biconique (rayon de rotation → rayon X)`); break;
+        case 'BINARY_2': { s.elem = 'doe'; s.dm = r.parm[1] ?? 1; s.dnr = r.xdat[2] > 0 ? r.xdat[2] : (r.diam || 10); const nt = Math.max(0, Math.min(6, r.xdat[1] || 0)); s.da = Array.from({ length: Math.max(4, nt) }, (_, k) => r.xdat[3 + k] || 0);
+          W.push(`S${i} : surface Binary 2 importée en DOE (ordre ${s.dm}, ${nt} terme(s)) : vérifiez l'ordre et le rayon de normalisation`); break; }
         case 'DGRATING': s.elem = 'grating'; s.lpmm = (r.parm[1] || 0) * 1000; s.gm = r.parm[2] ?? 1; break;
         default: types.add(r.type);
       }
@@ -490,10 +501,12 @@ const IO = (() => {
       const surf = { type: 'STANDARD', curv: isFinite(x.r) && x.r ? 1 / x.r : 0, disz: t, glas: glasLine(x.glass), sd: x.sd, fixed: x.sdFixed, coni: x.k, parm: {}, stop: x.stop, comm: x.comment || '' };
       if (E.ASPK.some(a => x[a])) { surf.type = 'EVENASPH'; surf.parm = { 1: 0, 2: x.a4 || 0, 3: x.a6 || 0, 4: x.a8 || 0, 5: x.a10 || 0, 6: x.a12 || 0, 7: x.a14 || 0, 8: x.a16 || 0 }; if (x.a18 || x.a20) W.push(`S${i} : coefficients A18, A20 non exportés (EVENASPH s'arrête à r¹⁶)`); }
       if (x.tce != null && x.tce !== '') surf.tce = +x.tce;
+      if (x.type === 'TOR') { if (surf.type === 'EVENASPH') W.push(`S${i} : asphères d'une surface torique non exportées (BICONIC)`); surf.type = 'BICONIC'; surf.parm = { 1: isFinite(+x.rx) && +x.rx ? +x.rx : 0, 2: +x.kx || 0 }; }
+      if (x.elem === 'doe') { surf.type = 'BINARY_2'; const A = (x.da || []).map(Number); let nt = A.length; while (nt > 0 && !A[nt - 1]) nt--; surf.parm = { ...(surf.parm || {}), 1: x.dm ?? 1 }; surf.xdat = { 1: nt, 2: +x.dnr || 10 }; A.slice(0, nt).forEach((a, k) => surf.xdat[3 + k] = a); W.push(`S${i} : DOE exporté en BINARY_2 (à vérifier dans OpticStudio)`); }
       if (x.elem === 'ideal') { surf.type = 'PARAXIAL'; surf.curv = 0; surf.parm = { 1: x.fid || 100, 2: 0 }; }
       if (x.elem === 'grating') { surf.type = 'DGRATING'; surf.parm = { 1: (x.lpmm || 600) / 1000, 2: x.gm ?? 1 }; if (x.gang) W.push(`S${i} : orientation des traits du réseau (${x.gang}°) non exportée (Zemax : traits selon X)`); }
       if (x.elem === 'polarizer' || x.elem === 'waveplate') { W.push(`S${i} : ${x.elem === 'polarizer' ? 'polariseur' : 'lame d\'onde'} exporté comme surface standard`); surf.comm = (surf.comm + ' ' + (x.elem === 'polarizer' ? '[polariseur]' : '[lame d\'onde]')).trim(); }
-      if (x.type && x.type !== 'STD') W.push(`S${i} : forme ${x.type === 'XY' ? 'polynôme XY' : 'Zernike'} non exportée (base conique seule)`);
+      if (x.type && x.type !== 'STD' && x.type !== 'TOR') W.push(`S${i} : forme ${x.type === 'XY' ? 'polynôme XY' : 'Zernike'} non exportée (base conique seule)`);
       if (!dec) { zs.push(surf); return; }
       if (x.dz) { const prev = zs[zs.length - 1]; if (prev && isFinite(prev.disz)) prev.disz += x.dz; }
       zs.push({ type: 'COORDBRK', curv: 0, disz: 0, parm: { 1: x.dx || 0, 2: x.dy || 0, 3: x.tx || 0, 4: x.ty || 0, 5: x.tz || 0, 6: 0 }, comm: 'CB' });
@@ -526,6 +539,7 @@ const IO = (() => {
       if (z.comm) out.push(`  COMM ${z.comm}`);
       out.push(`  CURV ${fmtN(z.curv)} 0 0 0 0 ""`, '  HIDE 0 0 0 0 0 0 0 0 0 0', '  MIRR 2 0', `  SLAB ${k + 1}`);
       for (const [pi, pv] of Object.entries(z.parm || {})) out.push(`  PARM ${pi} ${fmtN(pv)}`);
+      for (const [xi, xv] of Object.entries(z.xdat || {})) out.push(`  XDAT ${xi} ${fmtN(xv)} 0 0 0 0 0 ""`);
       out.push(`  DISZ ${isFinite(z.disz) ? fmtN(z.disz) : 'INFINITY'}`);
       if (z.glas) out.push('  ' + z.glas);
       if (z.coni) out.push(`  CONI ${fmtN(z.coni)}`);

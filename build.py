@@ -4,7 +4,7 @@ manifest.webmanifest et icon.svg à la racine (servis par GitHub Pages)."""
 import hashlib, pathlib, shutil
 d = pathlib.Path(__file__).parent
 src = d / 'src'
-parts = {k: (src / f).read_text(encoding='utf-8') for k, f in [('ENGINE', 'engine.js'), ('GLASSES', 'glasses.js'), ('GLASSTH', 'glassth.js'), ('JOBS', 'jobs.js'), ('HELP', 'help.js'), ('IO', 'io.js'), ('SAMPLES', 'samples.js'), ('PDF', 'pdf.js'), ('APP', 'app.js'), ('REPORT', 'report.js')] if (src / f).exists()}
+parts = {k: (src / f).read_text(encoding='utf-8') for k, f in [('ENGINE', 'engine.js'), ('GLASSES', 'glasses.js'), ('GLASSTH', 'glassth.js'), ('GLASSPROP', 'glassprop.js'), ('JOBS', 'jobs.js'), ('HELP', 'help.js'), ('IO', 'io.js'), ('SAMPLES', 'samples.js'), ('PDF', 'pdf.js'), ('APP', 'app.js'), ('REPORT', 'report.js'), ('DRAWING', 'drawing.js')] if (src / f).exists()}
 h = (src / 'shell.html').read_text(encoding='utf-8')
 asst = (src / 'assistant.js').read_text(encoding='utf-8') if (src / 'assistant.js').exists() else ''
 version = hashlib.sha1(''.join(parts.values()).encode() + h.encode() + asst.encode()).hexdigest()[:8]

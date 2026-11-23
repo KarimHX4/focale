@@ -72,7 +72,7 @@ const PDF = (() => {
       }
       return yy - y;
     }
-    line(x1, y1, x2, y2, o = {}) { const [r, g, b] = col(o.color || '#9aa3af'); this.page.push(`${n(o.w || 0.5)} w ${n(r)} ${n(g)} ${n(b)} RG ${n(x1)} ${n(H - y1)} m ${n(x2)} ${n(H - y2)} l S`); }
+    line(x1, y1, x2, y2, o = {}) { const [r, g, b] = col(o.color || '#9aa3af'), d = o.dash ? `[${o.dash.map(n).join(' ')}] 0 d ` : ''; this.page.push(`${d}${n(o.w || 0.5)} w ${n(r)} ${n(g)} ${n(b)} RG ${n(x1)} ${n(H - y1)} m ${n(x2)} ${n(H - y2)} l S${d ? ' [] 0 d' : ''}`); }
     rect(x, y, w, h, o = {}) {
       const p = `${n(x)} ${n(H - y - h)} ${n(w)} ${n(h)} re`;
       if (o.fill) { const [r, g, b] = col(o.fill); this.page.push(`${n(r)} ${n(g)} ${n(b)} rg ${p} f`); }
@@ -102,6 +102,7 @@ const PDF = (() => {
       if (o.fill) { const [r, g, b] = col(o.fill); s = `${n(r)} ${n(g)} ${n(b)} rg ` + s + (o.stroke ? '' : ' f'); }
       if (o.stroke) { const [r, g, b] = col(o.stroke); s = `${n(o.w || 0.8)} w ${n(r)} ${n(g)} ${n(b)} RG ` + s + (o.fill ? ' B' : ' S'); }
       if (o.round) s = '1 J 1 j ' + s + ' 0 J 0 j';
+      if (o.dash) s = `[${o.dash.map(n).join(' ')}] 0 d ` + s + ' [] 0 d';
       this.page.push(s);
     }
     /** document final (Uint8Array) */
