@@ -867,6 +867,18 @@ const OE = (() => {
     for (let y = 0; y < n; y++) { for (let x = 0; x < n; x++) { rr[x] = re[y * n + x]; ri[x] = im[y * n + x]; } fft1(rr, ri, inv); for (let x = 0; x < n; x++) { re[y * n + x] = rr[x]; im[y * n + x] = ri[x]; } }
     for (let x = 0; x < n; x++) { for (let y = 0; y < n; y++) { rr[y] = re[y * n + x]; ri[y] = im[y * n + x]; } fft1(rr, ri, inv); for (let y = 0; y < n; y++) { re[y * n + x] = rr[y]; im[y * n + x] = ri[y]; } }
   }
+  /**
+   * Ouverture réelle côté image pour un champ et une λ (comme les « X and Y F-numbers » de CODE V) :
+   * écarts de cosinus directeurs (repère local de l'image) entre les rayons de bord de pupille ±Y et ±X, × indice image.
+   * Sur l'axe : 2·ON = 1/F#. Hors axe, ils intègrent les aberrations de pupille, l'obliquité et l'inclinaison du plan image.
+   * Fréquence de coupure : fc = ΔM/λ (tangentiel), ΔL/λ (sagittal) ; pas de la PSF : λN/(P·Δ).
+   */
+  function pupilScale(M, f, wi) {
+    const o = { noVig: true, noClip: true }, n = M.ctxs[wi].nAbs[M.N - 1] || 1, d0 = 1 / M.par.wfno;
+    const a = ray(M, wi, f, 0, 1, o), b = ray(M, wi, f, 0, -1, o), c = ray(M, wi, f, 1, 0, o), d = ray(M, wi, f, -1, 0, o);
+    const dM = !a.vig && !b.vig ? Math.abs(a.M - b.M) * n : NaN, dL = !c.vig && !d.vig ? Math.abs(c.L - d.L) * n : NaN;
+    return { dM: dM > 1e-9 ? dM : d0, dL: dL > 1e-9 ? dL : d0 };
+  }
   /** apodisation gaussienne de la pupille (CODE V PUI) : intensité relative I au bord → amplitude I^(ρ²/2) */
   function sysApod(M) {
     const a = M.sys.apod; if (!a || a.type !== 'gauss') return null;
@@ -890,8 +902,9 @@ const OE = (() => {
       const v = (re[y * P + x] ** 2 + im[y * P + x] ** 2) / norm;
       const yy = (y + h) % P, xx = (x + h) % P; I[yy * P + xx] = v; if (v > pk) pk = v;
     }
-    const dx = M.ctxs[wi].lmm * M.par.wfno * N / P;
-    return { I, P, N, dx, strehl: pk, wf };
+    const f = typeof fi === 'object' ? fi : M.sys.fields[fi], sc = pupilScale(M, f, wi), lmm = M.ctxs[wi].lmm;
+    const dxX = lmm * N / (P * sc.dL), dxY = lmm * N / (P * sc.dM);
+    return { I, P, N, dx: Math.sqrt(dxX * dxY), dxX, dxY, sc, strehl: pk, wf };
   }
   /**
    * PSF sur une grille choisie (transformée de Fourier matricielle) : m×m points couvrant [−half, half] mm dans le plan image,
@@ -900,7 +913,8 @@ const OE = (() => {
    */
   function psfGrid(M, fi, wi, half, m, N = 128, wfIn, xsIn) {
     const wf = wfIn || wavefront(M, fi, wi, N, false), apod = sysApod(M);
-    const lF = M.ctxs[wi].lmm * M.par.wfno, dx = 2 * half / (m - 1), xs = xsIn || Array.from({ length: m }, (_, k) => -half + k * dx);
+    const sc = pupilScale(M, typeof fi === 'object' ? fi : M.sys.fields[fi], wi), lmm = M.ctxs[wi].lmm;
+    const dx = 2 * half / (m - 1), xs = xsIn || Array.from({ length: m }, (_, k) => -half + k * dx);
     const Ar = new Float64Array(N * N), Ai = new Float64Array(N * N); let sa = 0;
     for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
       const w = wf.W[i * N + j]; if (!isFinite(w)) continue;
@@ -908,49 +922,135 @@ const OE = (() => {
       const ph = -2 * Math.PI * w; Ar[i * N + j] = A * Math.cos(ph); Ai[i * N + j] = A * Math.sin(ph); sa += A;
     }
     // noyau e^{−2πi (j − N/2) x / (λF N)} (même convention que la FFT de psf())
-    const Kr = new Float64Array(m * N), Ki = new Float64Array(m * N);
-    for (let k = 0; k < m; k++) { const x = xs[k]; for (let j = 0; j < N; j++) { const a = -2 * Math.PI * (j - N / 2) * x / (lF * N); Kr[k * N + j] = Math.cos(a); Ki[k * N + j] = Math.sin(a); } }
+    const ker = D => { const Kr = new Float64Array(m * N), Ki = new Float64Array(m * N); for (let k = 0; k < m; k++) { const x = xs[k]; for (let j = 0; j < N; j++) { const a = -2 * Math.PI * (j - N / 2) * x * D / (lmm * N); Kr[k * N + j] = Math.cos(a); Ki[k * N + j] = Math.sin(a); } } return [Kr, Ki]; };
+    let [Kr, Ki] = ker(sc.dL);
     // T = A · Kxᵀ  (N × m), puis E = Ky · T (m × m)
     const Tr = new Float64Array(N * m), Ti = new Float64Array(N * m);
     for (let i = 0; i < N; i++) for (let k = 0; k < m; k++) { let sr = 0, si = 0; const o = i * N, q = k * N; for (let j = 0; j < N; j++) { const ar = Ar[o + j]; if (!ar && !Ai[o + j]) continue; const ai = Ai[o + j], kr = Kr[q + j], ki = Ki[q + j]; sr += ar * kr - ai * ki; si += ar * ki + ai * kr; } Tr[i * m + k] = sr; Ti[i * m + k] = si; }
+    [Kr, Ki] = ker(sc.dM);
     const I = new Float64Array(m * m), norm = sa * sa || 1; let pk = 0;
     for (let r = 0; r < m; r++) for (let k = 0; k < m; k++) { let sr = 0, si = 0; const q = r * N; for (let i = 0; i < N; i++) { const tr = Tr[i * m + k], ti = Ti[i * m + k], kr = Kr[q + i], ki = Ki[q + i]; sr += kr * tr - ki * ti; si += kr * ti + ki * tr; } const v = (sr * sr + si * si) / norm; I[r * m + k] = v; if (v > pk) pk = v; }
     return { I, m, dx, half, xs, strehl: pk, wf };
   }
-  function mtfOne(M, fi, wi, N = 64, P = 256) {
+  /**
+   * OTF complexe d'un champ à une λ : FFT de la PSF (= autocorrélation discrète exacte de la pupille, P ≥ 2N),
+   * fréquences propres à chaque direction (fcT = ΔM/λ, fcS = ΔL/λ), et limite de diffraction sur la même pupille.
+   */
+  function mtfOne(M, fi, wi, N = 64, P = 128) {
     const p = psf(M, fi, wi, N, P);
-    const otf = I => { const re = Float64Array.from(I), im = new Float64Array(P * P); fft2(re, im, P, false); return (x, y) => Math.hypot(re[y * P + x], im[y * P + x]); };
-    const mag = otf(p.I);
-    // limite de diffraction : même pupille (obstruction centrale, vignetage) avec un front d'onde parfait
-    const W0 = Float64Array.from(p.wf.W, v => isFinite(v) ? 0 : NaN), dl = otf(psf(M, fi, wi, N, P, { W: W0 }).I);
-    const m0 = mag(0, 0) || 1, d0 = dl(0, 0) || 1, fc = 1 / (M.ctxs[wi].lmm * M.par.wfno), f = [], T = [], Sg = [], DT = [], DS = [];
-    for (let k = 0; k <= N; k++) { f.push(k * fc / N); T.push(mag(0, k % P) / m0); Sg.push(mag(k % P, 0) / m0); DT.push(dl(0, k % P) / d0); DS.push(dl(k % P, 0) / d0); }
-    return { f, T, S: Sg, DT, DS, fc, strehl: p.strehl };
+    const otf = I => { const re = Float64Array.from(I), im = new Float64Array(P * P); fft2(re, im, P, false); return { re, im }; };
+    const O = otf(p.I), W0 = Float64Array.from(p.wf.W, v => isFinite(v) ? 0 : NaN), D = otf(psf(M, fi, wi, N, P, { W: W0 }).I);
+    const a0 = Math.hypot(O.re[0], O.im[0]) || 1, d0 = Math.hypot(D.re[0], D.im[0]) || 1, lmm = M.ctxs[wi].lmm;
+    const fcT = p.sc.dM / lmm, fcS = p.sc.dL / lmm, Tr = [], Ti = [], Sr = [], Si = [], DT = [], DS = [], T = [], S = [];
+    for (let k = 0; k <= N; k++) {
+      // le décalage (−1)^k vient du centrage de la PSF au milieu du tableau ; commun à toutes les λ, il est retiré
+      const sg = k % 2 ? -1 : 1, iy = (k % P) * P, ix = k % P;
+      Tr.push(sg * O.re[iy] / a0); Ti.push(sg * O.im[iy] / a0); Sr.push(sg * O.re[ix] / a0); Si.push(sg * O.im[ix] / a0);
+      T.push(Math.hypot(O.re[iy], O.im[iy]) / a0); S.push(Math.hypot(O.re[ix], O.im[ix]) / a0);
+      DT.push(Math.hypot(D.re[iy], D.im[iy]) / d0); DS.push(Math.hypot(D.re[ix], D.im[ix]) / d0);
+    }
+    const fT = T.map((_, k) => k * fcT / N), fS = S.map((_, k) => k * fcS / N), c = ray(M, wi, typeof fi === 'object' ? fi : M.sys.fields[fi], 0, 0);
+    return { fT, fS, T, S, Tr, Ti, Sr, Si, DT, DS, fcT, fcS, fc: Math.max(fcT, fcS), strehl: p.strehl, chief: c.vig ? null : [c.x, c.y], sc: p.sc };
+  }
+  /**
+   * OTF par autocorrélation directe de la pupille (méthode de Hopkins, comme CODE V) aux fréquences demandées :
+   * OTF(s) = Σ A(x) A(x−s) e^{2πi [W(x) − W(x−s)]} / Σ A², décalage s = 2 f / fc en pupille normalisée, fractionnaire
+   * (front d'onde et masque interpolés linéairement) — donc aucune limite de résolution en fréquence.
+   * fcT = ΔM/λ et fcS = ΔL/λ (ouverture réelle du champ). Renvoie aussi la limite de diffraction sur la même pupille.
+   */
+  function otfAC(M, fi, wi, freqs, N = 64) {
+    const f = typeof fi === 'object' ? fi : M.sys.fields[fi], wf = wavefront(M, f, wi, N, false), apod = sysApod(M);
+    const A = new Float64Array(N * N), W = new Float64Array(N * N);
+    let norm = 0;
+    for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) { const w = wf.W[i * N + j]; if (!isFinite(w)) continue; const a = apod ? apod(-1 + (2 * j + 1) / N, -1 + (2 * i + 1) / N) : 1; if (!(a > 0)) continue; A[i * N + j] = a; W[i * N + j] = w; norm += a * a; }
+    const sc = pupilScale(M, f, wi), lmm = M.ctxs[wi].lmm, fcT = sc.dM / lmm, fcS = sc.dL / lmm;
+    const out = { Tr: [], Ti: [], Sr: [], Si: [], DT: [], DS: [], fcT, fcS, fc: Math.max(fcT, fcS), strehl: NaN };
+    const at = (i, j) => (i >= 0 && j >= 0 && i < N && j < N ? i * N + j : -1);
+    const one = (fr, fc, alongY) => {
+      const sh = fr * N / fc; if (!(sh < N)) return [0, 0, 0];
+      const k0 = Math.floor(sh), t = sh - k0; let re = 0, im = 0, dl = 0;
+      for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+        const q = i * N + j, a = A[q]; if (!a) continue;
+        const q1 = alongY ? at(i - k0, j) : at(i, j - k0), q0 = alongY ? at(i - k0 - 1, j) : at(i, j - k0 - 1);
+        const a1 = q1 >= 0 ? A[q1] : 0, a0 = q0 >= 0 ? A[q0] : 0, b = (1 - t) * a1 + t * a0; if (!b) continue;
+        const w2 = a1 && a0 ? (1 - t) * W[q1] + t * W[q0] : a1 ? W[q1] : W[q0];
+        const ph = 2 * Math.PI * (W[q] - w2), ab = a * b; re += ab * Math.cos(ph); im += ab * Math.sin(ph); dl += ab;
+      }
+      return [re / norm, im / norm, dl / norm];
+    };
+    for (const fr of freqs) { const T = one(fr, fcT, true), S = one(fr, fcS, false); out.Tr.push(T[0]); out.Ti.push(T[1]); out.DT.push(T[2]); out.Sr.push(S[0]); out.Si.push(S[1]); out.DS.push(S[2]); }
+    const c = ray(M, wi, f, 0, 0); out.chief = c.vig ? null : [c.x, c.y];
+    return out;
+  }
+  /** interpolation cubique (Catmull-Rom) d'échantillons réguliers ys(x = k·h) ; 0 au-delà du dernier point */
+  function cubic(ys, h, x) {
+    const n = ys.length - 1, u = x / h; if (u < 0 || u > n) return 0;
+    const k = Math.min(n - 1, Math.floor(u)), t = u - k, y = j => ys[Math.max(0, Math.min(n, j))];
+    const p0 = y(k - 1), p1 = y(k), p2 = y(k + 1), p3 = y(k + 2);
+    return p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
+  }
+  /**
+   * FTM polychromatique par diffraction : somme pondérée des OTF complexes, chacune déphasée de la position de son
+   * rayon principal par rapport à celui de la λ de référence (le chromatisme latéral réduit donc la FTM, comme dans CODE V
+   * et OpticStudio), puis module. opts : N (échantillonnage pupille, 64 par défaut), fmax, freqs (fréquences imposées).
+   */
+  function mtf(M, fi, opts = {}) {
+    const N = opts.N || 64, f0 = typeof fi === 'object' ? fi : M.sys.fields[fi];
+    let fmax = opts.fmax; if (!fmax && !opts.freqs) fmax = Math.max(...M.wls.map((_, wi) => { const sc = pupilScale(M, f0, wi); return Math.max(sc.dM, sc.dL) / M.ctxs[wi].lmm; }));
+    const f = opts.freqs || Array.from({ length: 121 }, (_, i) => fmax * i / 120);
+    const per = M.wls.map((_, wi) => otfAC(M, f0, wi, f, N));
+    const W = M.sys.wavelengths.map(w => w.w ?? 1), Wt = W.reduce((a, b) => a + b, 0) || 1, c0 = per[M.pw].chief || [0, 0];
+    const T = [], Sg = [], DL = [];
+    f.forEach((fr, k) => {
+      let tr = 0, ti = 0, sr = 0, si = 0, d = 0;
+      per.forEach((p, wi) => {
+        const w = W[wi], dx = p.chief ? p.chief[0] - c0[0] : 0, dy = p.chief ? p.chief[1] - c0[1] : 0, pt = -2 * Math.PI * fr * dy, ps = -2 * Math.PI * fr * dx;
+        const ar = p.Tr[k], ai = p.Ti[k], br = p.Sr[k], bi = p.Si[k];
+        tr += w * (ar * Math.cos(pt) - ai * Math.sin(pt)); ti += w * (ar * Math.sin(pt) + ai * Math.cos(pt));
+        sr += w * (br * Math.cos(ps) - bi * Math.sin(ps)); si += w * (br * Math.sin(ps) + bi * Math.cos(ps));
+        d += w * (p.DT[k] + p.DS[k]) / 2;
+      });
+      T.push(Math.min(1, Math.hypot(tr, ti) / Wt)); Sg.push(Math.min(1, Math.hypot(sr, si) / Wt)); DL.push(Math.min(1, d / Wt));
+    });
+    // FTM monochromatiques (module) pour l'affichage par longueur d'onde
+    per.forEach(p => { p.T = p.Tr.map((r, k) => Math.hypot(r, p.Ti[k])); p.S = p.Sr.map((r, k) => Math.hypot(r, p.Si[k])); });
+    return { f, T, S: Sg, DL, per, N, method: 'diff' };
+  }
+  /**
+   * FTM géométrique (CODE V / OpticStudio « Geometric MTF ») : transformée de Fourier des impacts de rayons
+   * MTF_T(f) = |Σ w e^{−2πi f y}| / Σ w (MTF_S en x), toutes λ pondérées autour du rayon principal de référence ;
+   * dl : multipliée par la FTM d'une pupille parfaite (fc réelle du champ). Adaptée aux systèmes très aberrants (≫ λ).
+   */
+  function mtfGeo(M, fi, opts = {}) {
+    const f0 = typeof fi === 'object' ? fi : M.sys.fields[fi], n = opts.n || 41, grid = pupilGrid(n, M.obs);
+    const c0r = ray(M, M.pw, f0, 0, 0), c0 = c0r.vig ? [0, 0] : [c0r.x, c0r.y];
+    const pts = [], W = M.sys.wavelengths.map(w => w.w ?? 1);
+    let fcT = 0, fcS = 0, wsum = 0;
+    M.wls.forEach((_, wi) => {
+      const sc = pupilScale(M, f0, wi), lmm = M.ctxs[wi].lmm; fcT += W[wi] * sc.dM / lmm; fcS += W[wi] * sc.dL / lmm; wsum += W[wi];
+      const rs = grid.map(([px, py]) => ray(M, wi, f0, px, py)).filter(r => !r.vig), w = W[wi] / (rs.length || 1);
+      for (const r of rs) pts.push([r.x - c0[0], r.y - c0[1], w]);
+    });
+    fcT /= wsum || 1; fcS /= wsum || 1;
+    const fmax = opts.fmax || Math.max(fcT, fcS), f = opts.freqs || Array.from({ length: 101 }, (_, i) => fmax * i / 100);
+    const tot = pts.reduce((a, q) => a + q[2], 0) || 1, T = [], Sg = [], DL = [];
+    for (const fr of f) {
+      let tr = 0, ti = 0, sr = 0, si = 0; const k = 2 * Math.PI * fr;
+      for (const [x, y, w] of pts) { tr += w * Math.cos(k * y); ti -= w * Math.sin(k * y); sr += w * Math.cos(k * x); si -= w * Math.sin(k * x); }
+      const dT = mtfDL(fr / fcT), dS = mtfDL(fr / fcS), dl = opts.dl !== false;
+      T.push(Math.hypot(tr, ti) / tot * (dl ? dT : 1)); Sg.push(Math.hypot(sr, si) / tot * (dl ? dS : 1)); DL.push((dT + dS) / 2);
+    }
+    return { f, T, S: Sg, DL, n: pts.length, method: 'geo' };
   }
   function mtfDL(nu) { if (nu >= 1) return 0; return (2 / Math.PI) * (Math.acos(nu) - nu * Math.sqrt(1 - nu * nu)); }
   function interp(xs, ys, x) {
     if (x <= xs[0]) return ys[0]; if (x >= xs[xs.length - 1]) return 0;
     let i = 1; while (xs[i] < x) i++; const t = (x - xs[i - 1]) / (xs[i] - xs[i - 1]); return ys[i - 1] * (1 - t) + ys[i] * t;
   }
-  function mtf(M, fi, opts = {}) {
-    const N = opts.N || 48, P = opts.P || 128;
-    const per = M.wls.map((_, wi) => mtfOne(M, fi, wi, N, P));
-    const fmax = opts.fmax || Math.max(...per.map(p => p.fc));
-    const nf = 80, f = [], T = [], Sg = [], DL = [];
-    const W = M.sys.wavelengths.map(w => w.w ?? 1), Wt = W.reduce((a, b) => a + b, 0);
-    for (let i = 0; i <= nf; i++) {
-      const fr = fmax * i / nf; f.push(fr);
-      let t = 0, s = 0, d = 0;
-      per.forEach((p, wi) => { t += W[wi] * interp(p.f, p.T, fr); s += W[wi] * interp(p.f, p.S, fr); d += W[wi] * (interp(p.f, p.DT, fr) + interp(p.f, p.DS, fr)) / 2; });
-      T.push(t / Wt); Sg.push(s / Wt); DL.push(d / Wt);
-    }
-    return { f, T, S: Sg, DL, per };
-  }
-
   function encircled(M, fi) {
     const ps = psf(M, fi, M.pw, 64, 256);
     const P = ps.P, h = P >> 1; let tot = 0; const rad = [];
-    for (let y = 0; y < P; y++) for (let x = 0; x < P; x++) { const v = ps.I[y * P + x]; tot += v; rad.push([Math.hypot(x - h, y - h) * ps.dx, v]); }
+    for (let y = 0; y < P; y++) for (let x = 0; x < P; x++) { const v = ps.I[y * P + x]; tot += v; rad.push([Math.hypot((x - h) * ps.dxX, (y - h) * ps.dxY), v]); }
     rad.sort((a, b) => a[0] - b[0]);
     const rmax = 8 * 1.22 * M.ctxs[M.pw].lmm * M.par.wfno;
     const sp = spot(M, fi, 31);
@@ -1569,21 +1669,7 @@ const OE = (() => {
     return sys;
   }
   /** FTM polychromatique (moyenne T/S) à la fréquence nu (cycles/mm) pour un champ */
-  function mtfAt(M, f, nu) {
-    const W = M.sys.wavelengths.map(w => w.w ?? 1); let acc = 0, ws = 0;
-    M.wls.forEach((_, wi) => {
-      const N = 32, P = 128, p = psf(M, f, wi, N, P), fc = 1 / (M.ctxs[wi].lmm * M.par.wfno);
-      let v = 0;
-      if (nu < fc && p.wf.ok) {
-        const re = Float64Array.from(p.I), im = new Float64Array(P * P); fft2(re, im, P, false);
-        const mag = (x, y) => Math.hypot(re[y * P + x], im[y * P + x]), m0 = mag(0, 0) || 1, k = nu / (fc / N), k0 = Math.floor(k), t = k - k0;
-        const T = (1 - t) * mag(0, k0 % P) + t * mag(0, (k0 + 1) % P), Sg = (1 - t) * mag(k0 % P, 0) + t * mag((k0 + 1) % P, 0);
-        v = (T + Sg) / 2 / m0;
-      }
-      acc += W[wi] * v; ws += W[wi];
-    });
-    return acc / (ws || 1);
-  }
+  function mtfAt(M, f, nu) { const r = mtf(M, f, { N: 32, freqs: [nu] }); return (r.T[0] + r.S[0]) / 2; }
   /** critère : WFE RMS (λ, piston et tilt retirés) ou spot RMS (µm), moyenne quadratique pondérée sur les champs ; MTF : moyenne pondérée */
   function criterion(M, kind, opts = {}) {
     if (!M.ok) return kind === 'MTF' ? 0 : Infinity;
@@ -1760,7 +1846,7 @@ const OE = (() => {
   }
 
   return { DEG, fiberInfo, binPSF, detMTF, extSource, binImage, imageSim, polPupil, polOut, POLSTATES, TOLT, TOLC, LT, quickFocus, wlSel, opValue, parseModel, fmtModel, glassNearest, glassPool, toModel, subTry, tolBase, tolDefaults, tolFreeze, tolItems, tolGen, tolApplicable, tolLabel, tolApply, tolWorse, tolSens, tolInverse, tolTrial, tolRebuild, tolValue, niceDown, rng, mtfAt, compensate, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
-    wavefront, psf, psfGrid, mtf, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
+    wavefront, psf, psfGrid, mtf, mtfGeo, pupilScale, otfAC, mtfOne, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
     OPS, getVars, residuals, meritOf, optStep, pupilGrid, indices, paraxial,
     ASPK, FTYPES, vigMap, setVignetting, convertFields, thermalScan, glassTherm, nAir, envN, envCtx, isSolid };
 })();

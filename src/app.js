@@ -952,7 +952,7 @@ function paneHeader(pi) {
   if (p.type === 'psf' && det().on) h += `<label title="PSF intégrée sur les pixels du détecteur"><input type="checkbox" data-p="pix" ${p.pix ? 'checked' : ''}>pixels</label>`;
   if (p.type === 'psf') h += `<span class="seg sm"><button data-p="view2" class="${p.view === '3d' ? '' : 'on'}" title="Carte 2D">2D</button><button data-p="view3" class="${p.view === '3d' ? 'on' : ''}" title="Surface 3D (glisser pour tourner)">3D</button></span><label><input type="checkbox" data-p="log" ${p.log ? 'checked' : ''}>log</label><label class="zr" title="Zoom continu de ×0,5 à ×5 (ou molette sur la PSF)">zoom <input type="range" data-p="zoom" min="0.5" max="5" step="0.05" value="${psfZoom(p)}"><span class="zv">×${psfZoom(p).toFixed(2)}</span></label><button class="bt" data-p="zfit" style="height:24px" title="Ajuster : zoom ×1${p.view === '3d' ? ' et orientation 3D par défaut' : ''} (ou double-clic sur la PSF)">Ajuster</button>`;
   if (p.type === 'wfe') h += `<label><input type="checkbox" data-p="tilt" ${p.tilt !== false ? 'checked' : ''}>sans tilt</label>`;
-  if (p.type === 'mtf') h += `<label>f max <input class="in" data-p="fmax" style="width:56px;height:22px" value="${p.fmax || ''}" placeholder="auto"></label>`;
+  if (p.type === 'mtf') h += `<select data-p="mt" title="Méthode de calcul de la FTM"><option value="diff" ${p.mt !== 'geo' ? 'selected' : ''}>Diffraction</option><option value="geo" ${p.mt === 'geo' ? 'selected' : ''}>Géométrique</option></select>${p.mt === 'geo' ? `<label title="Multiplier par la FTM d'une pupille parfaite (recommandé)"><input type="checkbox" data-p="gdl" ${p.gdl !== false ? 'checked' : ''}>× diffraction</label>` : `<select data-p="ns" title="Échantillonnage de la pupille (front d'onde N×N)">${[32, 64, 128, 256].map(n => `<option value="${n}" ${(+p.ns || 64) === n ? 'selected' : ''}>${n}×${n}</option>`).join('')}</select>`}<label>f max <input class="in" data-p="fmax" style="width:56px;height:22px" value="${p.fmax || ''}" placeholder="auto"></label>`;
   if (p.type === 'spot') h += `<label><input type="checkbox" data-p="chief" ${p.chief ? 'checked' : ''}>réf. principal</label>`;
   if (p.type === 'thermal') h += `<label>de <input class="in" data-p="t1" style="width:46px;height:22px" value="${p.t1 ?? -20}"></label><label>à <input class="in" data-p="t2" style="width:46px;height:22px" value="${p.t2 ?? 60}"> °C</label>`;
   const fl = !!App.fw['p' + pi];
@@ -984,8 +984,8 @@ function setupPaneEvents(el) {
     const t = e.target, k = t.dataset.p; if (!k || !t.closest('.pane')) return; const pi = +t.closest('.pane').dataset.i, p = App.panes[pi];
     if (k === 'zoom') { p.zoom = Math.min(5, Math.max(0.5, +t.value)); save(); paneBody(pi); return; }
     if (k === 'type') { App.panes[pi] = { type: t.value }; }
-    else if (['log', 'tilt', 'chief', 'fresnel', 'upright', 'pix', 'det', 'grid'].includes(k)) p[k] = t.checked;
-    else if (['stype', 'phase'].includes(k)) p[k] = t.value;
+    else if (['log', 'tilt', 'chief', 'fresnel', 'upright', 'pix', 'det', 'grid', 'gdl'].includes(k)) p[k] = t.checked;
+    else if (['stype', 'phase', 'mt'].includes(k)) p[k] = t.value;
     else if (['sd', 'sna', 'sw', 'sh'].includes(k)) { const v = parseFloat(String(t.value).replace(',', '.')); p[k] = isFinite(v) && v >= 0 ? v : null; }
     else if (k === 'st' || k === 'src') p[k] = t.value;
     else if (k === 'fov') { const v = parseFloat(String(t.value).replace(',', '.')); p.fov = isFinite(v) && v > 0 ? v : null; }
@@ -1147,10 +1147,10 @@ const R = {
     const half = Math.max(4, Math.min(P >> 1, Math.round(P / 4 / zoom))), n = 2 * half, o = P / 2 - half, data = new Float64Array(n * n);
     let mx = 0;
     for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { const v = ps.I[(y + o) * P + x + o]; data[y * n + x] = v; mx = Math.max(mx, v); }
-    const ext = half * ps.dx * 1e3;
+    const ext = half * ps.dx * 1e3, exX = half * (ps.dxX || ps.dx) * 1e3, exY = half * (ps.dxY || ps.dx) * 1e3; // pas anisotrope hors axe (F/# réels T et S)
     if (p.log) for (let i = 0; i < data.length; i++) data[i] = Math.log10(Math.max(data[i] / mx, 1e-6));
-    const A = axes(c, { x: 0, y: 0, w: w - 70, h: h - 4 }, [-ext, ext], [-ext, ext], { equal: true, title: `PSF  Strehl ${fx(ps.strehl, 4)} · zoom ×${fmt(zoom, 2)}`, ml: 46, xl: 'µm', zero: false });
-    A.xr0 = -ext; A.xr1 = ext; A.yr0 = -ext; A.yr1 = ext;
+    const A = axes(c, { x: 0, y: 0, w: w - 70, h: h - 4 }, [-exX, exX], [-exY, exY], { equal: true, title: `PSF  Strehl ${fx(ps.strehl, 4)} · zoom ×${fmt(zoom, 2)}`, ml: 46, xl: 'µm', zero: false });
+    A.xr0 = -exX; A.xr1 = exX; A.yr0 = -exY; A.yr1 = exY;
     heat(c, A, data, n, n, p.log ? -6 : 0, p.log ? 0 : mx, 'inferno', true);
     c.strokeStyle = 'rgba(255,255,255,.45)'; c.setLineDash([3, 3]); c.beginPath(); c.arc(A.X(0), A.Y(0), A.X(ra) - A.X(0), 0, 2 * Math.PI); c.stroke(); c.setLineDash([]);
     cbar(c, w - 58, 30, 12, Math.max(40, h - 70), p.log ? -6 : 0, p.log ? 0 : mx, 'inferno', p.log ? 'log₁₀' : 'Strehl');
@@ -1164,9 +1164,14 @@ const R = {
     text(c, 'molette : zoom · double-clic : ×1', A.P.x + A.P.w - 4, A.P.y + 4, { col: 'rgba(255,255,255,.55)', size: 9.5, align: 'right' });
   },
   mtf(p, M, c, w, h) {
-    const res = M.sys.fields.map((_, i) => OE.mtf(M, i, { fmax: p.fmax }));
+    const geo = p.mt === 'geo', N = +p.ns || 64, F = M.sys.fields;
+    const sc = F.map(f => M.wls.map((_, wi) => OE.pupilScale(M, f, wi)));
+    const fmax = p.fmax || Math.max(...sc.flatMap((a, i) => a.map((q, wi) => Math.max(q.dM, q.dL) / M.ctxs[wi].lmm)));
+    const res = F.map((_, i) => geo ? OE.mtfGeo(M, i, { fmax, dl: p.gdl !== false }) : OE.mtf(M, i, { fmax, N }));
     const f = res[0].f;
-    const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, [0, f[f.length - 1]], [0, 1.02], { xl: 'Fréquence spatiale (cycles/mm)', yl: 'Module FTM', title: 'FTM polychromatique (diffraction)' });
+    const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, [0, f[f.length - 1]], [0, 1.02], { xl: 'Fréquence spatiale (cycles/mm)', yl: 'Module FTM', title: geo ? `FTM polychromatique géométrique (rayons${p.gdl !== false ? ' × limite de diffraction' : ''})` : `FTM polychromatique (diffraction, autocorrélation de la pupille ${N}×${N})` });
+    { const pw = M.pw, fn = sc.map((a, i) => `F${i + 1} ${fx(1 / a[pw].dM, 2)}/${fx(1 / a[pw].dL, 2)}`).join(' · ');
+      text(c, `F/# réels T/S (λ réf.) : ${fn}`, A.P.x + 6, A.P.y + 4, { col: TH.mut, size: 10, maxW: A.P.w - 12 }); }
     pline(c, A, f, res[0].DL, TH.fg, 1.2, [2, 2]);
     res.forEach((r, i) => { pline(c, A, r.f, r.T, fcol(i), 1.7); pline(c, A, r.f, r.S, fcol(i), 1.7, [6, 4]); });
     const dd = det(); let dl = [];

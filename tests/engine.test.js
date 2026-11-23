@@ -158,7 +158,21 @@ const P = []; OE.ray(M, 1, 20, 0, 1, { pts: P }); near('Visée réelle sur diaph
   const back = IO.parseSeq(IO.toSeq(r.sys).text).sys; near('.seq : aller-retour des champs et du vignetage', JSON.stringify(back.fields) === JSON.stringify(r.sys.fields) ? 1 : 0, 1, 0);
   const z = IO.parseZMX(IO.toZMX(r.sys).text).sys; near('.zmx : aller-retour vignetage VCY/VDY', Math.abs(z.fields[2].vly - 0.1112) + Math.abs(z.fields[2].vuy - 0.2027), 0, 1e-12);
   const c = S; const yim = IO.parseSeq('EPD 10\nWL 587.56\nYIM 0 5\nSO 0 1e20\nSTO 50 5 NBK7_SCHOTT\nS -50 90\nSI 0 0\nGO').sys; near('.seq : YIM → champs en hauteur image paraxiale', yim.ftype === 'pim' && yim.fields[1].y === 5 ? 1 : 0, 1, 0); }
-{ const M = OE.prepare(S['Triplet de Cooke f=50 F/5']()), ps = OE.psf(M, 2, M.pw, 64, 256), P = ps.P, c = P / 2, g = OE.psfGrid(M, 2, M.pw, 60 * ps.dx, 121, 64); let e = 0;
+{ const M = OE.prepare(S['Triplet de Cooke f=50 F/5']()), ps = OE.psf(M, 0, M.pw, 64, 256), P = ps.P, c = P / 2, g = OE.psfGrid(M, 0, M.pw, 60 * ps.dx, 121, 64); let e = 0;
   for (let y = -60; y <= 60; y++) for (let x = -60; x <= 60; x++) e = Math.max(e, Math.abs(ps.I[(c + y) * P + c + x] - g.I[(y + 60) * 121 + x + 60]));
   near('PSF matricielle (3D) ≡ PSF par FFT', e, 0, 1e-12); }
+// FTM : autocorrélation (Hopkins) ≡ FFT aux décalages entiers, chromatisme latéral, FTM géométrique
+{ const M = OE.prepare(S['Triplet de Cooke f=50 F/5']()), N = 64, p = OE.mtfOne(M, 2, M.pw, N, 128), ks = [1, 3, 7, 12, 20];
+  const a = OE.otfAC(M, 2, M.pw, ks.map(k => k * p.fcT / N), N), b = OE.otfAC(M, 2, M.pw, ks.map(k => k * p.fcS / N), N); let e = 0;
+  ks.forEach((k, i) => { e = Math.max(e, Math.abs(a.Tr[i] - p.Tr[k]), Math.abs(a.Ti[i] - p.Ti[k]), Math.abs(b.Sr[i] - p.Sr[k]), Math.abs(b.Si[i] - p.Si[k])); });
+  near('OTF par autocorrélation ≡ FFT de la PSF (complexe)', e, 0, 1e-10);
+  const m = OE.mtf(M, 2, { freqs: [20, 40, 60] }), W = M.sys.wavelengths.map(w => w.w ?? 1), Wt = W.reduce((x, y) => x + y, 0);
+  near('Chromatisme latéral : FTM polychromatique ≤ moyenne des FTM monochromatiques', [0, 1, 2].every(k => m.T[k] <= m.per.reduce((acc, q, wi) => acc + W[wi] * q.T[k], 0) / Wt + 1e-12) ? 1 : 0, 1, 0);
+  const sys = { title: '', aperture: { type: 'EPD', value: 20, obscuration: 0 }, fields: [{ y: 0 }, { y: 20 }], wavelengths: [{ um: 0.55, w: 1 }], primary: 0, surfaces: [{ r: Infinity, t: Infinity, glass: '' }, { r: Infinity, t: 100, glass: '', stop: true, elem: 'ideal', fid: 100 }, { r: Infinity, t: 0, glass: '' }] };
+  const I = OE.prepare(sys), sc = OE.pupilScale(I, I.sys.fields[1], 0), d = OE.mtf(I, 1, { freqs: [100] }), g = OE.mtfGeo(I, 1, { freqs: [100] });
+  near('Lentille idéale 20° : FTM T = limite de diffraction à fc réelle', d.T[0], OE.mtfDL(100 / (sc.dM / 0.55e-3)), 0.01);
+  near('Lentille idéale 20° : F/# tangentiel réel > F/# axial', 1 / sc.dM > 1 / OE.pupilScale(I, I.sys.fields[0], 0).dM ? 1 : 0, 1, 0);
+  near('FTM géométrique ≈ diffraction pour un système parfait', g.T[0], d.T[0], 0.01);
+  const L = OE.prepare(S['Lentille plan-convexe f=100']()), m64 = OE.mtf(L, 0, { freqs: [5, 20], N: 64 }), m256 = OE.mtf(L, 0, { freqs: [5, 20], N: 256 });
+  near('FTM convergée en échantillonnage (64 vs 256, singulet)', Math.max(Math.abs(m64.T[0] - m256.T[0]), Math.abs(m64.T[1] - m256.T[1])), 0, 0.01); }
 console.log(fail ? `${fail} échec(s)` : 'Tous les tests passent'); process.exit(fail ? 1 : 0);
