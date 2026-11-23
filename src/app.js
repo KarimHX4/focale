@@ -834,24 +834,52 @@ function draw3D(c, w, h, M, G) {
   const T = (q) => { const p = P(q[0], q[1], q[2]); return [w / 2 + p[0] * sc + (V.px3 || 0), h / 2 - p[1] * sc + (V.py3 || 0)]; };
   const S = M.S, N = M.N, G3 = G.G3;
   const poly = (arr) => { c.beginPath(); arr.forEach((q, k) => { const t = T(q); k ? c.lineTo(t[0], t[1]) : c.moveTo(t[0], t[1]); }); c.stroke(); };
+  // enveloppe convexe 2D (chaîne monotone) des points projetés
+  const hull = pts => { const q = pts.slice().sort((u, v) => u[0] - v[0] || u[1] - v[1]); if (q.length < 3) return q; const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lo = [], up = []; for (const p of q) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); } for (let i = q.length - 1; i >= 0; i--) { const p = q[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+    return lo.slice(0, -1).concat(up.slice(0, -1)); };
+  const fillPoly = (Q, fill, stroke, lw = 1) => { if (!Q.length) return; c.beginPath(); Q.forEach((t, k) => k ? c.lineTo(t[0], t[1]) : c.moveTo(t[0], t[1])); c.closePath(); if (fill) { c.fillStyle = fill; c.fill(); } if (stroke) { c.strokeStyle = stroke; c.lineWidth = lw; c.stroke(); } };
+  // point d'une surface au rayon r (au-delà de son demi-diamètre : collerette plane au niveau du bord)
+  const sp = (s, H, a, r) => { const x = r * Math.cos(a), y = r * Math.sin(a), k = r > s.sd ? s.sd / r : 1; return G3(s.j, [x, y, s.sz(x * k, y * k)]); };
+  const NA = 48, ang = Array.from({ length: NA }, (_, k) => 2 * Math.PI * k / NA);
+  const elems = [];
+  for (let j = 1; j < N; j++) {
+    if (OE.isAir(S[j].glass) || OE.isMirror(S[j])) continue;
+    const a = G.surfs[j - 1], b = G.surfs[j], H = Math.max(a.sd, b.sd), pts = [];
+    for (const s of [a, b]) { pts.push(T(sp(s, H, 0, 0))); for (const f of [0.35, 0.7, 1]) for (const t of ang) pts.push(T(sp(s, H, t, f * H))); }
+    elems.push({ j, a, b, H, hull: hull(pts) });
+  }
+  // 1) corps des lentilles (verre translucide), miroirs et plan image, sous les rayons
+  for (const e of elems) fillPoly(e.hull, TH.lens);
+  for (const s of G.surfs) {
+    const mir = OE.isMirror(S[s.j]), img = s.j === N; if (!mir && !img) continue;
+    const Q = hull([T(sp(s, s.sd, 0, 0)), ...ang.map(t => T(sp(s, s.sd, t, s.sd))), ...ang.map(t => T(sp(s, s.sd, t, 0.6 * s.sd)))]);
+    fillPoly(Q, mir ? 'rgba(148,163,184,.30)' : 'rgba(148,163,184,.10)');
+  }
+  // 2) rayons
   c.lineWidth = 1;
   const rays = layoutRays(M, Math.max(3, App.nRays), true);
   c.globalAlpha = 0.85;
   for (const r of rays) { c.strokeStyle = fcol(r.fi); poly(r.pts); }
   c.globalAlpha = 1;
-  for (const s of G.surfs) {
-    const sel = s.j === App.sel, mir = OE.isMirror(S[s.j]), sd = s.sd;
-    c.strokeStyle = sel ? '#f59e0b' : mir ? TH.fg : s.j === N ? TH.mut : TH.lensE; c.lineWidth = sel ? 2.2 : 1.1;
-    poly(Array.from({ length: 65 }, (_, k) => { const a = 2 * Math.PI * k / 64, x = sd * Math.cos(a), y = sd * Math.sin(a); return G3(s.j, [x, y, s.sz(x, y)]); }));
-    c.globalAlpha = 0.5; c.lineWidth = 0.8;
-    for (let m = 0; m < 4; m++) { const a = Math.PI * m / 4; poly(Array.from({ length: 31 }, (_, k) => { const r = -sd + 2 * sd * k / 30, x = r * Math.cos(a), y = r * Math.sin(a); return G3(s.j, [x, y, s.sz(x, y)]); })); }
+  // 3) contours : silhouette de chaque lentille (ses deux dioptres reliés par la tranche), bords des dioptres, méridiens discrets
+  for (const e of elems) {
+    const sel = App.sel === e.j || App.sel === e.j + 1;
+    fillPoly(e.hull, null, sel ? '#f59e0b' : TH.lensE, sel ? 1.8 : 1.2);
+    c.globalAlpha = 0.75; c.strokeStyle = sel ? '#f59e0b' : TH.lensE; c.lineWidth = 0.9;
+    for (const s of [e.a, e.b]) { if (s.sd < e.H - 1e-9) poly(ang.concat([0]).map(t => sp(s, e.H, t, e.H))); } // bord de la collerette
     c.globalAlpha = 1;
   }
-  for (let j = 1; j < N; j++) {
-    if (OE.isAir(S[j].glass) || OE.isMirror(S[j])) continue;
-    const a = G.surfs[j - 1], b = G.surfs[j], H = Math.max(a.sd, b.sd);
-    c.strokeStyle = TH.lensE; c.globalAlpha = 0.6;
-    for (let m = 0; m < 8; m++) { const t = 2 * Math.PI * m / 8, x = H * Math.cos(t), y = H * Math.sin(t); poly([G3(j, [x, y, a.sz(x * a.sd / H, y * a.sd / H)]), G3(j + 1, [x, y, b.sz(x * b.sd / H, y * b.sd / H)])]); }
+  for (const s of G.surfs) {
+    const sel = s.j === App.sel, mir = OE.isMirror(S[s.j]), sd = s.sd, stop = S[s.j].stop;
+    c.strokeStyle = sel ? '#f59e0b' : mir ? TH.fg : s.j === N ? TH.mut : stop ? TH.fg : TH.lensE; c.lineWidth = sel ? 2.2 : stop ? 1.6 : 1.1;
+    poly(Array.from({ length: 65 }, (_, k) => { const a = 2 * Math.PI * k / 64, x = sd * Math.cos(a), y = sd * Math.sin(a); return G3(s.j, [x, y, s.sz(x, y)]); }));
+    if (stop && OE.isAir(S[s.j].glass) && OE.isAir(S[s.j - 1].glass)) { // diaphragme : lame annulaire
+      const R2 = sd * 1.35, Q = [...ang.map(t => T(G3(s.j, [R2 * Math.cos(t), R2 * Math.sin(t), 0]))), ...ang.slice().reverse().map(t => T(G3(s.j, [sd * Math.cos(t), sd * Math.sin(t), 0])))];
+      c.beginPath(); Q.forEach((t, k) => k ? c.lineTo(t[0], t[1]) : c.moveTo(t[0], t[1])); c.closePath(); c.fillStyle = 'rgba(148,163,184,.22)'; c.fill('evenodd');
+    }
+    c.globalAlpha = 0.35; c.lineWidth = 0.7;
+    for (let m = 0; m < 2; m++) { const a = Math.PI * m / 2; poly(Array.from({ length: 31 }, (_, k) => { const r = -sd + 2 * sd * k / 30, x = r * Math.cos(a), y = r * Math.sin(a); return G3(s.j, [x, y, s.sz(x, y)]); })); }
     c.globalAlpha = 1;
   }
   text(c, 'Glisser : rotation · Maj+glisser : déplacer · molette : zoom', 10, 8, { col: TH.mut, size: 10.5 });
