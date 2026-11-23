@@ -15,15 +15,16 @@ const HELP = [
 
   { id: 'interface', t: 'L\'interface', h: `
 <ul>
-<li><b>Barre du haut</b> : fichiers, exemples, annuler/rétablir, optimisation, tolérancement, nombre de fenêtres d'analyse (1, 2, 4, 6), thème clair/sombre (sombre au premier lancement, puis le dernier choix est retenu), aide.</li>
-<li><b>Panneau de gauche</b> : propriétés de la <b>surface sélectionnée</b> (type d'élément, forme, décentrements), puis ouverture, champs, longueurs d'onde et données paraxiales.</li>
+<li><b>Barre du haut</b> : fichiers, exemples, annuler/rétablir, <b>Système</b> (Données système façon CODE V, Ctrl+Maj+D), optimisation, tolérancement, <b>+ Fenêtre</b> (analyse supplémentaire flottante), nombre de fenêtres d'analyse de la grille (1, 2, 4, 6), thème clair/sombre (sombre au premier lancement, puis le dernier choix est retenu), aide.</li>
+<li><b>Panneau de gauche</b> : bouton <b>⚙ Données système…</b>, propriétés de la <b>surface sélectionnée</b> (type d'élément, forme, décentrements), puis ouverture, champs, longueurs d'onde et données paraxiales.</li>
 <li><b>Éditeur de lentilles</b> (centre, en haut) : une ligne par surface.</li>
 <li><b>Layout</b> (centre, en bas) : coupe 2D ou vue 3D. Molette = zoom, glisser = déplacer (3D : rotation ; Maj+glisser = déplacer), clic = sélectionner une surface, double-clic = ajuster.</li>
 <li><b>Analyses</b> (droite) : chaque fenêtre a son propre choix d'analyse et ses réglages ; ⤓ enregistre l'image PNG, ⤢ agrandit.</li>
 <li><b>Barre d'état</b> : focale, F/#, longueur, nombre de variables, avertissements et temps de calcul.</li>
 </ul>
 <p>Les séparateurs entre zones se déplacent à la souris. Le système et la disposition sont mémorisés automatiquement dans le navigateur.</p>
-<p><b>Fenêtres</b> (verres, optimisation, tolérancement, rapport, aide…) : elles flottent au-dessus de l'interface sans la bloquer — on peut continuer à travailler dans l'éditeur pendant qu'elles sont ouvertes. Glisser la <b>barre de titre</b> pour déplacer ; <b>–</b> (ou double-clic sur le titre) pour réduire à la barre de titre ; <b>□</b> pour agrandir en plein écran ; la <b>poignée en bas à droite</b> pour changer la taille ; ✕ ou Échap pour fermer. Position et taille sont retenues pour chaque fenêtre pendant la session.</p>` },
+<p><b>Zones détachables</b> : le bouton <b>⧉</b> présent sur le panneau de gauche, l'éditeur de lentilles, le layout et chaque fenêtre d'analyse les détache dans une <b>fenêtre flottante</b> que l'on déplace par sa barre de titre et redimensionne par la poignée en bas à droite (– ou double-clic sur la barre : réduire). <b>⇲</b> la ré-ancre à sa place ; la grille d'analyses se réorganise avec les fenêtres restantes. <b>+ Fenêtre</b> (barre du haut) ouvre autant d'analyses supplémentaires que voulu, chacune flottante (✕ pour la fermer). Positions, tailles et fenêtres détachées sont mémorisées d'une session à l'autre.</p>
+<p><b>Fenêtres</b> (verres, données système, optimisation, tolérancement, rapport, aide…) : elles flottent au-dessus de l'interface sans la bloquer — on peut continuer à travailler dans l'éditeur pendant qu'elles sont ouvertes. Glisser la <b>barre de titre</b> pour déplacer ; <b>–</b> (ou double-clic sur le titre) pour réduire à la barre de titre ; <b>□</b> pour agrandir en plein écran ; la <b>poignée en bas à droite</b> pour changer la taille ; ✕ ou Échap pour fermer. Position et taille sont retenues pour chaque fenêtre pendant la session.</p>` },
 
   { id: 'lde', t: 'Éditeur de lentilles', h: `
 <table class="ht"><tr><th>Colonne</th><th>Signification</th></tr>
@@ -35,10 +36,11 @@ const HELP = [
 <tr><td>Verre</td><td>Milieu <b>après</b> la surface : vide/air, nom de catalogue (N-BK7, S-LAH79…), modèle <code>nd/νd</code> (ex. <code>1.5168/64.2</code>), indice fixe (<code>1.5</code>) ou <code>MIRROR</code>.</td></tr>
 <tr><td>Demi-diamètre</td><td>Calculé automatiquement (italique) à partir des rayons ; 🔒 le fixe et vignette les rayons au-delà.</td></tr>
 <tr><td>Conique</td><td>Constante de conicité k (0 sphère, −1 parabole, &lt;−1 hyperbole, ]−1,0[ ellipse).</td></tr>
-<tr><td>A4…A10</td><td>Coefficients d'asphérique pair (case « Asphères »).</td></tr></table>
-<p><b>Boutons</b> : <b>V</b> = variable d'optimisation (rayon, épaisseur, verre — verre modèle nd/νd puis substitution —, conique et, avec « Asphères », A4…A10) ; <b>M</b> = solve de mise au point (épaisseur telle que le rayon marginal paraxial coupe l'axe à la surface suivante) ; 🔒 = demi-diamètre fixe.</p>
+<tr><td>A4…A20</td><td>Coefficients d'asphérique pair z = … + A4 r⁴ + A6 r⁶ + … + A20 r²⁰ (case « Asphères » ; la case « A12–A20 » affiche les ordres élevés, montrés d'office dès qu'une surface les utilise).</td></tr></table>
+<p><b>Boutons</b> : <b>V</b> = variable d'optimisation (rayon, épaisseur, verre — verre modèle nd/νd puis substitution —, conique et, avec « Asphères », A4…A20) ; <b>M</b> = solve de mise au point (épaisseur telle que le rayon marginal paraxial coupe l'axe à la surface suivante) ; 🔒 = demi-diamètre fixe.</p>
 <p><b>Clavier</b> : Entrée valide et descend, Tab passe à la colonne suivante, flèches haut/bas, Échap annule, Inser insère une surface après la sélection, Suppr (hors d'un champ de saisie) ou Ctrl+Suppr supprime la surface sélectionnée.</p>
 <p><b>Clic droit</b> sur une ligne : menu contextuel — insérer avant/après, ajouter une lentille, quick focus, choisir le verre, verre variable, diaphragme, miroir, retourner, <b>supprimer la surface</b> ou <b>supprimer l'élément</b> (les deux surfaces d'une lentille). Toute suppression s'annule avec Ctrl+Z.</p>
+<p>Le bouton <b>⧉</b> de la barre de l'éditeur le détache dans une fenêtre flottante redimensionnable (⇲ pour le ré-ancrer).</p>
 <p><b>Outils</b> : + Avant / + Après / + Lentille (deux surfaces N-BK7), Supprimer, Diaphragme, Miroir, Retourner (inverse un élément), Verres… (catalogue), <b>⌖ Quick focus</b> (meilleur foyer, options ▾ : critère et longueur d'onde — voir <i>Optimisation</i>).</p>` },
 
   { id: 'elements', t: 'Types d\'éléments', h: `
@@ -68,12 +70,32 @@ const HELP = [
 <p>Le tracé réel se fait en coordonnées globales ; spots, fronts d'onde et footprints sont exprimés dans le repère local de la surface concernée. Les données paraxiales ignorent les décentrements.</p>` },
 
   { id: 'systeme', t: 'Ouverture, champs, longueurs d\'onde', h: `
-<h4>Ouverture</h4><ul><li><b>Diamètre de la pupille d'entrée</b> (EPD), <b>F/# image</b> ou <b>ouverture numérique objet</b> (objet à distance finie seulement). Le F/# image suit la convention Zemax « Image Space F/# » : EPD = EFL / F#, y compris en conjugué fini (le F/# de travail réel est affiché dans les données paraxiales).</li>
+<p>Ces réglages sont aussi regroupés, avec le vignetage, l'environnement et les matériaux, dans la fenêtre <b>Données système</b> (voir cette rubrique).</p>
+<h4>Ouverture</h4><ul><li><b>Diamètre de la pupille d'entrée</b> (EPD), <b>F/# image</b>, <b>ouverture numérique objet</b> (objet à distance finie seulement), <b>ouverture numérique image</b> (CODE V NA) ou <b>demi-diamètre du diaphragme</b> (l'ouverture est fixée par le diaphragme, Zemax « Float by stop size »). Le F/# image suit la convention Zemax « Image Space F/# » : EPD = EFL / F#, y compris en conjugué fini (le F/# de travail réel est affiché dans les données paraxiales).</li>
 <li><b>Obstruction centrale</b> : fraction du rayon de pupille masquée (télescopes à miroir secondaire).</li>
 <li><b>Visée réelle des rayons</b> : chaque rayon est itéré pour viser exactement le diaphragme (utile pour les grands champs et les pupilles aberrantes) ; sinon visée paraxiale de la pupille d'entrée.</li></ul>
-<h4>Champs</h4><p>Angles X/Y (°) pour un objet à l'infini (direction ∝ (tan X, tan Y, 1)), hauteurs X/Y (mm) sinon. Le poids sert à l'optimisation et au tolérancement. Le <b>carré de couleur</b> devant chaque champ ouvre un sélecteur : la couleur choisie est utilisée dans le layout, les spots, la FTM, le footprint… et enregistrée avec le système.</p>
+<h4>Champs</h4><p>Quatre <b>types de champ</b>, comme dans CODE V : <b>angle objet</b> (YAN, en °, direction ∝ (tan X, tan Y, 1) ; en conjugué fini l'angle est mesuré depuis la pupille d'entrée), <b>hauteur objet</b> (YOB, mm, objet à distance finie), <b>hauteur image paraxiale</b> (YIM, mm) et <b>hauteur image réelle</b> (YRI, mm : le point de champ est ajusté pour que le rayon principal réel arrive à cette hauteur — idéal pour couvrir exactement un capteur malgré la distorsion). Changer le type dans la liste <b>convertit</b> les valeurs pour garder les mêmes points de champ. Sans type choisi : angles pour un objet à l'infini, hauteurs objet sinon. Le poids sert à l'optimisation et au tolérancement. Le bouton <b>Vignetage…</b> ouvre l'onglet Champs des Données système (facteurs VUY, VLY, VUX, VLX, génération de champs). Le <b>carré de couleur</b> devant chaque champ ouvre un sélecteur : la couleur choisie est utilisée dans le layout, les spots, la FTM, le footprint… et enregistrée avec le système.</p>
 <h4>Longueurs d'onde</h4><p>En µm, avec poids et longueur d'onde <b>primaire</b> (pupilles, fronts d'onde par défaut, solves). Préréglages F-d-C, visible, 632,8 nm, NIR. Par défaut chaque λ prend sa couleur spectrale ; cliquez sur son carré de couleur pour en choisir une autre (utile en infrarouge ou pour distinguer des λ proches).</p>
 <h4>Données paraxiales</h4><p>Focale effective, tirage, F/#, ouvertures numériques, positions et diamètres des pupilles, grandissement, invariant de Lagrange.</p>` },
+
+  { id: 'donnees', t: 'Données système (CODE V)', h: `
+<p>Bouton <b>Système</b> de la barre du haut, <b>⚙ Données système…</b> du panneau de gauche ou <b>Ctrl+Maj+D</b> : une fenêtre organisée comme le « System Data » de CODE V, avec un onglet par catégorie à gauche. Toutes les modifications s'annulent avec Ctrl+Z.</p>
+<table class="ht"><tr><th>Onglet</th><th>Contenu</th></tr>
+<tr><td>Pupille</td><td>Type et valeur de l'ouverture (EPD, F/#, ON objet, ON image, demi-diamètre du diaphragme), obstruction centrale ; résultats paraxiaux (EPD, F/#, ON, pupilles).</td></tr>
+<tr><td>Longueurs d'onde</td><td>λ en nm, poids, longueur d'onde de référence, couleur ; préréglages.</td></tr>
+<tr><td>Champs / vignetage</td><td>Type de champ (YAN, YOB, YIM, YRI) avec case « convertir les valeurs » (CODE V « Convert Fields »), table X, Y, poids, couleur et <b>facteurs de vignetage</b> VUY, VLY, VUX, VLX ; colonnes calculées : angle ou hauteur objet équivalente, hauteur image paraxiale et réelle. <b>Générer</b> : n champs de 0 au maximum, répartition linéaire ou à aires égales (√). <b>Calculer le vignetage (SET VIG)</b> : pour chaque champ, les rayons limites ±Y et ±X qui passent juste toutes les ouvertures fixées 🔒. <b>Effacer le vignetage</b>.</td></tr>
+<tr><td>Température et pression</td><td>Température du système (°C), pression (atm), température de la prescription, dilatation on/off, matériau du barillet (aluminium, inox, titane, invar, plastiques… ou CTE saisi), CTE de chaque entretoise ; effet sur la focale et la mise au point ; bouton « Analyse thermique dans un panneau ».</td></tr>
+<tr><td>Matériaux (dn/dT, CTE)</td><td>Pour chaque verre du système : coefficients de Schott D0, D1, D2, E0, E1, λTK, température T0, CTE et dn/dT absolu calculé. Cases vides = catalogue ; une valeur saisie remplace celle du catalogue (↺ pour revenir).</td></tr>
+<tr><td>Avancé</td><td>Visée réelle des rayons, apodisation gaussienne de la pupille (intensité relative au bord, CODE V PUI).</td></tr></table>
+<h4>Vignetage (convention CODE V)</h4><p>VUY et VLY sont les fractions du rayon de pupille coupées côtés +Y et −Y, VUX et VLX côtés +X et −X : la pupille utile va de −1 + VLY à 1 − VUY. Les coordonnées pupillaires relatives (spots, ray fans, OPD fans, optimisation) et les demi-diamètres automatiques suivent ce faisceau vignetté (le rayon principal passe au centre de l'ellipse) ; front d'onde, PSF, FTM et énergie encerclée découpent la pupille réelle par cette ellipse. Valeurs négatives : pupille agrandie. Import/export : VUY…VLX en CODE V, VDX/VDY/VCX/VCY en Zemax (VCY = (VUY + VLY)/2, VDY = (VLY − VUY)/2).</p>
+<h4>Température, pression, dn/dT et dilatation</h4>
+<ul><li><b>Indices</b> : les catalogues donnent l'indice relatif à l'air à 20 °C et 1 atm. Focale calcule l'indice absolu, lui ajoute Δn_abs par la formule de Schott Δn = (n² − 1)/(2n) · [D0 ΔT + D1 ΔT² + D2 ΔT³ + (E0 ΔT + E1 ΔT²)/(λ² − λTK²)] (ΔT = T − T0), puis le ramène à l'air du système à T et P (indice de l'air d'Edlén) ; la longueur d'onde est ramenée à l'air du catalogue. Coefficients fournis pour ~970 verres Schott, Ohara, CDGM et Hoya (refractiveindex.info), lus dans les fichiers AGF importés (lignes TD et ED), valeurs approchées pour la silice et le CaF₂. Vérification : N-BK7 à 546 nm donne dn/dT absolu 1,65·10⁻⁶/K et relatif 2,97·10⁻⁶/K (catalogue Schott : 1,6 et 3,0).</li>
+<li><b>Vide</b> (P = 0) : l'indice relatif de chaque verre augmente d'environ n·2,7·10⁻⁴ — d'où la défocalisation des optiques spatiales réglées à l'air.</li>
+<li><b>Dilatation</b> de Tref à T : rayons, asphériques (A₂ₖ ∝ (1 + αΔT)^−(2k−1)), demi-diamètres fixés et épaisseurs des lentilles suivent le CTE de leur verre ; les espaces d'air suivent le CTE de leur entretoise (ou du barillet). Distance objet inchangée.</li>
+<li>Les rayons et épaisseurs de l'éditeur restent ceux de la prescription (Tref) ; toutes les analyses, l'optimisation et le tolérancement se font à la température et à la pression choisies. La barre d'état affiche 🌡 T · P dès que l'environnement n'est pas nominal.</li>
+<li>Un <b>solve de mise au point (M)</b> refocalise à chaque température : retirez-le pour étudier la défocalisation au plan image fixe.</li>
+<li>Verres sans données (verres modèles nd/νd) : dn/dT et CTE pris égaux à 0 (avertissement) ; saisissez-les dans l'onglet Matériaux.</li></ul>
+<h4>Analyse thermique</h4><p>Type d'analyse « Analyse thermique » : défocalisation (foyer paraxial − plan image), variation de focale, WFE RMS et spot RMS au plan image fixe pour un champ, de T1 à T2 (9 températures).</p>` },
 
   { id: 'verres', t: 'Verres et catalogues', h: `
 <p>Plus de 1000 verres <b>Schott, Ohara, CDGM et Hoya</b> (base refractiveindex.info, domaine public), plus silice fondue et CaF₂. Bouton <b>Verres…</b> (ou clic droit sur une surface › Choisir le verre) : recherche et filtre par fabricant. Un clic <b>surligne</b> le verre choisi et affiche en bas de la fenêtre la demande de confirmation (verre, nd, νd, surface visée et verre actuel) : <b>Valider</b> l'affecte, <b>Annuler</b> abandonne (Entrée dans la recherche valide aussi). Le verre actuel de la surface est repéré par « · actuel ». La fenêtre reste ouverte : sélectionnez une autre surface dans l'éditeur pour continuer.</p>
@@ -83,6 +105,7 @@ const HELP = [
 <li>Verre fictif : <code>nd/νd</code> (dispersion de Cauchy ajustée sur F, d, C) ou indice fixe. Un verre peut être rendu <b>variable</b> (bouton V de la colonne Verre) puis remplacé par le meilleur verre réel : voir <i>Optimisation</i>.</li>
 <li><b>Import AGF</b> (catalogue Zemax, formules 1 à 13) : glisser-déposer le fichier ou bouton « Importer un AGF… ». Les verres importés sont gardés dans le navigateur et embarqués dans les fichiers .json qui les utilisent.</li>
 <li>Un avertissement s'affiche si une longueur d'onde sort du domaine de validité d'un verre.</li>
+<li><b>Données thermiques</b> (dn/dT de Schott et CTE) : incluses pour la plupart des verres des catalogues et lues dans les AGF importés ; modifiables par verre dans Données système → Matériaux.</li>
 </ul>` },
 
   { id: 'analyses', t: 'Analyses', h: `
@@ -102,7 +125,9 @@ const HELP = [
 <tr><td>Carte des verres</td><td>Diagramme nd / νd des catalogues, verres utilisés en orange.</td></tr>
 <tr><td>Polarisation</td><td>Voir la rubrique dédiée.</td></tr>
 <tr><td>Simulation d'image</td><td>Voir la rubrique dédiée.</td></tr>
-<tr><td>Prescription</td><td>Tableau des surfaces, performances par champ, données paraxiales.</td></tr></table>` },
+<tr><td>Prescription</td><td>Tableau des surfaces, performances par champ, données paraxiales.</td></tr>
+<tr><td>Analyse thermique</td><td>Défocalisation, Δ focale, WFE et spot RMS en fonction de la température (bornes réglables dans l'en-tête). Voir <i>Données système</i>.</td></tr></table>
+<p>Chaque fenêtre d'analyse se détache avec <b>⧉</b> (fenêtre flottante redimensionnable) ; <b>+ Fenêtre</b> en ajoute d'autres.</p>` },
 
   { id: 'polarisation', t: 'Polarisation', h: `
 <p>Focale suit le <b>champ électrique complexe 3D</b> le long de chaque rayon :</p>
@@ -241,18 +266,19 @@ const HELP = [
 <li>Après un import ou un export, un <b>rapport</b> liste ce qui a été converti ou ignoré.</li></ul>
 <h4>Zemax OpticStudio (.zmx, séquentiel)</h4>
 <table class="ht"><tr><th>Élément</th><th>Correspondance</th></tr>
-<tr><td>Système</td><td>NAME, UNIT (mm, cm, in, m → mm), ENPD / FNUM / OBNA / FLOA, FTYP (angle, hauteur objet, hauteur image → convertie), XFLN/YFLN/FWGN, WAVM ou WAVL/WWGT, PWAV.</td></tr>
-<tr><td>Surfaces</td><td>STANDARD, EVENASPH (PARM 2…5 → A4…A10), COORDBRK (décentrements et bascules), PARAXIAL (lentille idéale), DGRATING (réseau, traits/µm et ordre). CURV, DISZ, CONI, DIAM, CLAP (demi-diamètre fixe), STOP, COMM.</td></tr>
-<tr><td>Ignorées sans remarque</td><td>UID, DER, DOR, GCH, GLC, GLB, CAT (identifiants, incréments de dérivée, préférences de catalogue : sans effet sur l'optique).</td></tr>
+<tr><td>Système</td><td>NAME, UNIT (mm, cm, in, m → mm), ENPD / FNUM / OBNA / FLOA, FTYP (angle, hauteur objet, hauteur image paraxiale ou réelle, type conservé), XFLN/YFLN/FWGN, vignetage VDXN/VDYN/VCXN/VCYN, WAVM ou WAVL/WWGT, PWAV, ENVD (température, pression).</td></tr>
+<tr><td>Surfaces</td><td>STANDARD, EVENASPH (PARM 2…8 → A4…A16), TCE (CTE de l'entretoise), COORDBRK (décentrements et bascules), PARAXIAL (lentille idéale), DGRATING (réseau, traits/µm et ordre). CURV, DISZ, CONI, DIAM, CLAP (demi-diamètre fixe), STOP, COMM.</td></tr>
 <tr><td>Verres</td><td>Noms de catalogue (Schott, Ohara, CDGM, Hoya, MISC), MIRROR, ___BLANK (modèle nd/νd). Un verre inconnu est remplacé par son modèle nd/νd (signalé).</td></tr>
 <tr><td>Export</td><td>Décentrements → paires de COORDBRK (DEC : un CB ; DAR : CB + retour en ordre inverse ; pliage BEN : CB + CB de même bascule). Verres fictifs → ___BLANK. Solves → épaisseurs fixes.</td></tr></table>
 <h4>CODE V (.seq)</h4>
 <table class="ht"><tr><th>Élément</th><th>Correspondance</th></tr>
-<tr><td>Système</td><td>TITLE, DIM (M, C, I → mm), EPD / FNO / NAO, WL, REF, WTW, XAN/YAN, XOB/YOB, XIM/YIM (converties), WTF. Avec un objet à distance finie, les champs en angle (YAN) sont convertis en hauteurs objet depuis la <b>pupille d'entrée</b> (même définition que CODE V).</td></tr>
-<tr><td>Surfaces</td><td>SO, S, STO, SI, RDM/RDN, RDY/CUY/THI/GLA, K, A…D, CIR, REFL, PIM, XDE…CDE, DAR, BEN (REV → DAR), GRT/GRO/GRS/GRX/GRY (réseau), CCY/THC/KC 0 (variables).</td></tr>
-<tr><td>Ignorées sans remarque</td><td>UID, DER, DOR, GCH, GLC, GLB, CAT (identifiants, incréments de dérivée, préférences de catalogue : sans effet sur l'optique).</td></tr>
-<tr><td>Verres</td><td>NOM_CATALOGUE (NBK7_SCHOTT, SBSL7_OHARA…), codes 6 chiffres, <b>verres fictifs CODE V</b> <code>743972.448504</code> (→ modèle nd/νd 1,743972 / 44,8504), <b>verres privés PRV</b> (PWL + indices → loi de Cauchy). À l'export, verres fictifs et importés deviennent des verres privés PRV.</td></tr></table>
-<p class="hint">Non exportés (signalés) : lentille idéale en CODE V, polariseurs et lames d'onde, surfaces XY et Zernike, obstruction centrale, orientation non nulle des traits d'un réseau vers Zemax. Les conventions de bascule sont supposées identiques (rotations main droite) : vérifiez les systèmes décentrés après conversion.</p>
+<tr><td>Système</td><td>TITLE, DIM / DDM (M, C, I → mm), EPD / FNO / NAO / NA (ON image), WL, REF, WTW, XAN/YAN, XOB/YOB, XIM/YIM, XRI/YRI (type de champ conservé), WTF, <b>VUY / VLY / VUX / VLX</b> (vignetage), <b>TEM / PRE</b> (température °C, pression atm), PUI (apodisation gaussienne). Les listes acceptent aussi la forme indexée : <code>WTW W2 2</code>, <code>VUY F3 0.2</code>, <code>YAN F2 14</code>.</td></tr>
+<tr><td>Surfaces</td><td>SO, S, STO, SI, RDM/RDN, RDY/CUY/THI/GLA/GL1, K, <b>A…J</b> (A4 à A20), CIR (CIR EDG ignoré : bord mécanique), REFL et RMD REFL, PIM, XDE…CDE, DAR, BEN (REV → DAR), GRT/GRO/GRS/GRX/GRY (réseau), <b>SLB</b> (étiquette → commentaire), SPS XYP + SCO (polynôme XY, à vérifier), CCY/THC/KC/AC…DC 0 (variables), GLC 0 (verre fictif variable), TCE.</td></tr>
+<tr><td>Qualificatifs</td><td>Les commandes qui désignent une surface explicitement sont appliquées à cette surface : <code>THI S7 4</code>, <code>CIR S2 10</code>, <code>SLB S4 'L2'</code>, <code>STO S3</code>, <code>CCY S1 0</code>…</td></tr>
+<tr><td>Ignorées sans remarque</td><td>UID, DER, DOR, GCH, GLB, CAT, INI, GO, CUM, THM, VIE, PLO, WRL, EVA… (identifiants, incréments de dérivée, préférences, affichage : sans effet sur l'optique).</td></tr>
+<tr><td>Signalées (non modélisées)</td><td>ZOO (zoom : position 1 importée), PIK (reprises), PUY/PUX/PUC/PCY (solves : valeur courante gardée), CUX/RDX/CYL/XTO/YTO (toriques : profil Y), DIF/HOE/HCO… (surfaces diffractives : phase ignorée), RET, RED, REX/REY (rectangle → cercle circonscrit), ADX/ADY, CIR HOL/OBS, GL2, TEM Sk (température par surface), SPS ODD/ZRN/ZFR/QBF/QCN (base conique seule), mode afocal.</td></tr>
+<tr><td>Verres</td><td>NOM_CATALOGUE (NBK7_SCHOTT, SBSL7_OHARA…), codes 6 chiffres, <b>verres fictifs CODE V</b> <code>743972.448504</code> (→ modèle nd/νd 1,743972 / 44,8504), forme <code>1.62:36.4</code>, <b>verres privés PRV</b> (PWL + indices → loi de Cauchy). À l'export, verres modèles → code de verre fictif CODE V, verres importés → verres privés PRV.</td></tr></table>
+<p class="hint">Exportés aussi : type de champ, vignetage, température et pression, commentaires (SLB), A12…A20 (E…J ; A18 et A20 non disponibles vers Zemax). Non exportés (signalés) : lentille idéale en CODE V, polariseurs et lames d'onde, surfaces XY et Zernike, obstruction centrale, orientation non nulle des traits d'un réseau vers Zemax. Les conventions de bascule sont supposées identiques (rotations main droite) : vérifiez les systèmes décentrés après conversion.</p>
 <p class="hint">Les fichiers <b>.len</b> de CODE V sont binaires (format propriétaire) : dans CODE V, tapez <code>WRL C:\chemin\nom.seq</code> pour écrire la séquence texte, puis importez le .seq.</p>
 <h4>Installation</h4><p>Depuis le site GitHub Pages, bouton « Installer » (Chrome, Edge) : l'application fonctionne hors ligne, se met à jour à chaque nouvelle version et peut ouvrir directement les fichiers .zmx, .seq, .json et .agf.</p>` },
 
@@ -260,15 +286,16 @@ const HELP = [
 <table class="ht"><tr><th>Touches</th><th>Action</th></tr>
 <tr><td>F1</td><td>Aide</td></tr><tr><td>Ctrl+Z / Ctrl+Y</td><td>Annuler / rétablir</td></tr>
 <tr><td>Ctrl+O / Ctrl+S / Ctrl+Maj+S</td><td>Ouvrir / enregistrer / enregistrer sous</td></tr>
-<tr><td>Ctrl+Maj+O</td><td>Optimisation</td></tr><tr><td>Ctrl+Maj+F</td><td>Quick focus (meilleur foyer)</td></tr><tr><td>Ctrl+Maj+A</td><td>Assistant (langage naturel)</td></tr><tr><td>Inser / Suppr (ou Ctrl+Suppr)</td><td>Insérer / supprimer une surface</td></tr><tr><td>Clic droit (éditeur)</td><td>Menu de la surface (supprimer, insérer, verre…)</td></tr>
+<tr><td>Ctrl+Maj+O</td><td>Optimisation</td></tr><tr><td>Ctrl+Maj+F</td><td>Quick focus (meilleur foyer)</td></tr><tr><td>Ctrl+Maj+A</td><td>Assistant (langage naturel)</td></tr><tr><td>Ctrl+Maj+D</td><td>Données système (CODE V)</td></tr><tr><td>Inser / Suppr (ou Ctrl+Suppr)</td><td>Insérer / supprimer une surface</td></tr><tr><td>Clic droit (éditeur)</td><td>Menu de la surface (supprimer, insérer, verre…)</td></tr>
 <tr><td>Entrée, Tab, ↑ ↓, Échap</td><td>Navigation dans l'éditeur</td></tr><tr><td>Échap</td><td>Fermer une fenêtre, réduire une analyse agrandie</td></tr></table>` },
 
   { id: 'conventions', t: 'Conventions et unités', h: `
 <ul><li>Longueurs en <b>mm</b>, longueurs d'onde en <b>µm</b>, angles en <b>degrés</b>, front d'onde en <b>ondes</b> (λ de l'analyse).</li>
 <li>Axe optique z, lumière vers +z au départ. R &gt; 0 : centre de courbure à droite du sommet.</li>
 <li>Après un miroir, épaisseurs négatives ; un second miroir les rend de nouveau positives.</li>
-<li>Champ positif en Y : rayons montants (image en −Y pour un objectif convergent).</li>
-<li>Pupille normalisée (Px, Py) dans [−1, 1], obstruction exclue.</li>
+<li>Champ angulaire positif en Y : rayons montants ; pour un objet à l'infini l'image est en +Y (y ≈ f·tan θ). Hauteur objet positive : image en −Y pour un objectif convergent. Hauteurs image (YIM, YRI) : coordonnée de l'image elle-même.</li>
+<li>Température en °C, pression en atmosphères, CTE en 10⁻⁶/K.</li>
+<li>Pupille normalisée (Px, Py) dans [−1, 1], obstruction exclue ; avec des facteurs de vignetage, relative au faisceau vignetté.</li>
 <li>OPD (convention CODE V / Zemax) = chemin du rayon principal − chemin du rayon, sur la sphère de référence : <b>OPD &gt; 0 = front d'onde en avance</b>. Une sphérique sous-corrigée (lentille simple) donne W040 &gt; 0, de même signe que la somme de Seidel SI (W040 = SI/8).</li>
 <li>Aberrations transverses : ε = SI/(2 n′u′) pour la sphérique (u′ &lt; 0 pour un faisceau convergent) ; mêmes conventions de signe que les coefficients de Seidel de Zemax.</li></ul>` },
 
@@ -276,7 +303,8 @@ const HELP = [
 <ul><li>Tracé séquentiel uniquement (pas de lumière parasite ni de chemins multiples).</li>
 <li>Calcul paraxial sans décentrements, formes libres ni réseaux.</li>
 <li>Pas de traitements multicouches (Fresnel non traité ou antireflet parfait).</li>
-<li>Variables d'optimisation limitées aux courbures, épaisseurs et coniques.</li>
+<li>Pas de zoom / multi-configuration, de mode afocal, de surfaces toriques ni diffractives (signalés à l'import CODE V).</li>
+<li>Environnement : une seule température pour tout le système (pas de gradients ni de températures par élément).</li>
 <li>Simulation d'image : PSF interpolée sur une grille 5×5, éclairement relatif simplifié ; pixels carrés.</li>
 <li>Source étendue : PSF supposée constante sur l'étendue de la source (source petite devant le champ).</li></ul>` },
 ];

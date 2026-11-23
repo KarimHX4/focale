@@ -17,6 +17,8 @@ const OE = (() => {
     SILICA: 'F_SILICA', FUSEDSILICA: 'F_SILICA', SIO2: 'F_SILICA', SILICASPECIAL: 'F_SILICA', CAF2SPECIAL: 'CAF2' };
   const REG = new Map(), QUAL = new Map(), ALL = [], CATS = new Set(['SPECIAL']);
   const gnorm = s => String(s || '').toUpperCase().replace(/[\s\-_]/g, '');
+  /** coefficients asphériques pairs A4…A20 (r⁴ … r²⁰) */
+  const ASPK = ['a4', 'a6', 'a8', 'a10', 'a12', 'a14', 'a16', 'a18', 'a20'];
   let dbReady = false;
   function dispN(r, l) {
     const c = r.c, l2 = l * l;
@@ -98,6 +100,91 @@ const OE = (() => {
     return { nd, vd: (nd - 1) / (nF - nC) };
   }
   const catalog = () => { ensureDB(); return ALL.map(r => ({ name: r.key, base: r.name, cat: r.cat, st: r.st || 's', user: !!r.user, lmin: r.lmin, lmax: r.lmax, ...recInfo(r) })); };
+  /* ---------------- Environnement : température, pression, dn/dT (Schott), dilatation ---------------- */
+  let THDB = null;
+  const THSPECIAL = { F_SILICA: [2.4e-5, 0, 0, 0, 0, 0, 0.51e-6, 1], CAF2: [-2.9e-5, 0, 0, 0, 0, 0, 18.85e-6, 1] }; // valeurs approchées
+  function thDB() {
+    if (THDB) return THDB;
+    THDB = typeof GLASSTH !== 'undefined' ? GLASSTH : null;
+    if (!THDB && typeof require === 'function') { try { THDB = require('./glassth.js'); } catch (e) { THDB = {}; } }
+    return THDB || (THDB = {});
+  }
+  /** matériaux sans données thermiques (milieux d'air, miroir) */
+  const isSolid = g => !isAir(g) && String(g || '').trim().toUpperCase() !== 'MIRROR';
+  /**
+   * Données thermiques d'un verre : { D: [D0, D1, D2, E0, E1, λTK], T0, cte (/K), dn (dn/dT disponible), src }.
+   * Ordre de priorité : valeurs saisies dans sys.env.mat[clé], fichier AGF importé (TD/ED), base des catalogues fabricants.
+   */
+  function glassTherm(name, sys) {
+    if (!isSolid(name)) return null;
+    const r = glassRecord(name), key = r ? r.key : String(name).trim();
+    let d = null;
+    if (r && (r.th || r.cte)) d = { D: (r.th || [0, 0, 0, 0, 0, 0]).slice(0, 6), T0: r.th ? r.th[6] : 20, cte: r.cte || 0, dn: !!r.th, src: 'AGF' };
+    else if (r) {
+      const t = r.cat === 'SPECIAL' ? THSPECIAL[r.name] : (thDB()[r.cat] || {})[r.name];
+      if (t) d = { D: t.slice(0, 6), T0: 20, cte: t[6] || 0, dn: !!t[7], src: r.cat === 'SPECIAL' ? 'approché' : r.cat };
+    }
+    const ov = sys && sys.env && sys.env.mat && sys.env.mat[key];
+    if (ov) {
+      const D = ['D0', 'D1', 'D2', 'E0', 'E1', 'ltk'].map((k, i) => isFinite(+ov[k]) && ov[k] !== '' && ov[k] != null ? +ov[k] : (d ? d.D[i] : 0));
+      d = { D, T0: isFinite(+ov.T0) && ov.T0 != null ? +ov.T0 : (d ? d.T0 : 20), cte: isFinite(+ov.cte) && ov.cte != null ? +ov.cte * 1e-6 : (d ? d.cte : 0), dn: D.some(v => v) , src: 'saisi' };
+    }
+    return d;
+  }
+  /** indice de l'air (Zemax / Edlén simplifié) ; λ en µm, T en °C, P en atmosphères */
+  function nAir(l, T, P) {
+    const l2 = l * l, nr = 1 + 1e-8 * (6432.8 + 2949810 * l2 / (146 * l2 - 1) + 25540 * l2 / (41 * l2 - 1));
+    return 1 + (nr - 1) * P / (1 + 3.4785e-3 * (T - 15));
+  }
+  /** contexte d'environnement (null aux conditions nominales 20 °C, 1 atm, prescription à 20 °C) */
+  function envCtx(sys) {
+    const e = sys.env || {}, f = (v, d) => (v != null && v !== '' && isFinite(+v) ? +v : d);
+    const T = f(e.T, 20), P = f(e.P, 1), Tref = f(e.Tref, 20);
+    if (Math.abs(T - 20) < 1e-12 && Math.abs(P - 1) < 1e-12 && Math.abs(Tref - 20) < 1e-12) return null;
+    return { T, P, Tref, expand: e.expand !== false, mount: f(e.cteMount, 23.6) * 1e-6, sys, cache: new Map(), miss: new Set() };
+  }
+  /** indice relatif à l'air du système (T, P) — dn/dT absolu selon la formule de Schott, λ ramenée à l'air du catalogue */
+  function envN(name, l, E) {
+    if (!E || isAir(name)) return glassN(name, l);
+    const key = name + '|' + l, c = E.cache.get(key); if (c != null) return c;
+    const d = glassTherm(name, E.sys), T0 = d ? d.T0 : 20;
+    const na = nAir(l, E.T, E.P), na0 = nAir(l, T0, 1), lr = l * na / na0;
+    const n0 = glassN(name, lr);
+    let v = n0;
+    if (isFinite(n0)) {
+      let dn = 0;
+      if (d && d.dn) { const [D0, D1, D2, E0, E1, ltk] = d.D, dT = E.T - T0, den = lr * lr - ltk * ltk;
+        dn = (n0 * n0 - 1) / (2 * n0) * (D0 * dT + D1 * dT * dT + D2 * dT * dT * dT + (Math.abs(den) > 1e-9 ? (E0 * dT + E1 * dT * dT) / den : 0)); }
+      else if (Math.abs(E.T - T0) > 1e-9 && isSolid(name)) E.miss.add(name);
+      v = (n0 * na0 + dn) / na;
+    }
+    E.cache.set(key, v); return v;
+  }
+  /** dilatation thermique de la prescription (rayons, épaisseurs, asphériques, demi-diamètres fixés) de Tref à T */
+  function expandLens(S, E, warn) {
+    const dT = E.T - E.Tref; if (!E.expand || Math.abs(dT) < 1e-12) return;
+    const N = S.length - 1, unk = new Set();
+    const tce = s => (s.tce != null && s.tce !== '' && isFinite(+s.tce) ? +s.tce * 1e-6 : null);
+    const aG = (g, s) => { const o = s ? tce(s) : null; if (o != null) return o; const d = glassTherm(g, E.sys); if (d && d.cte) return d.cte; unk.add(g); return 0; };
+    const k = S.map(() => 1), kt = S.map(() => 1);
+    for (let j = 1; j < N; j++) {
+      const s = S[j], a = S[j].glass, b = S[j - 1].glass;
+      const ar = isSolid(a) ? aG(a, s) : isSolid(b) && j > 1 ? aG(b, S[j - 1]) : (tce(s) ?? E.mount);
+      const at = isSolid(a) ? aG(a, s) : (tce(s) ?? E.mount);
+      k[j] = 1 + ar * dT; kt[j] = 1 + at * dT;
+    }
+    for (let j = 1; j < N; j++) {
+      const s = S[j], q = k[j];
+      if (isFinite(s.r)) s.r *= q;
+      ASPK.forEach((a, i) => { if (s[a]) s[a] *= Math.pow(q, -(3 + 2 * i)); });
+      if (s.sdFixed) s.sd *= q;
+      if (s.xy) for (const kk of Object.keys(s.xy)) { const [p, r] = kk.split(',').map(Number); s.xy[kk] *= Math.pow(q, 1 - p - r); }
+      if (s.zc) { s.zc = s.zc.map(v => v * q); s.zr = (+s.zr || 1) * q; }
+      if (isFinite(s.t) && s.tsolve !== 'M') s.t *= kt[j];
+    }
+    if (unk.size) warn.push(`Dilatation : coefficient (CTE) inconnu pour ${[...unk].join(', ')} — pris égal à 0`);
+  }
+
   /** lecture d'un catalogue Zemax AGF (formules 1 à 13) */
   function parseAGF(text, cat) {
     const recs = []; let cur = null;
@@ -106,6 +193,8 @@ const OE = (() => {
       if (k === 'NM') { cur = { name: t[1], f: 'A' + Math.round(+t[2]), c: [], nd: +t[4], vd: +t[5], cat, user: true, st: ({ 0: 's', 1: 'p', 2: 'o', 3: 's', 4: 's', 5: 'o' })[t[7]] || 's' }; recs.push(cur); }
       else if (k === 'CD' && cur) cur.c = t.slice(1).map(Number);
       else if (k === 'LD' && cur) { cur.lmin = +t[1]; cur.lmax = +t[2]; }
+      else if (k === 'TD' && cur) { const v = t.slice(1).map(Number); if (v.length >= 6 && v.slice(0, 6).some(x => x)) cur.th = [...v.slice(0, 6), isFinite(v[6]) ? v[6] : 20]; }
+      else if (k === 'ED' && cur) { const v = +t[1]; if (isFinite(v) && v) cur.cte = v * 1e-6; }
     }
     return recs.filter(r => r.name && r.c.length && isFinite(dispN(r, 0.5875618)));
   }
@@ -119,7 +208,7 @@ const OE = (() => {
       if (a < 0) return NaN;
       z = c * r2 / (1 + Math.sqrt(a));
     }
-    if (sf.asph) z += r2 * r2 * (sf.a4 + r2 * (sf.a6 + r2 * (sf.a8 + r2 * sf.a10)));
+    if (sf.asph) z += r2 * r2 * (sf.a4 + r2 * (sf.a6 + r2 * (sf.a8 + r2 * (sf.a10 + (sf.hi ? r2 * (sf.a12 + r2 * (sf.a14 + r2 * (sf.a16 + r2 * (sf.a18 + r2 * sf.a20)))) : 0)))));
     return z;
   }
   /** dz/d(r²) * 2  →  dz/dx = x * g */
@@ -130,7 +219,7 @@ const OE = (() => {
       if (a <= 0) return NaN;
       g = sf.c / Math.sqrt(a);
     }
-    if (sf.asph) g += r2 * (4 * sf.a4 + r2 * (6 * sf.a6 + r2 * (8 * sf.a8 + r2 * 10 * sf.a10)));
+    if (sf.asph) g += r2 * (4 * sf.a4 + r2 * (6 * sf.a6 + r2 * (8 * sf.a8 + r2 * (10 * sf.a10 + (sf.hi ? r2 * (12 * sf.a12 + r2 * (14 * sf.a14 + r2 * (16 * sf.a16 + r2 * (18 * sf.a18 + r2 * 20 * sf.a20)))) : 0)))));
     return g;
   }
 
@@ -163,15 +252,15 @@ const OE = (() => {
   }
 
   /** indices signés (paraxial) pour une longueur d'onde */
-  function indices(S, l) {
-    const n = new Array(S.length);
-    n[0] = glassN(S[0].glass, l);
+  function indices(S, l, E) {
+    const n = new Array(S.length), gN = E ? (g, x) => envN(g, x, E) : glassN;
+    n[0] = gN(S[0].glass, l);
     let sg = 1;
     for (let j = 1; j < S.length; j++) {
       if (isMirror(S[j])) { sg = -sg; n[j] = sg * Math.abs(n[j - 1]); }
       else {
-        let v = glassN(S[j].glass, l);
-        if (!isAir(S[j].glass)) { if (+S[j].dv) { const nd = glassN(S[j].glass, 0.5875618); v = nd + (v - nd) / (1 + S[j].dv / 100); } v += +S[j].dn || 0; }
+        let v = gN(S[j].glass, l);
+        if (!isAir(S[j].glass)) { if (+S[j].dv) { const nd = gN(S[j].glass, 0.5875618); v = nd + (v - nd) / (1 + S[j].dv / 100); } v += +S[j].dn || 0; }
         n[j] = sg * v;
       }
     }
@@ -205,6 +294,11 @@ const OE = (() => {
     if (ap.type === 'NA' && !objInf) {
       const um = Math.asin(Math.min(0.9999, ap.value / Math.abs(n[0])));
       epd = 2 * Math.tan(um) * Math.abs(zE + t0);
+    }
+    if (ap.type === 'NAI' || ap.type === 'STOP') { // ON image, ou ouverture fixée par le demi-diamètre du diaphragme
+      let m1; if (objInf) m1 = ptrace(S, n, 0.5, 0); else { const u0 = 0.5 / (zE + t0); m1 = ptrace(S, n, u0 * t0, u0); }
+      if (ap.type === 'NAI') { const nI = Math.abs(n[N - 1]), uM1 = m1.nu[N - 1] / nI; epd = Math.abs(uM1) > 1e-15 ? Math.tan(Math.asin(Math.min(0.9999, ap.value / nI))) / Math.abs(uM1) : 1; }
+      else { const y1 = Math.abs(m1.y[stopIdx]); epd = y1 > 1e-15 ? ap.value / y1 : 1; }
     }
     let mar;
     if (objInf) mar = ptrace(S, n, epd / 2, 0);
@@ -269,25 +363,63 @@ const OE = (() => {
   }
   const toGlobal = (F, p) => { const q = mv(F.r, p); return [q[0] + F.o[0], q[1] + F.o[1], q[2] + F.o[2]]; };
 
+  /* ---------------- Types de champ (CODE V : YAN, YOB, YIM, YRI) ---------------- */
+  const FTYPES = { ang: { l: 'Angle objet', u: '°', cv: 'YAN' }, obj: { l: 'Hauteur objet', u: 'mm', cv: 'YOB' }, pim: { l: 'Hauteur image paraxiale', u: 'mm', cv: 'YIM' }, rim: { l: 'Hauteur image réelle', u: 'mm', cv: 'YRI' } };
+  /** champs en hauteur image réelle : chaque point est ajusté pour que le rayon principal réel arrive à la hauteur demandée */
+  function realImageFields(M) {
+    const bad = [];
+    M.sys.fields.forEach((f, i) => {
+      const tx = M.ufields[i].x || 0, ty = M.ufields[i].y || 0;
+      const im = g => { const r = ray(M, M.pw, g, 0, 0); return r.vig ? null : [r.x, r.y]; };
+      let g = { ...f }, ok = true;
+      for (let it = 0; it < 30; it++) {
+        const e0 = im(g); if (!e0) { ok = false; break; }
+        const ex = e0[0] - tx, ey = e0[1] - ty; if (Math.hypot(ex, ey) < 1e-10 * Math.max(1, Math.hypot(tx, ty))) break;
+        const h = 1e-6 * Math.max(1, Math.hypot(g.x, g.y));
+        const py = im({ ...g, y: g.y + h }); if (!py) { ok = false; break; }
+        const j22 = (py[1] - e0[1]) / h, j12 = (py[0] - e0[0]) / h;
+        if (tx || g.x) {
+          const px = im({ ...g, x: g.x + h }); if (!px) { ok = false; break; }
+          const j11 = (px[0] - e0[0]) / h, j21 = (px[1] - e0[1]) / h, det = j11 * j22 - j12 * j21; if (Math.abs(det) < 1e-30) { ok = false; break; }
+          g = { ...g, x: g.x - (j22 * ex - j12 * ey) / det, y: g.y - (-j21 * ex + j11 * ey) / det };
+        } else { if (Math.abs(j22) < 1e-30) { ok = false; break; } g = { ...g, y: g.y - ey / j22 }; }
+      }
+      if (ok) { f.x = g.x; f.y = g.y; } else bad.push(i + 1);
+    });
+    M.aimCache.clear();
+    if (bad.length) M.warnings.push(`Hauteur image réelle non atteinte pour le(s) champ(s) ${bad.join(', ')} : valeur paraxiale utilisée`);
+    M.par = paraxial(M.sys, M.nW[M.pw], M.stopIdx, M.objInf); M.epr = M.par.epd / 2;
+  }
+  /** facteurs de vignetage CODE V (VUY, VLY, VUX, VLX) → ellipse { cx, cy, hx, hy } dans la pupille d'entrée normalisée */
+  function vigMap(f) {
+    const a = +f.vuy || 0, b = +f.vly || 0, c = +f.vux || 0, d = +f.vlx || 0;
+    if (!(a || b || c || d)) return null;
+    return { cy: (b - a) / 2, hy: Math.max(1e-3, 1 - (a + b) / 2), cx: (d - c) / 2, hx: Math.max(1e-3, 1 - (c + d) / 2) };
+  }
+
   /* ---------------- Préparation du modèle ---------------- */
   function prepare(sys0) {
     const sys = structuredClone(sys0);
     const S = sys.surfaces, N = S.length - 1;
     for (const s of S) {
-      s.k = +s.k || 0; s.a4 = +s.a4 || 0; s.a6 = +s.a6 || 0; s.a8 = +s.a8 || 0; s.a10 = +s.a10 || 0; s.sd = +s.sd || 0;
+      s.k = +s.k || 0; for (const a of ASPK) s[a] = +s[a] || 0; s.sd = +s.sd || 0;
       for (const k of ['dx', 'dy', 'dz', 'tx', 'ty', 'tz']) s[k] = +s[k] || 0;
       if (!['DEC', 'DAR', 'BEN'].includes(s.dmode)) s.dmode = 'DEC';
     }
     for (const f of sys.fields) { f.x = +f.x || 0; f.y = +f.y || 0; }
+    const ufields = sys.fields.map(f => ({ ...f }));
     const wls = sys.wavelengths.map(w => w.um);
     const pw = Math.min(Math.max(0, sys.primary | 0), wls.length - 1);
     let stopIdx = S.findIndex(s => s.stop); if (stopIdx < 1 || stopIdx >= N) stopIdx = 1;
     const objInf = !isFinite(S[0].t) || Math.abs(S[0].t) > 1e10;
-    const nW = wls.map(l => indices(S, l));
+    const warnings = [];
+    const E = envCtx(sys);
+    if (E) expandLens(S, E, warnings);
+    const nW = wls.map(l => indices(S, l, E));
     const errors = [];
     nW.forEach((n, wi) => n.forEach((v, j) => { if (!isFinite(v)) errors.push(`Verre inconnu « ${S[j].glass} » (surface ${j})`); }));
     if (errors.length) return { sys, errors: [...new Set(errors)], ok: false };
-    const warnings = [];
+    if (E && E.miss.size) warnings.push(`dn/dT inconnu pour ${[...E.miss].join(', ')} : indice à ${E.T} °C non corrigé (renseignez-le dans Données système → Matériaux)`);
     if (objInf && sys.aperture.type === 'NA') warnings.push('Ouverture « ON objet » impossible avec un objet à l\'infini : la valeur est prise comme diamètre de pupille (choisissez EPD ou F/#)');
     S.forEach((s, j) => { const r = glassRecord(s.glass); if (r && r.lmin && r.lmax) { const out = wls.filter(l => l < r.lmin - 1e-9 || l > r.lmax + 1e-9); if (out.length) warnings.push(`${r.key} (S${j}) : λ hors domaine ${r.lmin}–${r.lmax} µm`); } });
     let par;
@@ -302,6 +434,16 @@ const OE = (() => {
       }
       if (!ch) break;
     }
+    // type de champ : conversion vers la représentation interne (angles si objet à l'infini, hauteurs objet sinon)
+    const ftype = FTYPES[sys.ftype] ? sys.ftype : (objInf ? 'ang' : 'obj');
+    if (ftype === 'ang' && !objInf) { const L = S[0].t + par.zE; for (const f of sys.fields) { f.x = -L * Math.tan(f.x * DEG); f.y = -L * Math.tan(f.y * DEG); } }
+    else if (ftype === 'obj' && objInf) warnings.push('Champs en hauteur objet avec un objet à l\'infini : valeurs prises comme des angles');
+    else if (ftype === 'pim' || ftype === 'rim') {
+      const k = par.unitImgH;
+      if (!(Math.abs(k) > 1e-15)) warnings.push('Champs en hauteur image : grandissement nul, conversion impossible');
+      else for (const f of sys.fields) { f.x = objInf ? Math.atan(f.x / k) / DEG : f.x / k; f.y = objInf ? Math.atan(f.y / k) / DEG : f.y / k; }
+    }
+    if (ftype !== (objInf ? 'ang' : 'obj')) par = paraxial(sys, nW[pw], stopIdx, objInf);
     const fr = frames(S);
     const zg = new Float64Array(N + 1);
     for (let j = 1; j <= N; j++) zg[j] = fr[j].o[2];
@@ -309,16 +451,18 @@ const OE = (() => {
       const n = nW[wi];
       return {
         wi, l, lmm: l * 1e-3, n, nAbs: n.map(Math.abs),
-        s: S.map(s => { const f = ffTerms(s); return { c: curv(s), k: s.k, a4: s.a4, a6: s.a6, a8: s.a8, a10: s.a10, ...f,
-          asph: !!(s.a4 || s.a6 || s.a8 || s.a10 || f.ff), t: s.t, mirror: isMirror(s), sd: s.sd, clip: !!s.sdFixed,
+        s: S.map(s => { const f = ffTerms(s), hi = !!(s.a12 || s.a14 || s.a16 || s.a18 || s.a20); return { c: curv(s), k: s.k, a4: s.a4, a6: s.a6, a8: s.a8, a10: s.a10, a12: s.a12, a14: s.a14, a16: s.a16, a18: s.a18, a20: s.a20, hi, ...f,
+          asph: !!(s.a4 || s.a6 || s.a8 || s.a10 || hi || f.ff), t: s.t, mirror: isMirror(s), sd: s.sd, clip: !!s.sdFixed,
           elem: s.elem || '', lpmm: +s.lpmm || 0, gm: s.gm == null ? 1 : +s.gm, gang: (+s.gang || 0) * DEG, fid: +s.fid || 100,
           pang: (+s.pang || 0) * DEG, ret: s.ret == null ? 0.25 : +s.ret, wang: (+s.wang || 0) * DEG }; }),
       };
     });
-    const M = { sys, S, N, wls, pw, stopIdx, objInf, nW, par, zg, fr, ctxs, aimCache: new Map(), ok: true, errors: [], warnings: [...new Set(warnings)],
-      t0: objInf ? 0 : S[0].t, obs: Math.max(0, Math.min(0.95, +sys.aperture.obscuration || 0)) };
+    const M = { sys, S, N, wls, pw, stopIdx, objInf, nW, par, zg, fr, ctxs, aimCache: new Map(), ok: true, errors: [], warnings,
+      t0: objInf ? 0 : S[0].t, obs: Math.max(0, Math.min(0.95, +sys.aperture.obscuration || 0)), env: E, ftype, ufields };
     M.epr = par.epd / 2;
+    if (ftype === 'rim') realImageFields(M);
     computeSD(M);
+    M.warnings = [...new Set(warnings)];
     return M;
   }
 
@@ -525,6 +669,11 @@ const OE = (() => {
   /** rayon réel pour un champ {x, y} et une pupille normalisée (px, py) */
   function ray(M, wi, f, px, py, opts) {
     if (typeof f === 'number') f = { x: 0, y: f };
+    const v = opts && opts.noVig ? null : vigMap(f);
+    if (v) {
+      if (opts && opts.vigClip) { if (((px - v.cx) / v.hx) ** 2 + ((py - v.cy) / v.hy) ** 2 > 1 + 1e-9) return { vig: 1, why: 'vigf' }; }
+      else { px = v.cx + v.hx * px; py = v.cy + v.hy * py; }
+    }
     const ctx = M.ctxs[wi];
     const ca = chiefAim(M, ctx, f);
     const a = (px === 0 && py === 0) ? ca : aimRay(M, ctx, f, px, py);
@@ -672,6 +821,7 @@ const OE = (() => {
     for (let i = n - 1; i >= 0; i--) { let s = a[i][n]; for (let j = i + 1; j < n; j++) s -= a[i][j] * x[j]; x[i] = s / a[i][i]; }
     return x;
   }
+  const VCLIP = { vigClip: true };
   function wavefront(M, fi, wi, N = 64, removeTilt = true) {
     const fy = typeof fi === 'object' ? fi : M.sys.fields[fi], ref = opdRef(M, wi, fy);
     const W = new Float64Array(N * N).fill(NaN);
@@ -680,7 +830,7 @@ const OE = (() => {
     for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
       const px = -1 + (2 * j + 1) / N, py = -1 + (2 * i + 1) / N;
       const r = Math.hypot(px, py); if (r > 1 || r < M.obs) continue;
-      const w = ref.W(ray(M, wi, fy, px, py));
+      const w = ref.W(ray(M, wi, fy, px, py, VCLIP));
       if (isFinite(w)) { W[i * N + j] = w; samples.push([px, py, w, i * N + j]); }
     }
     // ajustement Zernike (Fringe 16)
@@ -717,7 +867,14 @@ const OE = (() => {
     for (let y = 0; y < n; y++) { for (let x = 0; x < n; x++) { rr[x] = re[y * n + x]; ri[x] = im[y * n + x]; } fft1(rr, ri, inv); for (let x = 0; x < n; x++) { re[y * n + x] = rr[x]; im[y * n + x] = ri[x]; } }
     for (let x = 0; x < n; x++) { for (let y = 0; y < n; y++) { rr[y] = re[y * n + x]; ri[y] = im[y * n + x]; } fft1(rr, ri, inv); for (let y = 0; y < n; y++) { re[y * n + x] = rr[y]; im[y * n + x] = ri[y]; } }
   }
+  /** apodisation gaussienne de la pupille (CODE V PUI) : intensité relative I au bord → amplitude I^(ρ²/2) */
+  function sysApod(M) {
+    const a = M.sys.apod; if (!a || a.type !== 'gauss') return null;
+    const I = Math.min(1, Math.max(1e-6, +a.I || 0.135)); if (I >= 1) return null;
+    return (x, y) => Math.pow(I, (x * x + y * y) / 2);
+  }
   function psf(M, fi, wi, N = 64, P = 256, wfIn, apod) {
+    if (apod === undefined) apod = sysApod(M);
     const wf = wfIn || wavefront(M, fi, wi, N, false);
     const re = new Float64Array(P * P), im = new Float64Array(P * P);
     const o = (P - N) >> 1; let sa = 0;
@@ -831,7 +988,7 @@ const OE = (() => {
     // dispersion : plus courte et plus longue longueur d'onde
     let ls = Math.min(...M.wls), ll = Math.max(...M.wls);
     if (ls === ll) { ls = 0.4861327; ll = 0.6562725; }
-    const ns = indices(S, ls), nl = indices(S, ll);
+    const ns = indices(S, ls, M.env), nl = indices(S, ll, M.env);
     const rows = []; const sum = { SI: 0, SII: 0, SIII: 0, SIV: 0, SV: 0, CL: 0, CT: 0 };
     for (let j = 1; j < N; j++) {
       const cj = curv(S[j]), y = m.y[j], yb = c.y[j];
@@ -858,7 +1015,7 @@ const OE = (() => {
     const ref = M.par.imgDist, l = [], dz = [];
     for (let i = 0; i <= n; i++) {
       const lam = a + (b - a) * i / n; l.push(lam);
-      const nn = indices(M.S, lam);
+      const nn = indices(M.S, lam, M.env);
       const p = paraxial(M.sys, nn, M.stopIdx, M.objInf);
       dz.push((p.imgDist - ref) * 1000);
     }
@@ -1141,7 +1298,7 @@ const OE = (() => {
     const st = { sys: s, mu: 1e-3 }; for (let i = 0; i < it; i++) { const r = optStep(st); if (r.done) break; }
     const r = residuals(st.sys); return { sys: st.sys, m: r ? meritOf(r.f) : Infinity };
   }
-  const ASPH = ['a4', 'a6', 'a8', 'a10'];
+  const ASPH = ASPK;
   function getVars(sys) {
     const v = [];
     sys.surfaces.forEach((s, i) => {
@@ -1327,7 +1484,7 @@ const OE = (() => {
     switch (type) {
       case 'TRAD': return curved;
       case 'TFRN': case 'TIRR': return optical && s.elem !== 'ideal';
-      case 'TCON': return curved && (!!s.k || !!(s.a4 || s.a6 || s.a8 || s.a10));
+      case 'TCON': return curved && (!!s.k || ASPK.some(a => s[a]));
       case 'TTHI': return j < N - 1 || !comp;
       case 'TIND': case 'TABB': return glass;
       case 'TSDX': case 'TSDY': case 'TSTX': case 'TSTY': return curved || isMirror(s) || (s.type && s.type !== 'STD');
@@ -1527,8 +1684,60 @@ const OE = (() => {
     return compensate(s, kind, comp, B.h0, opts).sys;
   }
 
+  /* ---------------- Outils « Données système » (CODE V) ---------------- */
+  /**
+   * SET VIGNETTING : pour chaque champ, rayons limites ±Y, ±X qui passent juste toutes les ouvertures fixées
+   * (CIR) → facteurs VUY, VLY, VUX, VLX. Renvoie { fields: [{vuy, vly, vux, vlx}], clipped: nb de surfaces à ouverture fixée }.
+   */
+  function setVignetting(sys, wl) {
+    const M = prepare(sys); if (!M.ok) throw new Error(M.errors.join(', '));
+    const wi = wl == null ? M.pw : wl, nFix = M.S.filter((s, j) => j > 0 && j < M.N && s.sdFixed).length;
+    const pass = (f, px, py) => !ray(M, wi, f, px, py, { noVig: true }).vig;
+    // bord du faisceau le long de (dx, dy) depuis (x0, y0) : plus grand t ∈ [0, 1] transmis
+    const edge = (f, dx, dy, x0 = 0, y0 = 0) => {
+      const P = t => pass(f, x0 + t * dx, y0 + t * dy), full = Math.abs(dx) ? 1 - dx * x0 : 1 - dy * y0;
+      if (P(full)) return full;
+      if (!P(0)) { let lo = -1, hi = full; for (let k = 0; k < 40; k++) { const m = (lo + hi) / 2; if (P(m)) hi = m; else lo = m; } return P(hi) ? hi : -1; }
+      let lo = 0, hi = full; for (let k = 0; k < 40; k++) { const m = (lo + hi) / 2; if (P(m)) lo = m; else hi = m; }
+      return lo;
+    };
+    const r6 = v => Math.min(1, Math.max(0, Math.ceil(v * 1e6 - 1e-6) / 1e6)); // arrondi vers le haut : le rayon limite reste transmis
+    return { clipped: nFix, fields: M.sys.fields.map(f => {
+      const vuy = r6(1 - edge(f, 0, 1)), vly = r6(1 - edge(f, 0, -1)), cy = (vly - vuy) / 2; // X mesuré sur la ligne du centre vignetté
+      return { vuy, vly, vux: r6(1 - edge(f, 1, 0, 0, cy)), vlx: r6(1 - edge(f, -1, 0, 0, cy)) };
+    }) };
+  }
+  /** exprime les mêmes points de champ dans un autre type (ang, obj, pim, rim) ; renvoie les nouvelles valeurs {x, y} */
+  function convertFields(sys, to) {
+    const M = prepare(sys); if (!M.ok) throw new Error(M.errors.join(', '));
+    if (to === 'obj' && M.objInf) throw new Error('Objet à l\'infini : les champs ne peuvent pas être des hauteurs objet');
+    const L = M.t0 + M.par.zE, k = M.par.unitImgH;
+    return M.sys.fields.map(f => {
+      if (to === 'ang') return M.objInf ? { x: f.x, y: f.y } : { x: Math.atan(-f.x / L) / DEG, y: Math.atan(-f.y / L) / DEG };
+      if (to === 'obj') return { x: f.x, y: f.y };
+      if (to === 'pim') return M.objInf ? { x: Math.tan(f.x * DEG) * k, y: Math.tan(f.y * DEG) * k } : { x: f.x * k, y: f.y * k };
+      const r = ray(M, M.pw, f, 0, 0); if (r.vig) throw new Error('Rayon principal arrêté : conversion en hauteur image réelle impossible');
+      return { x: Math.abs(r.x) < 1e-12 ? 0 : r.x, y: Math.abs(r.y) < 1e-12 ? 0 : r.y };
+    });
+  }
+  /** balayage en température : focale, défocalisation (foyer paraxial − plan image), RMS spot et front d'onde au plan image fixe */
+  function thermalScan(sys, o = {}) {
+    const T1 = o.T1 ?? -20, T2 = o.T2 ?? 60, n = o.n || 9, out = { T: [], efl: [], dz: [], spot: [], wfe: [], fi: o.fi || 0 };
+    for (let i = 0; i < n; i++) {
+      const T = T1 + (T2 - T1) * i / (n - 1), s = structuredClone(sys); s.env = { ...(s.env || {}), T };
+      const M = prepare(s); out.T.push(T);
+      if (!M.ok) { out.efl.push(NaN); out.dz.push(NaN); out.spot.push(NaN); out.wfe.push(NaN); continue; }
+      const fi = Math.min(out.fi, M.sys.fields.length - 1);
+      out.efl.push(M.par.efl); out.dz.push((M.par.imgDist - M.S[M.N - 1].t) * 1000);
+      out.spot.push(spot(M, fi, 15).rms * 1000);
+      const wf = wavefront(M, fi, M.pw, 32); out.wfe.push(wf.ok ? wf.rms : NaN);
+    }
+    return out;
+  }
+
   return { DEG, fiberInfo, binPSF, detMTF, extSource, binImage, imageSim, polPupil, polOut, POLSTATES, TOLT, TOLC, LT, quickFocus, wlSel, opValue, parseModel, fmtModel, glassNearest, glassPool, toModel, subTry, tolBase, tolDefaults, tolFreeze, tolItems, tolGen, tolApplicable, tolLabel, tolApply, tolWorse, tolSens, tolInverse, tolTrial, tolRebuild, tolValue, niceDown, rng, mtfAt, compensate, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
     wavefront, psf, mtf, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
-    OPS, getVars, residuals, meritOf, optStep, pupilGrid, indices, paraxial };
+    OPS, getVars, residuals, meritOf, optStep, pupilGrid, indices, paraxial,
+    ASPK, FTYPES, vigMap, setVignetting, convertFields, thermalScan, glassTherm, nAir, envN, envCtx, isSolid };
 })();
 if (typeof module !== 'undefined') module.exports = OE;

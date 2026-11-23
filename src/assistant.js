@@ -36,7 +36,9 @@
     const L = [];
     L.push(`Titre : ${s.title || '(sans titre)'}`);
     L.push(`Objet : ${objInf ? 'à l\'infini (champs en degrés)' : `à ${r2(s.surfaces[0].t)} mm (champs = hauteurs en mm)`}. Ouverture : ${s.aperture.type === 'FNO' ? `F/${r2(s.aperture.value)}` : s.aperture.type === 'NA' ? `ON objet ${r2(s.aperture.value)}` : `EPD ${r2(s.aperture.value)} mm`}${s.aperture.obscuration ? `, obstruction ${r2(s.aperture.obscuration)}` : ''}.`);
-    L.push(`Champs : ${s.fields.map((f, i) => `F${i + 1}=${f.x ? `(${r2(f.x)}, ${r2(f.y)})` : r2(f.y)}${objInf ? '°' : ' mm'}`).join(', ')}.`);
+    const ft = OE.FTYPES[s.ftype] ? s.ftype : (objInf ? 'ang' : 'obj');
+    L.push(`Champs (${OE.FTYPES[ft].l.toLowerCase()}) : ${s.fields.map((f, i) => `F${i + 1}=${f.x ? `(${r2(f.x)}, ${r2(f.y)})` : r2(f.y)}${ft === 'ang' ? '°' : ' mm'}`).join(', ')}.`);
+    if (s.env && (+s.env.T !== 20 || +s.env.P !== 1)) L.push(`Environnement : ${s.env.T ?? 20} °C, ${s.env.P ?? 1} atm.`);
     L.push(`Longueurs d'onde : ${W.map((w, i) => `λ${i + 1}=${r2(w.um * 1000, 5)} nm${i === (s.primary | 0) ? ' (primaire)' : ''}${i === cen ? ' (centrale)' : ''}`).join(', ')}.`);
     if (M && M.ok) L.push(`Paraxial : EFL ${r2(M.par.efl, 5)} mm, F/# travail ${r2(M.par.wfno)}, EPD ${r2(M.par.epd)} mm, TTL ${r2(M.par.ttl, 5)} mm, distance image ${r2(M.par.imgDist, 5)} mm.`);
     else L.push('Système actuellement INVALIDE (rayons non tracés).');

@@ -101,7 +101,7 @@ async function genReport() {
       doc.text(L + 90, y + 14, sys.title || 'Système sans titre', { size: 13, color: ACC });
       y += 50; doc.line(L, y, Rr, y, { color: LINE }); y += 22;
       kv([['Auteur', cf.author || '—'], ['Date', date], ['Logiciel', `Focale ${typeof FOCALE_VERSION !== 'undefined' ? FOCALE_VERSION : ''}`], ['Surfaces', String(sys.surfaces.length - 2)],
-        ['Focale (EFL)', `${fx(p.efl, 4)} mm`], ['F/# de travail', fx(p.wfno, 3)], ['Champ max', `${fmt(p.fmax, 4)}${uF}`], ['Longueur totale', `${fx(p.ttl, 2)} mm`]]);
+        ['Focale (EFL)', `${fx(p.efl, 4)} mm`], ['F/# de travail', fx(p.wfno, 3)], ['Champ max', `${fmt(Math.max(...(M.ufields || M.sys.fields).map(f => Math.hypot(f.x || 0, f.y || 0))), 4)}${fUnitOf(M.ftype)}${M.ftype === 'pim' || M.ftype === 'rim' ? ' (' + OE.FTYPES[M.ftype].l.toLowerCase() + ')' : ''}`], ...(M.env ? [['Environnement', `${fmt(M.env.T, 4)} °C, ${fmt(M.env.P, 4)} atm`]] : []), ['Longueur totale', `${fx(p.ttl, 2)} mm`]]);
       if (cf.notes && cf.notes.trim()) { h2('Notes'); para(cf.notes.trim(), { size: 10 }); }
       const toc = RPT_SEC.filter(([k]) => cf.sec[k] && k !== 'cover').map(([, l]) => l).concat(Object.keys(cf.an).filter(k => cf.an[k] && PT[k]).map(k => PT[k].l));
       h2('Contenu'); para(toc.map(t => '• ' + t).join('\n'), { size: 9.5 });

@@ -118,4 +118,44 @@ const P = []; OE.ray(M, 1, 20, 0, 1, { pts: P }); near('Visée réelle sur diaph
   near('Substitution : verre réel du catalogue', OE.glassRecord(best.sys.surfaces[2].glass) ? 1 : 0, 1, 0);
   near('Substitution : chromatisme axial < 5 µm', Math.abs(OE.opValue(OE.prepare(best.sys), { type: 'AXCL' }).val * 1e3) < 5 ? 1 : 0, 1, 0);
   near('Catalogue filtré (préférentiels Schott)', OE.glassNearest(1.5168, 64.17, { cats: ['SCHOTT'], pref: true, k: 50 }).every(g => g.cat === 'SCHOTT') ? 1 : 0, 1, 0); }
+// Données système (CODE V) : environnement, types de champ, vignetage, ouvertures, asphères d'ordre élevé
+{ const mk = T => ({ T, P: 1, Tref: 20, sys: {}, cache: new Map(), miss: new Set() });
+  const n20 = OE.envN('N-BK7', 0.5461, mk(20)), n40 = OE.envN('N-BK7', 0.5461, mk(40));
+  near('N-BK7 dn/dT absolu 546 nm (Schott : 1,6e-6)', (n40 * OE.nAir(0.5461, 40, 1) - n20 * OE.nAir(0.5461, 20, 1)) / 20 * 1e6, 1.6, 0.1);
+  near('N-BK7 dn/dT relatif 546 nm (Schott : 3,0e-6)', (n40 - n20) / 20 * 1e6, 3.0, 0.1);
+  near('Indice de l\'air 550 nm, 15 °C', (OE.nAir(0.55, 15, 1) - 1) * 1e4, 2.778, 0.01);
+  const p = S['Lentille plan-convexe f=100'](); p.wavelengths = [{ um: 0.5875618, w: 1 }]; p.primary = 0;
+  const M0 = OE.prepare(p), q = structuredClone(p); q.env = { T: 40 }; const M1 = OE.prepare(q);
+  const n0 = OE.glassN('N-BK7', 0.5875618), n1 = OE.envN('N-BK7', 0.5875618, mk(40)), a = OE.glassTherm('N-BK7').cte;
+  near('Singulet chauffé : Δf = f (α ΔT − Δn / (n − 1)) (µm)', (M1.par.efl - M0.par.efl) * 1e3, M0.par.efl * (a * 20 - (n1 - n0) / (n0 - 1)) * 1e3, 0.05);
+  const v = structuredClone(p); v.env = { P: 0 }; near('Vide : indice relatif ≈ n × n_air (plus la dispersion)', OE.prepare(v).nW[0][1] / M0.nW[0][1], OE.nAir(0.5875618, 20, 1), 1e-5); }
+{ const r = S['Système fini 1:1 (relais)'](), M = OE.prepare(r), H = M.sys.fields.map(f => f.y);
+  for (const ty of ['ang', 'pim', 'rim']) { const c = structuredClone(r), v = OE.convertFields(r, ty); c.ftype = ty; c.fields = c.fields.map((f, i) => ({ ...f, ...v[i] }));
+    const Mc = OE.prepare(c); near(`Type de champ ${ty} : aller-retour vers la hauteur objet`, Math.max(...Mc.sys.fields.map((f, i) => Math.abs(f.y - H[i]))), 0, 1e-7); }
+  const c = structuredClone(r); c.ftype = 'rim'; c.fields = [{ y: 0 }, { y: 3 }]; const Mr = OE.prepare(c);
+  near('Hauteur image réelle : rayon principal à 3 mm', OE.ray(Mr, Mr.pw, Mr.sys.fields[1], 0, 0).y, 3, 1e-8);
+  const k = structuredClone(S['Triplet de Cooke f=50 F/5']()); k.ftype = 'pim'; k.fields = [{ y: 0 }, { y: 10 }]; const Mk = OE.prepare(k);
+  near('Hauteur image paraxiale : Y = f tan θ', Math.tan(Mk.sys.fields[1].y * Math.PI / 180) * Mk.par.efl, 10, 1e-9); }
+{ const c = S['Triplet de Cooke f=50 F/5'](); let M = OE.prepare(c);
+  c.surfaces.forEach((s, j) => { if (j > 0 && j < M.N) { s.sd = M.S[j].sd * 0.93; s.sdFixed = true; } });
+  const V = OE.setVignetting(c); c.fields = c.fields.map((f, i) => ({ ...f, ...V.fields[i] })); M = OE.prepare(c);
+  const f = M.sys.fields[M.sys.fields.length - 1];
+  near('SET VIG : facteurs non nuls hors axe', V.fields[V.fields.length - 1].vuy + V.fields[V.fields.length - 1].vly > 0.02 ? 1 : 0, 1, 0);
+  near('SET VIG : rayons limites ±Y transmis', [OE.ray(M, M.pw, f, 0, 1), OE.ray(M, M.pw, f, 0, -1), OE.ray(M, M.pw, f, 1, 0)].filter(r => r.vig).length, 0, 0);
+  const vm = OE.vigMap(f); near('SET VIG : au-delà du bord, rayon arrêté', OE.ray(M, M.pw, f, 0, vm.cy + vm.hy + 0.02, { noVig: true }).vig ? 1 : 0, 1, 0); }
+{ const c = S['Triplet de Cooke f=50 F/5'](); c.aperture = { type: 'NAI', value: 0.1, obscuration: 0 }; near('Ouverture ON image', OE.prepare(c).par.imgSpaceNA, 0.1, 1e-9);
+  c.aperture = { type: 'STOP', value: 3, obscuration: 0 }; near('Ouverture fixée par le diaphragme (demi-diamètre)', OE.prepare(c).par.stopR, 3, 1e-9);
+  const p = S['Lentille plan-convexe f=100'](); p.surfaces[1].a12 = 1e-14; const M = OE.prepare(p);
+  near('Asphère A12 : flèche r¹²', OE.sag(M.ctxs[0].s[1], 0, 10) - OE.sag(OE.prepare(S['Lentille plan-convexe f=100']()).ctxs[0].s[1], 0, 10), 1e-14 * 1e12, 1e-12); }
+// Import CODE V : qualificatifs de surface, vignetage, environnement, verres fictifs, asphères E…J, aller-retour
+{ const r = IO.parseSeq(require('fs').readFileSync(__dirname + '/codev_cmds.seq', 'utf8')), S = r.sys.surfaces;
+  near('.seq : THI S7 (qualificatif de surface)', S[7].t, 4, 0); near('.seq : CIR EDG ignoré, CIR lu', S[1].sd, 4.2, 0);
+  near('.seq : SLB → commentaire', S[4].comment === 'L2' && S[1].comment === 'L1 avant' ? 1 : 0, 1, 0);
+  near('.seq : verre fictif 743972.448504 → nd', OE.parseModel(S[1].glass).nd, 1.743972, 1e-9); near('.seq : GLC 0 → verre variable', S[1].vg ? 1 : 0, 1, 0);
+  near('.seq : verre « 1.62:36.4 »', OE.parseModel(S[6].glass).vd, 36.4, 1e-9); near('.seq : coefficient E → A12', S[2].a12, 1e-10, 0);
+  near('.seq : WTW W2 2', r.sys.wavelengths[1].w, 2, 0); near('.seq : VUY F3 / liste', r.sys.fields[2].vuy + r.sys.fields[2].vux, 0.2027 + 0.0228, 1e-12);
+  near('.seq : TEM → environnement', r.sys.env.T, 25, 0); near('.seq : aucune « commande ignorée » non expliquée', r.warnings.filter(w => /ignorée$/.test(w)).length, 0, 0);
+  const back = IO.parseSeq(IO.toSeq(r.sys).text).sys; near('.seq : aller-retour des champs et du vignetage', JSON.stringify(back.fields) === JSON.stringify(r.sys.fields) ? 1 : 0, 1, 0);
+  const z = IO.parseZMX(IO.toZMX(r.sys).text).sys; near('.zmx : aller-retour vignetage VCY/VDY', Math.abs(z.fields[2].vly - 0.1112) + Math.abs(z.fields[2].vuy - 0.2027), 0, 1e-12);
+  const c = S; const yim = IO.parseSeq('EPD 10\nWL 587.56\nYIM 0 5\nSO 0 1e20\nSTO 50 5 NBK7_SCHOTT\nS -50 90\nSI 0 0\nGO').sys; near('.seq : YIM → champs en hauteur image paraxiale', yim.ftype === 'pim' && yim.fields[1].y === 5 ? 1 : 0, 1, 0); }
 console.log(fail ? `${fail} échec(s)` : 'Tous les tests passent'); process.exit(fail ? 1 : 0);
