@@ -50,8 +50,10 @@ const IO = (() => {
     k = E.glassKey(base) || (base[0] === 'N' && E.glassKey('N-' + base.slice(1))) || (base[0] === 'S' && E.glassKey('S-' + base.slice(1))) || (base[0] === 'H' && E.glassKey('H-' + base.slice(1)));
     if (k) return k;
     if (/SILICA|SIO2/.test(base)) return 'F_SILICA';
-    const code = U.match(/^(\d{3})\.?(\d{2,3})$/);
-    if (code) return `${(1 + (+code[1]) / 1000).toFixed(3)}/${(+code[2] / (code[2].length === 3 ? 10 : 1)).toFixed(1)}`;
+    // code verre (CODE V / Zemax) : 517642, 517.642, 743972.448504 → nd = 1,743972, νd = 44,8504
+    const code = U.match(/^(\d{3,6})\.(\d{2,6})$/) || U.match(/^(\d{3})(\d{3})$/);
+    if (code) { const nd = 1 + (+code[1]) / Math.pow(10, code[1].length), vd = (+code[2]) / Math.pow(10, Math.max(0, code[2].length - 2));
+      if (vd > 5 && vd < 120) { if (code[2].length > 3 && !warnings.some(w => w.startsWith('Verres fictifs'))) warnings.push('Verres fictifs CODE V (code nd.νd) convertis en verres modèles nd/νd — dispersion proche mais pas identique à celle de CODE V'); return `${g10(nd)}/${g10(vd)}`; } }
     if (isFinite(nd) && nd > 1) { warnings.push(`${where} : verre « ${u} » introuvable, remplacé par le modèle nd/νd ${nd}/${vd || '—'}`); return vd > 0 ? `${g10(nd)}/${g10(vd)}` : String(g10(nd)); }
     warnings.push(`${where} : verre « ${u} » introuvable (importez son catalogue AGF)`);
     return u;
@@ -142,7 +144,7 @@ const IO = (() => {
         case 'GRO': if (cur) cur.gm = n(0); break;
         case 'GRS': if (cur && n(0)) cur.lpmm = 1 / n(0); break;
         case 'GRX': if (cur) cur._grx = n(0); break; case 'GRY': if (cur) cur._gry = n(0); break;
-        case 'SLB': case 'GO': case 'INI': case 'RDM;LEN': case 'ASP': case 'CON': case 'SPH': case 'WTW;': case 'VUY': case 'VLY': case 'VUX': case 'VLX': case 'CA': case 'PWL': case 'END': case 'INS': case 'SAV': break;
+        case 'SLB': case 'GO': case 'INI': case 'RDM;LEN': case 'ASP': case 'CON': case 'SPH': case 'WTW;': case 'VUY': case 'VLY': case 'VUX': case 'VLX': case 'CA': case 'PWL': case 'END': case 'INS': case 'SAV': case 'UID': case 'DER': case 'DOR': case 'GCH': case 'GLC': case 'GLB': case 'CAT': break; // commandes sans effet optique (identifiants, incréments de dérivée, catalogues…)
         default: if (/^[A-Z]{2,4}$/.test(cmd) && !['STO', 'S'].includes(cmd)) { if (!W.some(w => w.includes(`« ${cmd} »`))) W.push(`Commande CODE V « ${cmd} » ignorée`); }
       }
     }
@@ -167,7 +169,13 @@ const IO = (() => {
         if (M.ok) { const k = inf ? M.par.efl : M.par.mag; sys.fields = sys.fields.map(f => inf ? { ...f, x: Math.atan(f.x / k) * 180 / Math.PI, y: Math.atan(f.y / k) * 180 / Math.PI } : { ...f, x: f.x / k, y: f.y / k }); }
         W.push('Champs définis en hauteur image : convertis par l\'optique paraxiale (vérifiez-les)');
       } catch (e) { W.push('Champs en hauteur image non convertis'); }
-    } else if (ftype === 'ang' && !inf) { sys.fields = sys.fields.map(f => ({ ...f, x: S[0].t * Math.tan(f.x * Math.PI / 180), y: S[0].t * Math.tan(f.y * Math.PI / 180) })); W.push('Champs en angle avec objet à distance finie : convertis en hauteurs objet'); }
+    } else if (ftype === 'ang' && !inf) {
+      // CODE V : l'angle est mesuré depuis la pupille d'entrée → h = (distance objet + position de la pupille d'entrée) · tan θ
+      let zE = 0; try { const tmp = structuredClone(sys); tmp.fields = [{ x: 0, y: 0 }]; const M = E.prepare(tmp); if (M.ok && isFinite(M.par.zE)) zE = M.par.zE; } catch (e) { }
+      const L = S[0].t + zE, deg = v => +v.toFixed(3);
+      const ang = sys.fields.map(f => deg(f.y)).join(', ');
+      sys.fields = sys.fields.map(f => ({ ...f, x: L * Math.tan(f.x * Math.PI / 180), y: L * Math.tan(f.y * Math.PI / 180) }));
+      W.push(`Champs en angle (${ang}°) avec objet à ${g10(S[0].t)} mm : convertis en hauteurs objet depuis la pupille d'entrée (${sys.fields.map(f => f.y.toFixed(3)).join(', ')} mm) — même champ que dans CODE V`); }
     else if (ftype === 'obj' && inf) W.push('Champs en hauteur objet avec objet à l\'infini : interprétés comme des angles');
   }
   function scaleSys(sys, k) {

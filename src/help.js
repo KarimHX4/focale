@@ -243,14 +243,17 @@ const HELP = [
 <table class="ht"><tr><th>Élément</th><th>Correspondance</th></tr>
 <tr><td>Système</td><td>NAME, UNIT (mm, cm, in, m → mm), ENPD / FNUM / OBNA / FLOA, FTYP (angle, hauteur objet, hauteur image → convertie), XFLN/YFLN/FWGN, WAVM ou WAVL/WWGT, PWAV.</td></tr>
 <tr><td>Surfaces</td><td>STANDARD, EVENASPH (PARM 2…5 → A4…A10), COORDBRK (décentrements et bascules), PARAXIAL (lentille idéale), DGRATING (réseau, traits/µm et ordre). CURV, DISZ, CONI, DIAM, CLAP (demi-diamètre fixe), STOP, COMM.</td></tr>
+<tr><td>Ignorées sans remarque</td><td>UID, DER, DOR, GCH, GLC, GLB, CAT (identifiants, incréments de dérivée, préférences de catalogue : sans effet sur l'optique).</td></tr>
 <tr><td>Verres</td><td>Noms de catalogue (Schott, Ohara, CDGM, Hoya, MISC), MIRROR, ___BLANK (modèle nd/νd). Un verre inconnu est remplacé par son modèle nd/νd (signalé).</td></tr>
 <tr><td>Export</td><td>Décentrements → paires de COORDBRK (DEC : un CB ; DAR : CB + retour en ordre inverse ; pliage BEN : CB + CB de même bascule). Verres fictifs → ___BLANK. Solves → épaisseurs fixes.</td></tr></table>
 <h4>CODE V (.seq)</h4>
 <table class="ht"><tr><th>Élément</th><th>Correspondance</th></tr>
-<tr><td>Système</td><td>TITLE, DIM (M, C, I → mm), EPD / FNO / NAO, WL, REF, WTW, XAN/YAN, XOB/YOB, XIM/YIM (converties), WTF.</td></tr>
+<tr><td>Système</td><td>TITLE, DIM (M, C, I → mm), EPD / FNO / NAO, WL, REF, WTW, XAN/YAN, XOB/YOB, XIM/YIM (converties), WTF. Avec un objet à distance finie, les champs en angle (YAN) sont convertis en hauteurs objet depuis la <b>pupille d'entrée</b> (même définition que CODE V).</td></tr>
 <tr><td>Surfaces</td><td>SO, S, STO, SI, RDM/RDN, RDY/CUY/THI/GLA, K, A…D, CIR, REFL, PIM, XDE…CDE, DAR, BEN (REV → DAR), GRT/GRO/GRS/GRX/GRY (réseau), CCY/THC/KC 0 (variables).</td></tr>
-<tr><td>Verres</td><td>NOM_CATALOGUE (NBK7_SCHOTT, SBSL7_OHARA…), codes 6 chiffres, <b>verres privés PRV</b> (PWL + indices → loi de Cauchy). À l'export, verres fictifs et importés deviennent des verres privés PRV.</td></tr></table>
+<tr><td>Ignorées sans remarque</td><td>UID, DER, DOR, GCH, GLC, GLB, CAT (identifiants, incréments de dérivée, préférences de catalogue : sans effet sur l'optique).</td></tr>
+<tr><td>Verres</td><td>NOM_CATALOGUE (NBK7_SCHOTT, SBSL7_OHARA…), codes 6 chiffres, <b>verres fictifs CODE V</b> <code>743972.448504</code> (→ modèle nd/νd 1,743972 / 44,8504), <b>verres privés PRV</b> (PWL + indices → loi de Cauchy). À l'export, verres fictifs et importés deviennent des verres privés PRV.</td></tr></table>
 <p class="hint">Non exportés (signalés) : lentille idéale en CODE V, polariseurs et lames d'onde, surfaces XY et Zernike, obstruction centrale, orientation non nulle des traits d'un réseau vers Zemax. Les conventions de bascule sont supposées identiques (rotations main droite) : vérifiez les systèmes décentrés après conversion.</p>
+<p class="hint">Les fichiers <b>.len</b> de CODE V sont binaires (format propriétaire) : dans CODE V, tapez <code>WRL C:\chemin\nom.seq</code> pour écrire la séquence texte, puis importez le .seq.</p>
 <h4>Installation</h4><p>Depuis le site GitHub Pages, bouton « Installer » (Chrome, Edge) : l'application fonctionne hors ligne, se met à jour à chaque nouvelle version et peut ouvrir directement les fichiers .zmx, .seq, .json et .agf.</p>` },
 
   { id: 'raccourcis', t: 'Raccourcis clavier', h: `
