@@ -534,6 +534,7 @@ function openGlasses() {
   window.addEventListener('mouseup', function up(e) { if (!GLW.drag) return; const d = GLW.drag; GLW.drag = null; if (!d.moved) { const p = near(d.x, d.y); if (p) { GLW.pick = p[2].name; mark(); conf(); } } if (!$('#gmap')) window.removeEventListener('mouseup', up); });
   cv.addEventListener('wheel', e => { e.preventDefault(); const A = GLW.A, r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, k = e.deltaY < 0 ? 0.8 : 1.25;
     const vx = view.x[0] + (mx - A.P.x) / A.P.w * (view.x[1] - view.x[0]), vy = view.y[0] + (A.P.y + A.P.h - my) / A.P.h * (view.y[1] - view.y[0]);
+    const span = Math.abs(view.x[1] - view.x[0]) * k; if (span < 2 || span > 170) return; // de 2 à 170 unités de νd
     view = { x: [vx + (view.x[0] - vx) * k, vx + (view.x[1] - vx) * k], y: [vy + (view.y[0] - vy) * k, vy + (view.y[1] - vy) * k] }; drawMap(); }, { passive: false });
   cv.addEventListener('dblclick', () => { view = null; drawMap(); });
   draw(); conf(); $('#gq').focus();
@@ -747,6 +748,13 @@ function range(arrs, pad = 0.05, sym = false) {
   if (b - a < 1e-12) { const m = Math.abs(a) || 1; a -= m * 0.1 + 1e-9; b += m * 0.1 + 1e-9; }
   const p = (b - a) * pad; return [a - p, b + p];
 }
+/** zoom à la molette des graphiques : p.zv = { k (1…PZMAX), ox, oy (début de la fenêtre en fraction de la plage d'origine) } */
+const AXZ = { on: false, p: null, list: [] }, PZMAX = 40, NOZOOM = new Set(['psf', 'wfe', 'imgsim', 'detector', 'source', 'seidel', 'polar']);
+function zoomRender(p, fn) { AXZ.on = !NOZOOM.has(p.type); AXZ.p = p; AXZ.list = []; try { return fn(); } finally { if (AXZ.on) p._ax = AXZ.list; AXZ.on = false; AXZ.p = null; } }
+function zoomBadge(p, c, w) {
+  if (!p.zv || !(p.zv.k > 1) || !p._ax || !p._ax.length) return; const P = p._ax[0].P, t = `×${p.zv.k.toFixed(1)} · glisser · double-clic : ×1`;
+  c.save(); c.font = '10px Inter, sans-serif'; const tw = c.measureText(t).width + 10, narrow = P.w < tw + 8, x = narrow ? w - tw - 4 : P.x + P.w - tw - 3, y = narrow ? 2 : P.y + 3; c.fillStyle = TH.panel || '#fff'; c.globalAlpha = 0.88; c.fillRect(x, y, tw, 15); c.globalAlpha = 1; c.strokeStyle = TH.acc; c.lineWidth = 1; c.strokeRect(x + 0.5, y + 0.5, tw - 1, 14); c.fillStyle = TH.acc; c.fillText(t, x + 5, y + 11); c.restore();
+}
 function axes(c, R, xr, yr, o = {}) {
   const ml = o.ml ?? 50, mb = o.mb ?? (o.xl ? 32 : 20), mt = o.title ? 20 : 8, mr = o.mr ?? 10;
   const P = { x: R.x + ml, y: R.y + mt, w: Math.max(10, R.w - ml - mr), h: Math.max(10, R.h - mt - mb) };
@@ -754,6 +762,10 @@ function axes(c, R, xr, yr, o = {}) {
     const sx = P.w / (xr[1] - xr[0]), sy = P.h / (yr[1] - yr[0]), s = Math.min(sx, sy);
     const cx = (xr[0] + xr[1]) / 2, cy = (yr[0] + yr[1]) / 2;
     xr = [cx - P.w / s / 2, cx + P.w / s / 2]; yr = [cy - P.h / s / 2, cy + P.h / s / 2];
+  }
+  if (AXZ.on) { // zoom à la molette du panneau en cours de rendu : même fenêtre relative pour tous ses graphiques
+    const z = AXZ.p && AXZ.p.zv; AXZ.list.push({ P, xr: xr.slice(), yr: yr.slice() });
+    if (z && z.k > 1) { const dx = xr[1] - xr[0], dy = yr[1] - yr[0]; xr = [xr[0] + z.ox * dx, xr[0] + (z.ox + 1 / z.k) * dx]; yr = [yr[0] + z.oy * dy, yr[0] + (z.oy + 1 / z.k) * dy]; }
   }
   const X = v => P.x + (v - xr[0]) / (xr[1] - xr[0]) * P.w, Y = v => P.y + P.h - (v - yr[0]) / (yr[1] - yr[0]) * P.h;
   c.save(); c.font = '10.5px Inter, sans-serif'; c.lineWidth = 1;
@@ -896,6 +908,7 @@ function drawLayout(tgt) {
   const G = layoutGeom(M);
   if (App.mode === '3d') return draw3D(c, w, h, M, G);
   const V = App.view;
+  { const zr = G.zmax - G.zmin, yr = (G.ymax - G.ymin) * 1.15; V.s0 = Math.min((w - 40) / (zr || 1), (h - 30) / (yr || 1)); }
   if (V.auto) { const zr = G.zmax - G.zmin, yr = (G.ymax - G.ymin) * 1.15; V.s = Math.min((w - 40) / (zr || 1), (h - 30) / (yr || 1)); V.ox = 20 - G.zmin * V.s + ((w - 40) - zr * V.s) / 2; V.oy = h / 2 + (G.ymax + G.ymin) / 2 * V.s; }
   const T = (z, y) => [V.ox + z * V.s, V.oy - y * V.s];
   App.layT = T;
@@ -1042,13 +1055,16 @@ function setupLayout() {
   });
   cv.addEventListener('mouseleave', () => $('#tip').style.display = 'none');
   cv.addEventListener('wheel', e => {
-    e.preventDefault(); const k = Math.exp(-e.deltaY * 0.0015), V = App.view;
-    if (App.mode === '2d') { const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top; V.auto = false; V.ox = mx - (mx - V.ox) * k; V.oy = my - (my - V.oy) * k; V.s *= k; }
-    else V.s3 = (V.s3 || 1) * k;
+    e.preventDefault(); let k = Math.exp(-e.deltaY * 0.0015); const V = App.view;
+    // zoom borné : de ×0,2 à ×50 par rapport à la vue « Ajuster »
+    if (App.mode === '2d') { const s0 = V.s0 || V.s, sn = Math.min(s0 * LAYZ[1], Math.max(s0 * LAYZ[0], V.s * k)); k = sn / V.s; if (Math.abs(k - 1) < 1e-9) { if (k === 1) toast(V.s >= s0 * LAYZ[1] * 0.999 ? 'Zoom maximal (×50)' : 'Zoom minimal (×0,2)', 1200); return; }
+      const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top; V.auto = false; V.ox = mx - (mx - V.ox) * k; V.oy = my - (my - V.oy) * k; V.s *= k; }
+    else V.s3 = Math.min(LAYZ[1], Math.max(LAYZ[0], (V.s3 || 1) * k));
     drawLayout();
   }, { passive: false });
   cv.addEventListener('dblclick', () => fitView());
 }
+const LAYZ = [0.2, 50];
 function fitView() { Object.assign(App.view, { auto: true, s3: 1, px3: 0, py3: 0 }); drawLayout(); }
 function hitSurf(e) {
   const M = App.M; if (!M || !M.ok || !App.layT) return 0;
@@ -1158,6 +1174,21 @@ function setupPaneEvents(el) {
   const later = pi => { cancelAnimationFrame(App._pz); App._pz = requestAnimationFrame(() => renderPane(pi)); };
   el.addEventListener('input', e => { const t = e.target; if (t.dataset.p !== 'zoom' || !t.closest('.pane')) return; const pi = +t.closest('.pane').dataset.i; App.panes[pi].zoom = +t.value; const z = t.parentElement.querySelector('.zv'); if (z) z.textContent = '×' + (+t.value).toFixed(2);
     const p = App.panes[pi]; if (p.view === '3d') { p._drag = true; clearTimeout(App._zs); App._zs = setTimeout(() => { delete p._drag; paneBody(pi); }, 250); } paneBody(pi); });
+  el.addEventListener('wheel', e => { const pane = e.target.closest('.pane'); if (!pane || !e.target.closest('.pb canvas')) return; const pi = +pane.dataset.i, p = App.panes[pi]; if (!p || PT[p.type].html || p.type === 'psf' || NOZOOM.has(p.type)) return;
+    const cv = e.target.closest('canvas'), r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, A = (p._ax || []).find(a => mx >= a.P.x && mx <= a.P.x + a.P.w && my >= a.P.y && my <= a.P.y + a.P.h);
+    if (!A) return; e.preventDefault();
+    const z = p.zv || { k: 1, ox: 0, oy: 0 }, k2 = Math.min(PZMAX, Math.max(1, z.k * (e.deltaY < 0 ? 1.2 : 1 / 1.2)));
+    if (k2 === z.k) { if (k2 === PZMAX) toast(`Zoom maximal (×${PZMAX})`, 1200); return; }
+    const fx = (mx - A.P.x) / A.P.w, fy = (A.P.y + A.P.h - my) / A.P.h, gx = z.ox + fx / z.k, gy = z.oy + fy / z.k, cl = (v, k) => Math.min(1 - 1 / k, Math.max(0, v));
+    p.zv = k2 <= 1.0001 ? null : { k: k2, ox: cl(gx - fx / k2, k2), oy: cl(gy - fy / k2, k2) };
+    cancelAnimationFrame(App._pz); App._pz = requestAnimationFrame(() => renderPane(pi)); clearTimeout(App._zsv); App._zsv = setTimeout(save, 400); }, { passive: false });
+  el.addEventListener('dblclick', e => { const pane = e.target.closest('.pane'); if (!pane || !e.target.closest('.pb canvas')) return; const pi = +pane.dataset.i, p = App.panes[pi]; if (p && p.zv) { p.zv = null; renderPane(pi); save(); } });
+  el.addEventListener('mousedown', e => { const pane = e.target.closest('.pane'); if (!pane || e.button !== 0 || !e.target.closest('.pb canvas')) return; const pi = +pane.dataset.i, p = App.panes[pi]; if (!p || !p.zv || p.type === 'psf') return;
+    const cv = e.target.closest('canvas'), r = cv.getBoundingClientRect(), A = (p._ax || []).find(a => e.clientX - r.left >= a.P.x && e.clientX - r.left <= a.P.x + a.P.w && e.clientY - r.top >= a.P.y && e.clientY - r.top <= a.P.y + a.P.h); if (!A) return;
+    e.preventDefault(); const x0 = e.clientX, y0 = e.clientY, z0 = { ...p.zv }, cl = v => Math.min(1 - 1 / z0.k, Math.max(0, v)); cv.style.cursor = 'grabbing';
+    const mv = ev => { p.zv = { k: z0.k, ox: cl(z0.ox - (ev.clientX - x0) / A.P.w / z0.k), oy: cl(z0.oy + (ev.clientY - y0) / A.P.h / z0.k) }; cancelAnimationFrame(App._pz); App._pz = requestAnimationFrame(() => renderPane(pi)); };
+    const up = () => { cv.style.cursor = ''; window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); save(); };
+    window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up); });
   el.addEventListener('wheel', e => { const pane = e.target.closest('.pane'); if (!pane || !e.target.closest('.pb')) return; const pi = +pane.dataset.i, p = App.panes[pi]; if (!p || p.type !== 'psf') return;
     e.preventDefault(); p.zoom = Math.min(5, Math.max(0.5, psfZoom(p) * (e.deltaY < 0 ? 1.08 : 1 / 1.08))); const r = pane.querySelector('input[data-p="zoom"]'); if (r) { r.value = p.zoom; r.parentElement.querySelector('.zv').textContent = '×' + p.zoom.toFixed(2); }
     if (p.view === '3d') p._drag = true; paneBody(pi); clearTimeout(App._zs); App._zs = setTimeout(() => { if (p._drag) { delete p._drag; paneBody(pi); } save(); }, 300); }, { passive: false });
@@ -1207,7 +1238,7 @@ function renderPanes() { readTheme(); const t0 = performance.now(); $$('.pane[da
 /** redessine le contenu d'un panneau sans reconstruire son en-tête (curseurs, rotation 3D) */
 function paneBody(pi) {
   const d = document.querySelector(`.pane[data-i="${pi}"]`), p = App.panes[pi], M = App.M; if (!d || !M || !M.ok || PT[p.type].html) return;
-  const cv = d.querySelector('canvas'); try { const { c, w, h } = prepCanvas(cv); if (PT[p.type].job) { const dd = JCACHE.get(jobSpec(p, M).key); if (dd && !dd.err) R[p.type](p, M, c, w, h, dd); } else R[p.type](p, M, c, w, h); } catch (err) { console.error(err); }
+  const cv = d.querySelector('canvas'); try { const { c, w, h } = prepCanvas(cv); zoomRender(p, () => { if (PT[p.type].job) { const dd = JCACHE.get(jobSpec(p, M).key); if (dd && !dd.err) R[p.type](p, M, c, w, h, dd); } else R[p.type](p, M, c, w, h); }); zoomBadge(p, c, w); } catch (err) { console.error(err); }
 }
 function renderPane(pi) {
   const d = document.querySelector(`.pane[data-i="${pi}"]`); if (!d) return;
@@ -1226,8 +1257,8 @@ function renderPane(pi) {
         const dd = paneData(p, M);
         if (dd === undefined) drawWait(p, c, w, h, BG.pend && BG.pend.get(jobSpec(p, M).key));
         else if (!dd || dd.err) text(c, 'Erreur : ' + ((dd && dd.err) || 'calcul impossible'), 12, 12, { col: '#dc2626' });
-        else R[p.type](p, M, c, w, h, dd);
-      } else R[p.type](p, M, c, w, h);
+        else { zoomRender(p, () => R[p.type](p, M, c, w, h, dd)); zoomBadge(p, c, w); }
+      } else { zoomRender(p, () => R[p.type](p, M, c, w, h)); zoomBadge(p, c, w); }
     }
   } catch (err) {
     console.error(err);
@@ -1410,7 +1441,7 @@ const R = {
     if (det().on && si === M.N) m = Math.max(m, det().nx * det().p * 5e-4, det().ny * det().p * 5e-4);
     m *= 1.08;
     const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, [-m, m], [-m, m], { equal: true, xl: 'X (mm)', title: `Surface ${si}${M.S[si].comment ? ' · ' + M.S[si].comment : ''} — ½Ø ${fx(fp.sd, 3)} mm${M.S[si].sdFixed ? ' (fixe)' : ''}` });
-    c.strokeStyle = TH.fg; c.lineWidth = 1.4; c.beginPath(); c.arc(A.X(0), A.Y(0), A.X(fp.sd) - A.X(0), 0, 2 * Math.PI); c.stroke();
+    clip(c, A.P); c.strokeStyle = TH.fg; c.lineWidth = 1.4; c.beginPath(); c.arc(A.X(0), A.Y(0), A.X(fp.sd) - A.X(0), 0, 2 * Math.PI); c.stroke(); c.restore();
     if (det().on && si === M.N) { const d = det(), W2 = d.nx * d.p * 5e-4, H2 = d.ny * d.p * 5e-4; c.strokeStyle = '#ea580c'; c.lineWidth = 1.8; c.setLineDash([6, 3]); c.strokeRect(A.X(-W2), A.Y(H2), A.X(W2) - A.X(-W2), A.Y(-H2) - A.Y(H2)); c.setLineDash([]); text(c, `Détecteur ${d.nx}×${d.ny} px · ${fx(2 * W2, 2)}×${fx(2 * H2, 2)} mm`, A.X(-W2) + 4, A.Y(H2) + 4, { col: '#ea580c', size: 10.5 }); }
     clip(c, A.P);
     fp.fields.forEach(f => { c.fillStyle = fcol(f.fi); for (const q of f.pts) { c.fillRect(A.X(q[0]) - 1, A.Y(q[1]) - 1, 2, 2); } });
@@ -1464,7 +1495,7 @@ const R = {
     pline(c, A, X, d.DL, TH.fg, 1.2, [2, 2]);
     d.T.forEach((t, i) => { pline(c, A, X, t, fcol(i), 1.7); pline(c, A, X, d.S[i], fcol(i), 1.7, [6, 4]); });
     pline(c, A, X, d.avg, '#f59e0b', 2.6);
-    const vl = (x, col, dash, lab) => { c.strokeStyle = col; c.lineWidth = 1.2; c.setLineDash(dash); c.beginPath(); c.moveTo(A.X(x), A.P.y); c.lineTo(A.X(x), A.P.y + A.P.h); c.stroke(); c.setLineDash([]); if (lab) text(c, lab, A.X(x) + 4, A.P.y + 4, { col, size: 10 }); };
+    const vl = (x, col, dash, lab) => { if (A.X(x) < A.P.x || A.X(x) > A.P.x + A.P.w) return; c.strokeStyle = col; c.lineWidth = 1.2; c.setLineDash(dash); c.beginPath(); c.moveTo(A.X(x), A.P.y); c.lineTo(A.X(x), A.P.y + A.P.h); c.stroke(); c.setLineDash([]); if (lab) text(c, lab, A.X(x) + 4, A.P.y + 4, { col, size: 10 }); };
     vl(0, TH.mut, [2, 3], 'plan image'); vl(d.best * 1e3, TH.acc, [5, 3], 'meilleur foyer');
     legend(c, 8, h - 8, [{ col: TH.fg, dash: [2, 2], l: 'Limite de diffraction' }, { col: '#f59e0b', l: 'Moyenne (T+S)/2 pondérée' }, { col: TH.mut, l: 'T' }, { col: TH.mut, dash: [6, 4], l: 'S' }, ...F.map((_, i) => ({ col: fcol(i), l: fLabel(M, i) }))]);
   },
@@ -1472,7 +1503,7 @@ const R = {
     const u = d.u, xr = [0, Math.max(...u.filter(isFinite)) || 1], fc = ['#2563eb', '#16a34a', '#dc2626', '#9333ea', '#ea580c', '#0891b2'];
     const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, xr, [0, 1.02], { xl: `Champ (${d.unit})`, yl: 'Module FTM', title: `FTM en fonction du champ — ${d.freqs.map(f => fmt(f, 4)).join(', ')} cy/mm (pupille ${+p.ns || 32}×${+p.ns || 32})` });
     d.freqs.forEach((f, q) => { const col = fc[q % fc.length]; pline(c, A, u, d.T[q], col, 1.8); pline(c, A, u, d.S[q], col, 1.8, [6, 4]); pline(c, A, u, d.DL[q], col, 0.9, [1, 3]); });
-    if (!d.img) d.defF.forEach((v, i) => { c.fillStyle = fcol(i); c.beginPath(); c.moveTo(A.X(v), A.P.y + A.P.h); c.lineTo(A.X(v) - 4, A.P.y + A.P.h + 6); c.lineTo(A.X(v) + 4, A.P.y + A.P.h + 6); c.fill(); });
+    if (!d.img) d.defF.forEach((v, i) => { if (A.X(v) < A.P.x - 1 || A.X(v) > A.P.x + A.P.w + 1) return; c.fillStyle = fcol(i); c.beginPath(); c.moveTo(A.X(v), A.P.y + A.P.h); c.lineTo(A.X(v) - 4, A.P.y + A.P.h + 6); c.lineTo(A.X(v) + 4, A.P.y + A.P.h + 6); c.fill(); });
     legend(c, 8, h - 8, [{ col: TH.mut, l: 'T' }, { col: TH.mut, dash: [6, 4], l: 'S' }, { col: TH.mut, dash: [1, 3], l: 'limite de diffraction' }, ...d.freqs.map((f, q) => ({ col: fc[q % fc.length], l: `${fmt(f, 4)} cy/mm` }))]);
   },
   relillum(p, M, c, w, h, d) {
@@ -1489,8 +1520,8 @@ const R = {
     const lines = (Q, col, lw, dash) => { c.strokeStyle = col; c.lineWidth = lw; c.setLineDash(dash || []);
       for (let j = 0; j < n; j++) for (const dir of [0, 1]) { c.beginPath(); let on = false; for (let i = 0; i < n; i++) { const q = Q[dir ? i * n + j : j * n + i]; if (!q) { on = false; continue; } const X = A.X(q[0]), Y = A.Y(q[1]); on ? c.lineTo(X, Y) : c.moveTo(X, Y); on = true; } c.stroke(); }
       c.setLineDash([]); };
-    lines(g.I, TH.mut, 0.8, [3, 3]); lines(P, TH.acc, 1.6);
-    c.fillStyle = TH.acc; for (const q of P) if (q) { c.beginPath(); c.arc(A.X(q[0]), A.Y(q[1]), 1.8, 0, 7); c.fill(); }
+    clip(c, A.P); lines(g.I, TH.mut, 0.8, [3, 3]); lines(P, TH.acc, 1.6);
+    c.fillStyle = TH.acc; for (const q of P) if (q) { c.beginPath(); c.arc(A.X(q[0]), A.Y(q[1]), 1.8, 0, 7); c.fill(); } c.restore();
     legend(c, 8, h - 8, [{ col: TH.mut, dash: [3, 3], l: 'Grille idéale (paraxiale)' }, { col: TH.acc, l: 'Rayons principaux réels' }]);
   },
   ghost(p, M) {
@@ -1514,7 +1545,7 @@ const R = {
     const cs = OE.chromShift(M, 60);
     const A = axes(c, { x: 0, y: 0, w, h }, [cs.l[0], cs.l[cs.l.length - 1]], range([cs.dz], 0.1), { xl: 'Longueur d\'onde (µm)', yl: 'Décalage focal (µm)', title: `Décalage focal chromatique paraxial — étendue ${fx(Math.max(...cs.dz) - Math.min(...cs.dz), 2)} µm` });
     pline(c, A, cs.l, cs.dz, TH.acc, 2);
-    M.wls.forEach(l => { c.fillStyle = wlCol(l); const k = cs.l.reduce((b, v, i) => Math.abs(v - l) < Math.abs(cs.l[b] - l) ? i : b, 0); c.beginPath(); c.arc(A.X(l), A.Y(cs.dz[k]), 4, 0, 7); c.fill(); });
+    clip(c, A.P); M.wls.forEach(l => { c.fillStyle = wlCol(l); const k = cs.l.reduce((b, v, i) => Math.abs(v - l) < Math.abs(cs.l[b] - l) ? i : b, 0); c.beginPath(); c.arc(A.X(l), A.Y(cs.dz[k]), 4, 0, 7); c.fill(); }); c.restore();
   },
   glass(p, M, c, w, h) {
     const used = new Set(M.S.map(s => OE.glassKey(s.glass)).filter(Boolean)), sel = p.cat || '';
