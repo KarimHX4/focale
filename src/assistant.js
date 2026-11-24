@@ -5,7 +5,7 @@
   'use strict';
   if (window.ASST) return;
   const LS = 'focale.asst';
-  const DEF = { backend: 'auto', ollamaUrl: 'http://localhost:11434', ollamaModel: '', webllmModel: 'Qwen2.5-3B-Instruct-q4f16_1-MLC', confirm: true, history: 2, rulesFirst: true, nativeTools: true, win: { docked: true, w: 420, left: null, top: null, h: null } };
+  const DEF = { backend: 'auto', geminiKey: '', geminiModel: 'gemini-flash-latest', ollamaUrl: 'http://localhost:11434', ollamaModel: '', webllmModel: 'Qwen2.5-3B-Instruct-q4f16_1-MLC', confirm: true, history: 2, rulesFirst: true, nativeTools: true, win: { docked: true, w: 420, left: null, top: null, h: null } };
   const A = window.ASST = { cfg: { ...DEF }, log: [], busy: false, engine: null, engineId: null, abort: null, active: null, ollamaModels: [] };
   try { Object.assign(A.cfg, JSON.parse(localStorage.getItem(LS) || '{}')); } catch (e) { }
   A.cfg.win = { ...DEF.win, ...(A.cfg.win || {}) };
@@ -77,6 +77,17 @@
   }
   const lensOf = n => { const L = lenses(), l = L[Math.round(num(n, 'lentille')) - 1]; if (!l) throw new Error(`lentille ${n} inexistante (${L.length} lentille(s))`); return l; };
   const fixStop = s => { if (!s.surfaces.some(x => x.stop)) s.surfaces[Math.min(1, s.surfaces.length - 2)].stop = true; };
+  /** performances détaillées, toutes calculées par le moteur (pour report_metrics) */
+  const metricsFull = () => {
+    const M = OE.prepare(S()); if (!M.ok) return 'système invalide'; const F = S().fields, p = M.par, L = [];
+    L.push(`EFL ${r2(p.efl, 5)} mm, F/# de travail ${r2(p.wfno, 4)}, TTL ${r2(p.ttl, 5)} mm, tirage ${r2(p.imgDist, 5)} mm, hauteur image ${r2(p.imgH, 4)} mm, λ primaire ${r2(M.wls[M.pw] * 1000, 5)} nm`);
+    F.forEach((f, i) => { const sp = OE.spot(M, i, 15), w = OE.wavefront(M, i, M.pw, 32), m = OE.mtf(M, i, { freqs: [10, 30, 50], N: 24 });
+      L.push(`champ ${i + 1} (${fLabel(M, i)}) : spot RMS ${r2(sp.rms * 1e3, 3)} µm, front d'onde RMS ${w.ok ? r2(w.rms, 3) : '—'} λ, FTM T/S 10/30/50 cy/mm ${m.T.map((t, k) => r2(t, 2) + '/' + r2(m.S[k], 2)).join(', ')}`); });
+    try { const fc = OE.fieldCurves(M, 10), d = fc.dist.filter(isFinite); L.push(`distorsion max ${r2(Math.max(...d.map(Math.abs)), 3)} %`); } catch (e) { }
+    try { const cs = OE.chromShift(M, 20); L.push(`chromatisme axial (étendue du foyer) ${r2((Math.max(...cs.dz) - Math.min(...cs.dz)), 3)} µm`); } catch (e) { }
+    try { const sd = OE.seidel(M), lm = sd.lmm; L.push(`Seidel (ondes) : W040 ${r2(sd.sum.SI / 8 / lm, 3)}, W131 ${r2(sd.sum.SII / 2 / lm, 3)}, W222 ${r2(sd.sum.SIII / 2 / lm, 3)}, W220 ${r2(sd.sum.SIV / 4 / lm, 3)}, W311 ${r2(sd.sum.SV / 2 / lm, 3)}`); } catch (e) { }
+    return L.join(' ; ');
+  };
   const metrics = () => { const M = OE.prepare(S()); if (!M.ok) return 'système invalide'; const sp = S().fields.map((_, i) => OE.spot(M, i, 15).rms * 1e3); return `EFL ${r2(M.par.efl, 5)} mm, F/# ${r2(M.par.wfno)}, TTL ${r2(M.par.ttl, 5)} mm, spot RMS ${sp.map(v => r2(v, 3)).join(' / ')} µm`; };
   const merit = () => { const r = OE.residuals(S()); return r ? OE.meritOf(r.f) : NaN; };
   async function optimizeLoop(maxIt = 100) {
@@ -169,7 +180,7 @@
     design_singlet: { d: 'Crée une lentille simple (plan-convexe ou biconvexe) puis l\'optimise', a: '{f, fno?, field?, glass?, form?}', m: 1, async run(a) { const sys = makeSinglet(a); App.sys = normalize(sys); App.sel = 1; App.view.auto = true; const r = await optimizeLoop(100); return `lentille créée et optimisée (${r}) — ${metrics()}`; } },
     find_glass: { d: 'Cherche des verres réels proches de (nd, vd) ou par nom', a: '{nd?, vd?, name?, k?}', m: 0, run(a) { if (a.name) { const k = String(a.name).toUpperCase().replace(/[\s_-]/g, ''); return OE.catalog().filter(x => x.name.toUpperCase().replace(/[\s_-]/g, '').includes(k)).slice(0, 10).map(x => `${x.name} (${x.cat}, nd ${r2(x.nd, 5)}, νd ${r2(x.vd, 4)})`).join(', ') || 'aucun'; } return OE.glassNearest(num(a.nd, 'nd'), num(a.vd, 'vd'), { k: a.k ? Math.min(15, +a.k) : 6 }).map(g => `${g.name} (${g.cat}, nd ${r2(g.nd, 5)}, νd ${r2(g.vd, 4)})`).join(', '); } },
     show_analysis: { d: 'Affiche une analyse dans le premier panneau : spot, mtf, wfe, psf, rayfan, opdfan, field, seidel, chrom, ee, footprint, zern, glass', a: '{type, field?}', m: 0, run(a) { const t = String(a.type || '').toLowerCase(), ok = ['spot', 'rayfan', 'opdfan', 'wfe', 'zern', 'psf', 'mtf', 'ee', 'footprint', 'field', 'seidel', 'chrom', 'glass', 'polar', 'detector', 'source', 'imgsim', 'presc']; if (!ok.includes(t)) throw new Error(`analyse inconnue (${ok.join(', ')})`); App.panes[0].type = t; if (a.field != null) App.panes[0].fi = Math.max(0, Math.round(num(a.field, 'champ')) - 1); renderPanes(); save(); return `analyse ${t} affichée`; } },
-    report_metrics: { d: 'Donne les caractéristiques et performances actuelles', a: '{}', m: 0, run() { return metrics(); } },
+    report_metrics: { d: 'Donne les caractéristiques et performances actuelles calculées par Focale (paraxial, spot, front d\'onde, FTM, distorsion, chromatisme, Seidel)', a: '{}', m: 0, run() { return metricsFull(); } },
     set_title: { d: 'Renomme le système', a: '{title}', m: 1, run(a) { S().title = String(a.title || ''); return `titre « ${S().title} »`; } },
     undo: { d: 'Annule la dernière modification', a: '{}', m: 0, run() { undo(); return 'dernière modification annulée'; } },
   };
@@ -301,6 +312,53 @@ Appelle les outils nécessaires, dans l'ordre, avec des valeurs numériques. Tu 
     if (rep.question) rep.actions = [];
     if (!rep.message && rep.actions.length) rep.message = 'Voici ce que je propose :';
     return { rep, by: `Ollama · ${model} · outils` };
+  }
+  /* ---------- Gemini (API Google, clé de l'utilisateur) : appel de fonctions natif ----------
+   * Boucle courte : les outils de lecture (report_metrics, find_glass) sont exécutés tout de suite par le moteur de Focale
+   * et leurs résultats renvoyés au modèle ; les outils qui modifient le système forment le plan proposé à l'utilisateur. */
+  const GEM = 'https://generativelanguage.googleapis.com/v1beta', READ_ONLY = new Set(['report_metrics', 'find_glass']);
+  const GEMINI_TOOLS = [{ functionDeclarations: OLLAMA_TOOLS.map(t => ({ name: t.function.name, description: t.function.description, parameters: Object.keys(t.function.parameters.properties || {}).length ? t.function.parameters : undefined })) }];
+  const SYSTEM_GEMINI = SYSTEM_TOOLS + `
+- Tu ne fais AUCUN calcul optique : pour connaître les performances actuelles (focale, F/#, spot, front d'onde, FTM, aberrations…), appelle report_metrics ; pour des verres, find_glass. Ces deux outils s'exécutent immédiatement et te renvoient les valeurs calculées par Focale.
+- Appelle ensuite, en une seule fois, tous les outils qui modifient le système : ils seront montrés à l'utilisateur pour validation.`;
+  async function geminiModels(key = A.cfg.geminiKey) {
+    const r = await fetch(`${GEM}/models?pageSize=200`, { headers: { 'x-goog-api-key': key } });
+    if (!r.ok) throw new Error(`HTTP ${r.status} ${(await r.text()).slice(0, 160)}`);
+    const j = await r.json();
+    return (j.models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent') && /gemini/i.test(m.name)).map(m => m.name.replace(/^models\//, ''));
+  }
+  async function askGemini(text) {
+    const key = A.cfg.geminiKey; if (!key) throw new Error('aucune clé d\'API Gemini (réglages de l\'assistant)');
+    const model = A.cfg.geminiModel || DEF.geminiModel;
+    const hist = A.log.slice(0, -1).filter(m => (m.role === 'user' || m.role === 'assistant') && m.by !== '').slice(-2 * A.cfg.history).map(m => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.role === 'user' ? m.text : [m.text, m.question, (m.actions || []).map(describe).join(' ; ')].filter(Boolean).join(' — ') || '…' }] }));
+    const contents = [...hist, { role: 'user', parts: [{ text: `Description du système :\n${summary()}\n\nDemande : ${text}` }] }];
+    const rep = { message: '', question: '', actions: [] }, reads = [];
+    A.abort = new AbortController();
+    for (let turn = 0; turn < 6; turn++) {
+      const res = await fetch(`${GEM}/models/${encodeURIComponent(model)}:generateContent`, { method: 'POST', signal: A.abort.signal, headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+        body: JSON.stringify({ systemInstruction: { parts: [{ text: SYSTEM_GEMINI }] }, contents, tools: GEMINI_TOOLS, toolConfig: { functionCallingConfig: { mode: 'AUTO' } }, generationConfig: { temperature: 0 } }) });
+      if (!res.ok) { const t = await res.text(); let m = t; try { m = JSON.parse(t).error.message; } catch (e) { } throw new Error(`Gemini : HTTP ${res.status} — ${String(m).slice(0, 240)}`); }
+      const j = await res.json(), cand = (j.candidates || [])[0];
+      if (!cand || !cand.content) { const why = (j.promptFeedback && j.promptFeedback.blockReason) || (cand && cand.finishReason) || 'réponse vide'; throw new Error('Gemini : ' + why); }
+      const parts = cand.content.parts || [], calls = parts.filter(p => p.functionCall).map(p => p.functionCall);
+      const txt = parts.filter(p => p.text && !p.thought).map(p => p.text).join('').trim();
+      if (txt) rep.message = txt;
+      const ro = calls.filter(c => READ_ONLY.has(c.name)), act = calls.filter(c => !READ_ONLY.has(c.name));
+      if (act.length || !ro.length) {
+        for (const c of act) { if (c.name === 'ask_question') rep.question = String((c.args || {}).question || ''); else rep.actions.push({ tool: c.name, args: c.args || {} }); }
+        break;
+      }
+      // outils de lecture : calculés par Focale, résultats renvoyés au modèle (la réponse du modèle est renvoyée telle quelle, signatures comprises)
+      contents.push(cand.content);
+      const resp = [];
+      for (const c of ro) { let out; try { out = String(await TOOLS[c.name].run(c.args || {})); } catch (e) { out = 'erreur : ' + e.message; } reads.push(c.name); resp.push({ functionResponse: { name: c.name, response: { result: out } } }); }
+      contents.push({ role: 'user', parts: resp });
+      status(`Gemini lit les résultats de Focale (${reads.length})`, true);
+    }
+    if (rep.question) rep.actions = [];
+    if (!rep.message && rep.actions.length) rep.message = 'Voici ce que je propose :';
+    if (!rep.message && !rep.actions.length && !rep.question) rep.message = '(pas de réponse)';
+    return { rep, by: `Gemini · ${model}${reads.length ? ` · ${reads.length} lecture(s) du moteur` : ''}` };
   }
   async function askOllama(msgs, onTok) {
     const url = A.cfg.ollamaUrl.replace(/\/$/, ''), model = A.cfg.ollamaModel || pickOllama(A.ollamaModels);
@@ -539,19 +597,22 @@ body.adrag,body.adrag *{user-select:none!important}
     addEventListener('resize', place);
   }
   function status(t, busy) { const e = $('#aSt'); if (e) { e.textContent = t || ''; e.classList.toggle('adots', !!busy); } }
-  function setChip() { const c = $('#aBk'); if (!c) return; const b = A.active; c.textContent = b === 'ollama' ? `Ollama · ${A.cfg.ollamaModel || pickOllama(A.ollamaModels) || '?'}` : b === 'webllm' ? `navigateur · ${A.cfg.webllmModel.replace(/-q4f.*$/, '')}` : 'sans IA (règles)'; c.title = c.textContent; }
+  function setChip() { const c = $('#aBk'); if (!c) return; const b = A.active; c.textContent = b === 'gemini' ? `Gemini · ${A.cfg.geminiModel || DEF.geminiModel}` : b === 'ollama' ? `Ollama · ${A.cfg.ollamaModel || pickOllama(A.ollamaModels) || '?'}` : b === 'webllm' ? `navigateur · ${A.cfg.webllmModel.replace(/-q4f.*$/, '')}` : 'sans IA (règles)'; c.title = c.textContent; }
   /** choisit le moteur : réglage explicite, sinon Ollama s'il répond, sinon règles (jamais de téléchargement automatique) */
   async function detect() {
     const b = A.cfg.backend;
     if (b === 'rules') { A.active = 'rules'; setChip(); return; }
     if (b === 'webllm') { A.active = 'webllm'; setChip(); return; }
+    if (b === 'gemini' || (b === 'auto' && A.cfg.geminiKey)) { A.active = A.cfg.geminiKey ? 'gemini' : 'rules'; setChip(); if ($('#aSet.open')) renderSet(); return; }
     try { A.ollamaModels = await ollamaTags(); A.active = A.ollamaModels.length ? 'ollama' : (b === 'ollama' ? 'ollama' : 'rules'); if (!A.cfg.ollamaModel || !A.ollamaModels.includes(A.cfg.ollamaModel)) A.cfg.ollamaModel = pickOllama(A.ollamaModels); }
     catch (e) { A.ollamaModels = []; A.active = b === 'ollama' ? 'ollama' : 'rules'; }
     setChip(); if ($('#aSet.open')) renderSet();
   }
   function renderSet() {
     const c = A.cfg, gpu = !!navigator.gpu, origin = location.protocol === 'file:' ? 'null (fichier local)' : location.origin;
-    $('#aSet').innerHTML = `<div class="row"><span class="hint">Moteur</span><select class="in grow" id="aBe">${[['auto', 'Automatique (Ollama sinon règles)'], ['ollama', 'Ollama'], ['webllm', `Navigateur (WebGPU)${gpu ? '' : ' — indisponible'}`], ['rules', 'Sans IA (règles)']].map(([k, l]) => `<option value="${k}" ${c.backend === k ? 'selected' : ''} ${k === 'webllm' && !gpu ? 'disabled' : ''}>${l}</option>`).join('')}</select></div>
+    $('#aSet').innerHTML = `<div class="row"><span class="hint">Moteur</span><select class="in grow" id="aBe">${[['auto', 'Automatique (Gemini si clé, sinon Ollama, sinon règles)'], ['gemini', 'Gemini (API Google)'], ['ollama', 'Ollama'], ['webllm', `Navigateur (WebGPU)${gpu ? '' : ' — indisponible'}`], ['rules', 'Sans IA (règles)']].map(([k, l]) => `<option value="${k}" ${c.backend === k ? 'selected' : ''} ${k === 'webllm' && !gpu ? 'disabled' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="row"><span class="hint">Gemini</span><input class="in grow" id="aGK" type="password" autocomplete="off" placeholder="clé d'API (aistudio.google.com)" value="${esc(c.geminiKey || '')}"><button class="bt" id="aGT">Tester</button></div>
+      <div class="row"><span class="hint">Modèle</span><input class="in grow" id="aGM" list="aGML" value="${esc(c.geminiModel || DEF.geminiModel)}"><datalist id="aGML">${(A.geminiModels || []).map(n => `<option value="${esc(n)}">`).join('')}</datalist></div>
       <div class="row"><span class="hint">Ollama</span><select class="in grow" id="aOM">${A.ollamaModels.length ? A.ollamaModels.map(n => `<option ${n === c.ollamaModel ? 'selected' : ''}>${esc(n)}</option>`).join('') : '<option value="">(aucun modèle détecté)</option>'}</select><button class="bt" id="aOT">Tester</button></div>
       <div class="row"><span class="hint">Navigateur</span><select class="in grow" id="aWM">${WEBLLM_MODELS.map(([k, l]) => `<option value="${k}" ${k === c.webllmModel ? 'selected' : ''}>${l}</option>`).join('')}</select><button class="bt" id="aWL" ${gpu ? '' : 'disabled'}>Charger</button></div>
       <details><summary>Options et installation</summary>
@@ -559,8 +620,14 @@ body.adrag,body.adrag *{user-select:none!important}
       <label class="r"><input type="checkbox" id="aRF" ${c.rulesFirst ? 'checked' : ''}> Demandes simples par les règles (instantané)</label>
       <label class="r"><input type="checkbox" id="aNT" ${c.nativeTools !== false ? 'checked' : ''}> Ollama : appel d'outils natif</label>
       <div class="row"><span class="hint">Adresse Ollama</span><input class="in grow" id="aOU" value="${esc(c.ollamaUrl)}"></div>
+      <div class="hint"><b>Gemini</b> : créez une clé gratuite sur aistudio.google.com (« Get API key »), collez-la ci-dessus puis « Tester » (liste les modèles disponibles ; « gemini-flash-latest » suit le dernier Flash). La clé reste enregistrée dans ce navigateur ; chaque demande envoie à Google la description du système et votre texte. Le modèle ne calcule rien : il lit les performances calculées par Focale (outils report_metrics, find_glass) puis propose des actions exécutées par le moteur de Focale. Les appels vers Google peuvent être bloqués dans la version hébergée sur claude.ai : utilisez GitHub Pages, l'application installée ou le fichier local.</div>
       <div class="hint">Installer Ollama (ollama.com), puis <code>ollama pull qwen3:4b-instruct</code> (ou <code>qwen3:8b</code>, plus fiable, plus lent) et <code>setx OLLAMA_ORIGINS "*"</code>, puis relancer Ollama. Origine de cette page : <code>${esc(origin)}</code>. Tout reste sur ce PC ; Focale fonctionne sans l'assistant.</div></details>`;
     $('#aBe').onchange = e => { c.backend = e.target.value; saveCfg(); detect(); };
+    $('#aGK').onchange = e => { c.geminiKey = e.target.value.trim(); saveCfg(); detect(); };
+    $('#aGM').onchange = e => { c.geminiModel = e.target.value.trim() || DEF.geminiModel; saveCfg(); setChip(); };
+    $('#aGT').onclick = async () => { c.geminiKey = $('#aGK').value.trim(); saveCfg(); if (!c.geminiKey) return status('Collez d\'abord une clé d\'API Gemini.'); status('Test de Gemini…', true);
+      try { A.geminiModels = await geminiModels(c.geminiKey); status(`Gemini répond : ${A.geminiModels.length} modèle(s) disponible(s)${A.geminiModels.includes(c.geminiModel) || /latest$/.test(c.geminiModel) ? '' : ` — « ${c.geminiModel} » n'en fait pas partie`}`); if (c.backend !== 'gemini' && c.backend !== 'auto') { c.backend = 'gemini'; saveCfg(); } detect(); renderSet(); }
+      catch (e) { status(`Gemini ne répond pas : ${e.message}${/Failed to fetch|NetworkError/i.test(e.message) ? ' (accès réseau bloqué par la page ? essayez GitHub Pages ou l\'application installée)' : ''}`); } };
     $('#aOU').onchange = e => { c.ollamaUrl = e.target.value.trim() || DEF.ollamaUrl; saveCfg(); };
     $('#aOT').onclick = async () => { status('Test d\'Ollama…', true); try { A.ollamaModels = await ollamaTags(c.ollamaUrl, 3000); status(A.ollamaModels.length ? `Ollama répond : ${A.ollamaModels.length} modèle(s)` : 'Ollama répond mais aucun modèle n\'est installé (ollama pull qwen3:4b-instruct)'); if (!c.ollamaModel || !A.ollamaModels.includes(c.ollamaModel)) c.ollamaModel = pickOllama(A.ollamaModels); saveCfg(); detect(); } catch (e) { status(`Ollama ne répond pas à ${c.ollamaUrl} : lancé ? OLLAMA_ORIGINS réglé ? (${e.message})`); } };
     $('#aOM').onchange = e => { c.ollamaModel = e.target.value; saveCfg(); setChip(); };
@@ -593,6 +660,11 @@ body.adrag,body.adrag *{user-select:none!important}
       let rep, by;
       const simple = A.cfg.rulesFirst && simpleRule(text);
       if (simple) { rep = simple; by = 'règles (instantané)'; }
+      else if (A.active === 'gemini') {
+        status('Gemini réfléchit', true);
+        try { const r = await askGemini(text); rep = r.rep; by = `${r.by} · ${((performance.now() - t0) / 1000).toFixed(1)} s`; rep.actions = rep.actions.map(a => ({ tool: a.tool, args: fixArgs(a.tool, a.args) })); }
+        catch (e) { if (A.stop) throw new Error('Arrêté.'); A.log.push({ role: 'error', text: `${e.message}. Je passe aux règles simples pour cette demande.` }); rep = rules(text); by = 'sans IA (règles)'; }
+      }
       else if (A.active === 'ollama' || A.active === 'webllm') {
         status(A.active === 'ollama' ? 'Le modèle réfléchit (Ollama)' : 'Le modèle réfléchit (navigateur)', true);
         try {
@@ -622,5 +694,5 @@ body.adrag,body.adrag *{user-select:none!important}
   A.close = () => { const e = $('#asst'); if (e) e.classList.remove('open'); };
   A.toggle = () => { const e = $('#asst'); if (e && e.classList.contains('open')) A.close(); else A.open(); };
   // accès pour les tests
-  Object.assign(A, { summary, rules, simpleRule, fuzz: t => fuzz(norm(t)), fixArgs, OLLAMA_TOOLS, buildMessages, parseReply, execute, TOOLS, SCHEMA, SYSTEM, lenses, send, detect, makeDoublet, resolveGlass });
+  Object.assign(A, { askGemini, GEMINI_TOOLS, summary, rules, simpleRule, fuzz: t => fuzz(norm(t)), fixArgs, OLLAMA_TOOLS, buildMessages, parseReply, execute, TOOLS, SCHEMA, SYSTEM, lenses, send, detect, makeDoublet, resolveGlass });
 })();
