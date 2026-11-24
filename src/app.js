@@ -2990,6 +2990,12 @@ function openAbout() {
 }
 
 /* ---------------- Initialisation ---------------- */
+/** menus de la barre d'outils : placés en position fixe sous leur bouton (la barre peut défiler horizontalement) */
+function placeMenu(m, btn) {
+  if (!m.closest('header')) { m.style.left = m.style.top = ''; return; }
+  const r = btn.getBoundingClientRect(), w = m.offsetWidth;
+  m.style.top = Math.round(r.bottom + 4) + 'px'; m.style.left = Math.round(Math.max(4, Math.min(r.left, innerWidth - w - 6))) + 'px';
+}
 function init() {
   window.addEventListener('error', e => { if (e && e.message && !/ResizeObserver/.test(e.message)) toast('Erreur : ' + e.message, 6000); });
   window.addEventListener('unhandledrejection', e => { const m = e && e.reason && (e.reason.message || String(e.reason)); if (m && !(e.reason && (e.reason.cancel || e.reason.stale))) toast('Erreur : ' + m, 6000); });
@@ -3004,10 +3010,14 @@ function init() {
   setupLDE(); setupSide(); setupLayout(); setupPanes(); setupDlg();
   pushHist('Ouverture de Focale'); buildPanes(); refresh(); applyAsstPref();
   // header
+  { const hd = $('header'); if (hd) {
+    hd.addEventListener('wheel', e => { if (hd.scrollWidth <= hd.clientWidth + 1 || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return; e.preventDefault(); hd.scrollLeft += e.deltaY; }, { passive: false });
+    hd.addEventListener('scroll', () => $$('header .menu.open').forEach(m => m.classList.remove('open')));
+    window.addEventListener('resize', () => $$('header .menu.open').forEach(m => m.classList.remove('open'))); } }
   document.addEventListener('click', e => {
     const mb = e.target.closest('[data-menu]');
     $$('.menu').forEach(m => { if (!mb || m.id !== mb.dataset.menu) m.classList.remove('open'); });
-    if (mb) { $('#' + mb.dataset.menu).classList.toggle('open'); return; }
+    if (mb) { const m = $('#' + mb.dataset.menu); m.classList.toggle('open'); if (m.classList.contains('open')) placeMenu(m, mb); return; }
     const sb = e.target.closest('[data-samp]'); if (sb) { loadSystem(SAMPLES[sb.dataset.samp](), 'Exemple chargé'); return; }
     const a = e.target.closest('[data-act]'); if (!a) return;
     switch (a.dataset.act) {

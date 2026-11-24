@@ -22,6 +22,11 @@ select option,select optgroup{background:var(--panel);color:var(--fg)}
 #app{display:grid;grid-template-rows:46px 1fr 26px;height:100vh}
 /* header */
 header{display:flex;align-items:center;gap:6px;padding:0 10px;background:var(--panel);border-bottom:1px solid var(--line);min-width:0}
+/* barre d'outils trop étroite : défilement horizontal (molette ou barre fine), menus positionnés hors de la barre */
+header{overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+header>*{flex:none}header>.grow{flex:1 1 0;min-width:8px}
+header::-webkit-scrollbar{height:6px}header::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}header::-webkit-scrollbar-track{background:transparent}
+header .menu.open{position:fixed;z-index:200}
 .logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;margin-right:8px;white-space:nowrap}
 .logo svg{flex:none}
 .logo small{font-weight:500;color:var(--mut);font-size:11px}
@@ -390,7 +395,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 <div class="toast" id="toast"></div>
 <input type="file" id="fileIn" accept=".json,.zmx,.seq,.txt,.agf" style="display:none">
 <div class="drop" id="drop">Déposez un fichier .zmx, .seq, .json ou .agf</div>
-<script>const FOCALE_VERSION = '5af6f393';</script>
+<script>const FOCALE_VERSION = 'eabca049';</script>
 <script id="js-engine">
 'use strict';
 /* =====================================================================
@@ -3727,7 +3732,7 @@ const HELP = [
 
   { id: 'interface', t: 'L\'interface', h: `
 <ul>
-<li><b>Barre du haut</b> : fichiers, exemples, annuler/rétablir, <b>Système</b> (Données système façon CODE V, Ctrl+Maj+D), <b>Configs</b> (multi-configuration, Ctrl+Maj+M ; le sélecteur ◀ Config ▶ apparaît dès qu'il y a plusieurs configurations), optimisation, tolérancement, <b>+ Fenêtre</b> (analyse supplémentaire flottante), nombre de fenêtres d'analyse de la grille (1, 2, 4, 6), thème clair/sombre (sombre au premier lancement, puis le dernier choix est retenu), aide.</li>
+<li><b>Barre du haut</b> : fichiers, exemples, annuler/rétablir, <b>Système</b> (Données système façon CODE V, Ctrl+Maj+D), <b>Configs</b> (multi-configuration, Ctrl+Maj+M ; le sélecteur ◀ Config ▶ apparaît dès qu'il y a plusieurs configurations), optimisation, tolérancement, <b>+ Fenêtre</b> (analyse supplémentaire flottante), nombre de fenêtres d'analyse de la grille (1, 2, 4, 6), thème clair/sombre (sombre au premier lancement, puis le dernier choix est retenu), aide. Si la fenêtre est trop étroite, la barre d'outils défile horizontalement : molette de la souris sur la barre, ou barre de défilement fine sous les boutons.</li>
 <li><b>Panneau de gauche</b> : bouton <b>⚙ Données système</b>, propriétés de la <b>surface sélectionnée</b> (type d'élément, forme, décentrements), puis ouverture, champs, longueurs d'onde et données paraxiales.</li>
 <li><b>Éditeur de lentilles</b> (centre, en haut) : une ligne par surface.</li>
 <li><b>Layout</b> (centre, en bas) : coupe 2D ou vue 3D. <b>Rayons</b> : nombre de rayons tracés par champ — n'importe quel entier de 3 à 100 tapé au clavier (Entrée), flèches ou molette, ou valeur courante par le bouton ▾ (3, 5, 7, 11, 15, 21, 31, 51) ; mémorisé. Molette = zoom, glisser = déplacer (3D : rotation ; Maj+glisser = déplacer), clic = sélectionner une surface, double-clic = ajuster. En 3D, chaque lentille est dessinée comme un volume de verre translucide : ses deux dioptres sont reliés par la tranche (silhouette), avec la collerette plane quand les demi-diamètres diffèrent ; l'élément sélectionné est cerclé d'orange, les miroirs sont grisés, le diaphragme apparaît comme une lame annulaire et le plan image comme un disque.</li>
@@ -7926,6 +7931,12 @@ function openAbout() {
 }
 
 /* ---------------- Initialisation ---------------- */
+/** menus de la barre d'outils : placés en position fixe sous leur bouton (la barre peut défiler horizontalement) */
+function placeMenu(m, btn) {
+  if (!m.closest('header')) { m.style.left = m.style.top = ''; return; }
+  const r = btn.getBoundingClientRect(), w = m.offsetWidth;
+  m.style.top = Math.round(r.bottom + 4) + 'px'; m.style.left = Math.round(Math.max(4, Math.min(r.left, innerWidth - w - 6))) + 'px';
+}
 function init() {
   window.addEventListener('error', e => { if (e && e.message && !/ResizeObserver/.test(e.message)) toast('Erreur : ' + e.message, 6000); });
   window.addEventListener('unhandledrejection', e => { const m = e && e.reason && (e.reason.message || String(e.reason)); if (m && !(e.reason && (e.reason.cancel || e.reason.stale))) toast('Erreur : ' + m, 6000); });
@@ -7940,10 +7951,14 @@ function init() {
   setupLDE(); setupSide(); setupLayout(); setupPanes(); setupDlg();
   pushHist('Ouverture de Focale'); buildPanes(); refresh(); applyAsstPref();
   // header
+  { const hd = $('header'); if (hd) {
+    hd.addEventListener('wheel', e => { if (hd.scrollWidth <= hd.clientWidth + 1 || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return; e.preventDefault(); hd.scrollLeft += e.deltaY; }, { passive: false });
+    hd.addEventListener('scroll', () => $$('header .menu.open').forEach(m => m.classList.remove('open')));
+    window.addEventListener('resize', () => $$('header .menu.open').forEach(m => m.classList.remove('open'))); } }
   document.addEventListener('click', e => {
     const mb = e.target.closest('[data-menu]');
     $$('.menu').forEach(m => { if (!mb || m.id !== mb.dataset.menu) m.classList.remove('open'); });
-    if (mb) { $('#' + mb.dataset.menu).classList.toggle('open'); return; }
+    if (mb) { const m = $('#' + mb.dataset.menu); m.classList.toggle('open'); if (m.classList.contains('open')) placeMenu(m, mb); return; }
     const sb = e.target.closest('[data-samp]'); if (sb) { loadSystem(SAMPLES[sb.dataset.samp](), 'Exemple chargé'); return; }
     const a = e.target.closest('[data-act]'); if (!a) return;
     switch (a.dataset.act) {

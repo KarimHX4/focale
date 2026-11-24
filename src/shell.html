@@ -22,6 +22,11 @@ select option,select optgroup{background:var(--panel);color:var(--fg)}
 #app{display:grid;grid-template-rows:46px 1fr 26px;height:100vh}
 /* header */
 header{display:flex;align-items:center;gap:6px;padding:0 10px;background:var(--panel);border-bottom:1px solid var(--line);min-width:0}
+/* barre d'outils trop étroite : défilement horizontal (molette ou barre fine), menus positionnés hors de la barre */
+header{overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+header>*{flex:none}header>.grow{flex:1 1 0;min-width:8px}
+header::-webkit-scrollbar{height:6px}header::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}header::-webkit-scrollbar-track{background:transparent}
+header .menu.open{position:fixed;z-index:200}
 .logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;margin-right:8px;white-space:nowrap}
 .logo svg{flex:none}
 .logo small{font-weight:500;color:var(--mut);font-size:11px}
