@@ -1,4 +1,4 @@
-/* Focale 69e1963e — module assistant facultatif */
+/* Focale 49319b79 — module assistant facultatif */
 /* Focale — assistant en langage naturel (module FACULTATIF, chargé à la demande).
    Le logiciel fonctionne sans ce fichier. Moteurs : Ollama (local), WebLLM (dans le navigateur, WebGPU) ou règles (sans IA).
    Le modèle ne calcule rien : il traduit la demande en actions de Focale ; les calculs optiques restent ceux du moteur. */
@@ -604,18 +604,38 @@ body.adrag,body.adrag *{user-select:none!important}
     const b = A.cfg.backend;
     if (b === 'rules') { A.active = 'rules'; setChip(); return; }
     if (b === 'webllm') { A.active = 'webllm'; setChip(); return; }
-    if (b === 'gemini' || (b === 'auto' && A.cfg.geminiKey)) { A.active = A.cfg.geminiKey ? 'gemini' : 'rules'; setChip(); if ($('#aSet.open')) renderSet(); return; }
+    if (b === 'gemini' || (b === 'auto' && A.cfg.geminiKey)) { A.active = A.cfg.geminiKey && A.gemOk !== false ? 'gemini' : 'rules'; setChip(); if ($('#aSet.open')) renderSet(); return; }
     try { A.ollamaModels = await ollamaTags(); A.active = A.ollamaModels.length ? 'ollama' : (b === 'ollama' ? 'ollama' : 'rules'); if (!A.cfg.ollamaModel || !A.ollamaModels.includes(A.cfg.ollamaModel)) A.cfg.ollamaModel = pickOllama(A.ollamaModels); }
     catch (e) { A.ollamaModels = []; A.active = b === 'ollama' ? 'ollama' : 'rules'; }
     setChip(); if ($('#aSet.open')) renderSet();
   }
+  /** modèles Gemini : liste mémorisée, modèles conseillés en tête */
+  const gemOrder = L => { const sc = n => (n === DEF.geminiModel ? 0 : /latest$/.test(n) ? 1 : /flash/.test(n) && !/lite|image|tts|live|audio|embedding/.test(n) ? 2 : /pro/.test(n) && !/image|tts/.test(n) ? 3 : /lite/.test(n) ? 4 : 9); return [...new Set(L)].sort((a, b) => sc(a) - sc(b) || b.localeCompare(a)); };
+  /** vérifie la clé (liste des modèles) et affiche le résultat dans les réglages */
+  async function gemTest() {
+    const c = A.cfg; if (!c.geminiKey) { status('Collez d\'abord une clé d\'API Gemini.'); return; }
+    A.gemTesting = true; A.gemOk = null; if ($('#aSet.open')) renderSet(); status('Vérification de la clé Gemini…', true);
+    try { A.geminiModels = await geminiModels(c.geminiKey); c.geminiList = A.geminiModels; A.gemOk = true; A.gemErr = '';
+      if (c.backend !== 'gemini' && c.backend !== 'auto') c.backend = 'gemini';
+      if (!/latest$/.test(c.geminiModel || '') && !A.geminiModels.includes(c.geminiModel)) c.geminiModel = DEF.geminiModel;
+      saveCfg(); status(`Clé acceptée : ${A.geminiModels.length} modèles Gemini disponibles. L'assistant utilise maintenant Gemini (${c.geminiModel}).`); }
+    catch (e) { A.gemOk = false; A.gemErr = /HTTP 400|HTTP 401|HTTP 403|API key/i.test(e.message) ? 'Clé refusée par Google (vérifiez-la dans aistudio.google.com)' : /Failed to fetch|NetworkError/i.test(e.message) ? 'Google injoignable depuis cette page (réseau bloqué ? essayez GitHub Pages ou l\'application installée)' : e.message;
+      status('Gemini : ' + A.gemErr); }
+    A.gemTesting = false; await detect(); if ($('#aSet.open')) renderSet();
+  }
   function renderSet() {
     const c = A.cfg, gpu = !!navigator.gpu, origin = location.protocol === 'file:' ? 'null (fichier local)' : location.origin;
+    // seules les rubriques du moteur choisi sont affichées (toutes en automatique)
+    const be = c.backend, showG = be === 'gemini' || be === 'auto', showO = be === 'ollama' || be === 'auto', showW = be === 'webllm' || be === 'auto';
+    if (!A.geminiModels && Array.isArray(c.geminiList)) A.geminiModels = c.geminiList;
+    const gm = c.geminiModel || DEF.geminiModel, gl = gemOrder([gm, DEF.geminiModel, ...(A.geminiModels || [])]);
+    const gst = !c.geminiKey ? { k: 'no', t: 'Aucune clé enregistrée' } : A.gemOk === true ? { k: 'ok', t: `✓ Clé acceptée par Google — ${(A.geminiModels || []).length} modèles disponibles` } : A.gemOk === false ? { k: 'ko', t: `✗ ${A.gemErr || 'Clé refusée'}` } : A.gemTesting ? { k: 'no', t: 'Vérification de la clé…' } : { k: 'no', t: 'Clé enregistrée, non vérifiée — cliquez sur Tester' };
     $('#aSet').innerHTML = `<div class="row"><span class="hint">Moteur</span><select class="in grow" id="aBe">${[['auto', 'Automatique (Gemini si clé, sinon Ollama, sinon règles)'], ['gemini', 'Gemini (API Google)'], ['ollama', 'Ollama'], ['webllm', `Navigateur (WebGPU)${gpu ? '' : ' — indisponible'}`], ['rules', 'Sans IA (règles)']].map(([k, l]) => `<option value="${k}" ${c.backend === k ? 'selected' : ''} ${k === 'webllm' && !gpu ? 'disabled' : ''}>${l}</option>`).join('')}</select></div>
-      <div class="row"><span class="hint">Gemini</span><input class="in grow" id="aGK" type="password" autocomplete="off" placeholder="clé d'API (aistudio.google.com)" value="${esc(c.geminiKey || '')}"><button class="bt" id="aGT">Tester</button></div>
-      <div class="row"><span class="hint">Modèle</span><input class="in grow" id="aGM" list="aGML" value="${esc(c.geminiModel || DEF.geminiModel)}"><datalist id="aGML">${(A.geminiModels || []).map(n => `<option value="${esc(n)}">`).join('')}</datalist></div>
-      <div class="row"><span class="hint">Ollama</span><select class="in grow" id="aOM">${A.ollamaModels.length ? A.ollamaModels.map(n => `<option ${n === c.ollamaModel ? 'selected' : ''}>${esc(n)}</option>`).join('') : '<option value="">(aucun modèle détecté)</option>'}</select><button class="bt" id="aOT">Tester</button></div>
-      <div class="row"><span class="hint">Navigateur</span><select class="in grow" id="aWM">${WEBLLM_MODELS.map(([k, l]) => `<option value="${k}" ${k === c.webllmModel ? 'selected' : ''}>${l}</option>`).join('')}</select><button class="bt" id="aWL" ${gpu ? '' : 'disabled'}>Charger</button></div>
+      ${showG ? `<div class="row"><span class="hint">Clé Gemini</span><input class="in grow" id="aGK" type="password" autocomplete="off" placeholder="clé d'API (aistudio.google.com)" value="${esc(c.geminiKey || '')}"><button class="bt" id="aGT">Tester</button></div>
+      <div class="row"><span class="hint"></span><span class="akst ${gst.k}">${gst.t}</span></div>
+      <div class="row"><span class="hint">Modèle</span><select class="in grow" id="aGM" ${gl.length ? '' : 'title="Cliquez sur Tester pour charger la liste des modèles"'}>${gl.map(n => `<option value="${esc(n)}" ${n === gm ? 'selected' : ''}>${esc(n)}${n === DEF.geminiModel ? ' (recommandé)' : ''}</option>`).join('')}</select></div>` : ''}
+      ${showO ? `<div class="row"><span class="hint">Ollama</span><select class="in grow" id="aOM">${A.ollamaModels.length ? A.ollamaModels.map(n => `<option ${n === c.ollamaModel ? 'selected' : ''}>${esc(n)}</option>`).join('') : '<option value="">(aucun modèle détecté)</option>'}</select><button class="bt" id="aOT">Tester</button></div>` : ''}
+      ${showW ? `<div class="row"><span class="hint">Navigateur</span><select class="in grow" id="aWM">${WEBLLM_MODELS.map(([k, l]) => `<option value="${k}" ${k === c.webllmModel ? 'selected' : ''}>${l}</option>`).join('')}</select><button class="bt" id="aWL" ${gpu ? '' : 'disabled'}>Charger</button></div>` : ''}
       <details><summary>Options et installation</summary>
       <label class="r"><input type="checkbox" id="aCf" ${c.confirm ? 'checked' : ''}> Confirmer avant d'appliquer</label>
       <label class="r"><input type="checkbox" id="aRF" ${c.rulesFirst ? 'checked' : ''}> Demandes simples par les règles (instantané)</label>
@@ -623,17 +643,17 @@ body.adrag,body.adrag *{user-select:none!important}
       <div class="row"><span class="hint">Adresse Ollama</span><input class="in grow" id="aOU" value="${esc(c.ollamaUrl)}"></div>
       <div class="hint"><b>Gemini</b> : créez une clé gratuite sur aistudio.google.com (« Get API key »), collez-la ci-dessus puis « Tester » (liste les modèles disponibles ; « gemini-flash-latest » suit le dernier Flash). La clé reste enregistrée dans ce navigateur ; chaque demande envoie à Google la description du système et votre texte. Le modèle ne calcule rien : il lit les performances calculées par Focale (outils report_metrics, find_glass) puis propose des actions exécutées par le moteur de Focale. Les appels vers Google peuvent être bloqués dans la version hébergée sur claude.ai : utilisez GitHub Pages, l'application installée ou le fichier local.</div>
       <div class="hint">Installer Ollama (ollama.com), puis <code>ollama pull qwen3:4b-instruct</code> (ou <code>qwen3:8b</code>, plus fiable, plus lent) et <code>setx OLLAMA_ORIGINS "*"</code>, puis relancer Ollama. Origine de cette page : <code>${esc(origin)}</code>. Tout reste sur ce PC ; Focale fonctionne sans l'assistant.</div></details>`;
-    $('#aBe').onchange = e => { c.backend = e.target.value; saveCfg(); detect(); };
-    $('#aGK').onchange = e => { c.geminiKey = e.target.value.trim(); saveCfg(); detect(); };
-    $('#aGM').onchange = e => { c.geminiModel = e.target.value.trim() || DEF.geminiModel; saveCfg(); setChip(); };
-    $('#aGT').onclick = async () => { c.geminiKey = $('#aGK').value.trim(); saveCfg(); if (!c.geminiKey) return status('Collez d\'abord une clé d\'API Gemini.'); status('Test de Gemini…', true);
-      try { A.geminiModels = await geminiModels(c.geminiKey); status(`Gemini répond : ${A.geminiModels.length} modèle(s) disponible(s)${A.geminiModels.includes(c.geminiModel) || /latest$/.test(c.geminiModel) ? '' : ` — « ${c.geminiModel} » n'en fait pas partie`}`); if (c.backend !== 'gemini' && c.backend !== 'auto') { c.backend = 'gemini'; saveCfg(); } detect(); renderSet(); }
-      catch (e) { status(`Gemini ne répond pas : ${e.message}${/Failed to fetch|NetworkError/i.test(e.message) ? ' (accès réseau bloqué par la page ? essayez GitHub Pages ou l\'application installée)' : ''}`); } };
+    $('#aBe').onchange = e => { c.backend = e.target.value; saveCfg(); renderSet(); detect(); };
+    const gk = $('#aGK'), gmS = $('#aGM'), gt = $('#aGT');
+    if (gk) gk.onchange = e => { c.geminiKey = e.target.value.trim(); A.gemOk = null; saveCfg(); renderSet(); detect(); };
+    if (gmS) gmS.onchange = e => { c.geminiModel = e.target.value || DEF.geminiModel; saveCfg(); setChip(); status(`Modèle Gemini : ${c.geminiModel}`); };
+    if (gt) gt.onclick = () => { c.geminiKey = gk.value.trim(); saveCfg(); gemTest(); };
+    if (showG && c.geminiKey && A.gemOk == null && !A.gemTesting) gemTest();
     $('#aOU').onchange = e => { c.ollamaUrl = e.target.value.trim() || DEF.ollamaUrl; saveCfg(); };
-    $('#aOT').onclick = async () => { status('Test d\'Ollama…', true); try { A.ollamaModels = await ollamaTags(c.ollamaUrl, 3000); status(A.ollamaModels.length ? `Ollama répond : ${A.ollamaModels.length} modèle(s)` : 'Ollama répond mais aucun modèle n\'est installé (ollama pull qwen3:4b-instruct)'); if (!c.ollamaModel || !A.ollamaModels.includes(c.ollamaModel)) c.ollamaModel = pickOllama(A.ollamaModels); saveCfg(); detect(); } catch (e) { status(`Ollama ne répond pas à ${c.ollamaUrl} : lancé ? OLLAMA_ORIGINS réglé ? (${e.message})`); } };
-    $('#aOM').onchange = e => { c.ollamaModel = e.target.value; saveCfg(); setChip(); };
-    $('#aWM').onchange = e => { c.webllmModel = e.target.value; saveCfg(); setChip(); };
-    $('#aWL').onclick = async () => { c.backend = 'webllm'; saveCfg(); A.active = 'webllm'; setChip(); status('Chargement…', true); try { await webllmLoad(p => status(`Téléchargement / chargement : ${Math.round((p.progress || 0) * 100)} % — ${p.text || ''}`, true)); status('Modèle prêt.'); } catch (e) { status('Échec : ' + e.message); } renderSet(); };
+    if ($('#aOT')) $('#aOT').onclick = async () => { status('Test d\'Ollama…', true); try { A.ollamaModels = await ollamaTags(c.ollamaUrl, 3000); status(A.ollamaModels.length ? `Ollama répond : ${A.ollamaModels.length} modèle(s)` : 'Ollama répond mais aucun modèle n\'est installé (ollama pull qwen3:4b-instruct)'); if (!c.ollamaModel || !A.ollamaModels.includes(c.ollamaModel)) c.ollamaModel = pickOllama(A.ollamaModels); saveCfg(); detect(); } catch (e) { status(`Ollama ne répond pas à ${c.ollamaUrl} : lancé ? OLLAMA_ORIGINS réglé ? (${e.message})`); } };
+    if ($('#aOM')) $('#aOM').onchange = e => { c.ollamaModel = e.target.value; saveCfg(); setChip(); };
+    if ($('#aWM')) $('#aWM').onchange = e => { c.webllmModel = e.target.value; saveCfg(); setChip(); };
+    if ($('#aWL')) $('#aWL').onclick = async () => { c.backend = 'webllm'; saveCfg(); A.active = 'webllm'; setChip(); status('Chargement…', true); try { await webllmLoad(p => status(`Téléchargement / chargement : ${Math.round((p.progress || 0) * 100)} % — ${p.text || ''}`, true)); status('Modèle prêt.'); } catch (e) { status('Échec : ' + e.message); } renderSet(); };
     $('#aCf').onchange = e => { c.confirm = e.target.checked; saveCfg(); };
     $('#aRF').onchange = e => { c.rulesFirst = e.target.checked; saveCfg(); };
     $('#aNT').onchange = e => { c.nativeTools = e.target.checked; saveCfg(); };
