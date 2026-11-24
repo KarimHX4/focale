@@ -749,10 +749,10 @@ function range(arrs, pad = 0.05, sym = false) {
   const p = (b - a) * pad; return [a - p, b + p];
 }
 /** zoom à la molette des graphiques : p.zv = { k (1…PZMAX), ox, oy (début de la fenêtre en fraction de la plage d'origine) } */
-const AXZ = { on: false, p: null, list: [] }, PZMAX = 40, NOZOOM = new Set(['psf', 'wfe', 'imgsim', 'detector', 'source', 'seidel', 'polar']);
+const AXZ = { on: false, p: null, list: [] }, PZMAX = 20, PZMIN = 0.5, NOZOOM = new Set(['psf', 'wfe', 'imgsim', 'detector', 'source', 'seidel', 'polar']);
 function zoomRender(p, fn) { AXZ.on = !NOZOOM.has(p.type); AXZ.p = p; AXZ.list = []; try { return fn(); } finally { if (AXZ.on) p._ax = AXZ.list; AXZ.on = false; AXZ.p = null; } }
 function zoomBadge(p, c, w) {
-  if (!p.zv || !(p.zv.k > 1) || !p._ax || !p._ax.length) return; const P = p._ax[0].P, t = `×${p.zv.k.toFixed(1)} · glisser · double-clic : ×1`;
+  if (!p.zv || Math.abs(p.zv.k - 1) < 1e-6 || !p._ax || !p._ax.length) return; const P = p._ax[0].P, t = `×${p.zv.k.toFixed(1)} · glisser · double-clic : ×1`;
   c.save(); c.font = '10px Inter, sans-serif'; const tw = c.measureText(t).width + 10, narrow = P.w < tw + 8, x = narrow ? w - tw - 4 : P.x + P.w - tw - 3, y = narrow ? 2 : P.y + 3; c.fillStyle = TH.panel || '#fff'; c.globalAlpha = 0.88; c.fillRect(x, y, tw, 15); c.globalAlpha = 1; c.strokeStyle = TH.acc; c.lineWidth = 1; c.strokeRect(x + 0.5, y + 0.5, tw - 1, 14); c.fillStyle = TH.acc; c.fillText(t, x + 5, y + 11); c.restore();
 }
 function axes(c, R, xr, yr, o = {}) {
@@ -765,7 +765,7 @@ function axes(c, R, xr, yr, o = {}) {
   }
   if (AXZ.on) { // zoom à la molette du panneau en cours de rendu : même fenêtre relative pour tous ses graphiques
     const z = AXZ.p && AXZ.p.zv; AXZ.list.push({ P, xr: xr.slice(), yr: yr.slice() });
-    if (z && z.k > 1) { const dx = xr[1] - xr[0], dy = yr[1] - yr[0]; xr = [xr[0] + z.ox * dx, xr[0] + (z.ox + 1 / z.k) * dx]; yr = [yr[0] + z.oy * dy, yr[0] + (z.oy + 1 / z.k) * dy]; }
+    if (z && Math.abs(z.k - 1) > 1e-6) { const dx = xr[1] - xr[0], dy = yr[1] - yr[0]; xr = [xr[0] + z.ox * dx, xr[0] + (z.ox + 1 / z.k) * dx]; yr = [yr[0] + z.oy * dy, yr[0] + (z.oy + 1 / z.k) * dy]; }
   }
   const X = v => P.x + (v - xr[0]) / (xr[1] - xr[0]) * P.w, Y = v => P.y + P.h - (v - yr[0]) / (yr[1] - yr[0]) * P.h;
   c.save(); c.font = '10.5px Inter, sans-serif'; c.lineWidth = 1;
@@ -1057,14 +1057,14 @@ function setupLayout() {
   cv.addEventListener('wheel', e => {
     e.preventDefault(); let k = Math.exp(-e.deltaY * 0.0015); const V = App.view;
     // zoom borné : de ×0,2 à ×50 par rapport à la vue « Ajuster »
-    if (App.mode === '2d') { const s0 = V.s0 || V.s, sn = Math.min(s0 * LAYZ[1], Math.max(s0 * LAYZ[0], V.s * k)); k = sn / V.s; if (Math.abs(k - 1) < 1e-9) { if (k === 1) toast(V.s >= s0 * LAYZ[1] * 0.999 ? 'Zoom maximal (×50)' : 'Zoom minimal (×0,2)', 1200); return; }
+    if (App.mode === '2d') { const s0 = V.s0 || V.s, sn = Math.min(s0 * LAYZ[1], Math.max(s0 * LAYZ[0], V.s * k)); k = sn / V.s; if (Math.abs(k - 1) < 1e-9) { if (k === 1) toast(V.s >= s0 * LAYZ[1] * 0.999 ? 'Zoom maximal (×25)' : 'Zoom minimal (×0,2)', 1200); return; }
       const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top; V.auto = false; V.ox = mx - (mx - V.ox) * k; V.oy = my - (my - V.oy) * k; V.s *= k; }
     else V.s3 = Math.min(LAYZ[1], Math.max(LAYZ[0], (V.s3 || 1) * k));
     drawLayout();
   }, { passive: false });
   cv.addEventListener('dblclick', () => fitView());
 }
-const LAYZ = [0.2, 50];
+const LAYZ = [0.2, 25];
 function fitView() { Object.assign(App.view, { auto: true, s3: 1, px3: 0, py3: 0 }); drawLayout(); }
 function hitSurf(e) {
   const M = App.M; if (!M || !M.ok || !App.layT) return 0;
@@ -1177,15 +1177,15 @@ function setupPaneEvents(el) {
   el.addEventListener('wheel', e => { const pane = e.target.closest('.pane'); if (!pane || !e.target.closest('.pb canvas')) return; const pi = +pane.dataset.i, p = App.panes[pi]; if (!p || PT[p.type].html || p.type === 'psf' || NOZOOM.has(p.type)) return;
     const cv = e.target.closest('canvas'), r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, A = (p._ax || []).find(a => mx >= a.P.x && mx <= a.P.x + a.P.w && my >= a.P.y && my <= a.P.y + a.P.h);
     if (!A) return; e.preventDefault();
-    const z = p.zv || { k: 1, ox: 0, oy: 0 }, k2 = Math.min(PZMAX, Math.max(1, z.k * (e.deltaY < 0 ? 1.2 : 1 / 1.2)));
-    if (k2 === z.k) { if (k2 === PZMAX) toast(`Zoom maximal (×${PZMAX})`, 1200); return; }
-    const fx = (mx - A.P.x) / A.P.w, fy = (A.P.y + A.P.h - my) / A.P.h, gx = z.ox + fx / z.k, gy = z.oy + fy / z.k, cl = (v, k) => Math.min(1 - 1 / k, Math.max(0, v));
-    p.zv = k2 <= 1.0001 ? null : { k: k2, ox: cl(gx - fx / k2, k2), oy: cl(gy - fy / k2, k2) };
+    const z = p.zv || { k: 1, ox: 0, oy: 0 }; let k2 = Math.min(PZMAX, Math.max(PZMIN, z.k * (e.deltaY < 0 ? 1.2 : 1 / 1.2))); if ((z.k - 1) * (k2 - 1) < 0) k2 = 1; // passage par ×1
+    if (k2 === z.k) { toast(k2 === PZMAX ? `Zoom maximal (×${PZMAX})` : `Dézoom maximal (×${PZMIN.toLocaleString('fr-FR')})`, 1200); return; }
+    const fx = (mx - A.P.x) / A.P.w, fy = (A.P.y + A.P.h - my) / A.P.h, gx = z.ox + fx / z.k, gy = z.oy + fy / z.k, cl = (v, k) => Math.min(Math.max(0, 1 - 1 / k), Math.max(Math.min(0, 1 - 1 / k), v));
+    p.zv = Math.abs(k2 - 1) < 1e-4 ? null : { k: k2, ox: cl(gx - fx / k2, k2), oy: cl(gy - fy / k2, k2) };
     cancelAnimationFrame(App._pz); App._pz = requestAnimationFrame(() => renderPane(pi)); clearTimeout(App._zsv); App._zsv = setTimeout(save, 400); }, { passive: false });
   el.addEventListener('dblclick', e => { const pane = e.target.closest('.pane'); if (!pane || !e.target.closest('.pb canvas')) return; const pi = +pane.dataset.i, p = App.panes[pi]; if (p && p.zv) { p.zv = null; renderPane(pi); save(); } });
   el.addEventListener('mousedown', e => { const pane = e.target.closest('.pane'); if (!pane || e.button !== 0 || !e.target.closest('.pb canvas')) return; const pi = +pane.dataset.i, p = App.panes[pi]; if (!p || !p.zv || p.type === 'psf') return;
     const cv = e.target.closest('canvas'), r = cv.getBoundingClientRect(), A = (p._ax || []).find(a => e.clientX - r.left >= a.P.x && e.clientX - r.left <= a.P.x + a.P.w && e.clientY - r.top >= a.P.y && e.clientY - r.top <= a.P.y + a.P.h); if (!A) return;
-    e.preventDefault(); const x0 = e.clientX, y0 = e.clientY, z0 = { ...p.zv }, cl = v => Math.min(1 - 1 / z0.k, Math.max(0, v)); cv.style.cursor = 'grabbing';
+    e.preventDefault(); const x0 = e.clientX, y0 = e.clientY, z0 = { ...p.zv }, cl = v => Math.min(Math.max(0, 1 - 1 / z0.k), Math.max(Math.min(0, 1 - 1 / z0.k), v)); cv.style.cursor = 'grabbing';
     const mv = ev => { p.zv = { k: z0.k, ox: cl(z0.ox - (ev.clientX - x0) / A.P.w / z0.k), oy: cl(z0.oy + (ev.clientY - y0) / A.P.h / z0.k) }; cancelAnimationFrame(App._pz); App._pz = requestAnimationFrame(() => renderPane(pi)); };
     const up = () => { cv.style.cursor = ''; window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); save(); };
     window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up); });

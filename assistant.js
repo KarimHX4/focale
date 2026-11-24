@@ -1,4 +1,4 @@
-/* Focale 25145990 — module assistant facultatif */
+/* Focale 00fe5234 — module assistant facultatif */
 /* Focale — assistant en langage naturel (module FACULTATIF, chargé à la demande).
    Le logiciel fonctionne sans ce fichier. Moteurs : Ollama (local), WebLLM (dans le navigateur, WebGPU) ou règles (sans IA).
    Le modèle ne calcule rien : il traduit la demande en actions de Focale ; les calculs optiques restent ceux du moteur. */
