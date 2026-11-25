@@ -397,7 +397,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 <div class="toast" id="toast"></div>
 <input type="file" id="fileIn" accept=".json,.zmx,.seq,.txt,.agf" style="display:none">
 <div class="drop" id="drop">Déposez un fichier .zmx, .seq, .json ou .agf</div>
-<script>const FOCALE_VERSION = '007f9a71';</script>
+<script>const FOCALE_VERSION = 'd68b700a';</script>
 <script id="js-engine">
 'use strict';
 /* =====================================================================
@@ -4080,7 +4080,7 @@ La liste <b>Meilleures solutions</b> (12 solutions distinctes, avec leur mérite
 <ul><li><b>Ctrl+O</b> ouvrir, <b>Ctrl+S</b> enregistrer (.json, format natif complet), <i>Enregistrer sous</i></li>
 <li><b>Glisser-déposer</b> d'un fichier <b>.zmx</b>, <b>.seq</b>, .json ou .agf sur la fenêtre, ou <i>Fichier → Importer un système</i> : le format est reconnu automatiquement. Les .zmx enregistrés en UTF-16 (cas courant) sont décodés.</li>
 <li><i>Fichier → Exporter Zemax (.zmx)</i> et <i>Exporter CODE V (.seq)</i> enregistrent le fichier ; <i>Afficher / copier le texte</i> montre les trois formats.</li>
-<li><b>Enregistrer sous</b> : chaque enregistrement (système, export Zemax / CODE V, rapports et plans PDF, CSV de tolérancement, image d'un graphe) ouvre une fenêtre pour choisir l'emplacement et le nom. Dans Chrome et Edge (GitHub Pages, application installée, fichier local), c'est l'explorateur de fichiers du système : dossier et nom au choix. Dans Firefox, Safari ou dans claude.ai, une fenêtre de Focale permet de modifier le nom (l'extension est conservée) ; le fichier va ensuite dans le dossier de téléchargement, sauf si le navigateur est réglé sur « Demander où enregistrer chaque fichier ». Échap ou Annuler abandonne l'enregistrement.</li>
+<li><b>Enregistrer sous</b> : chaque enregistrement (système, export Zemax / CODE V, rapports et plans PDF, CSV de tolérancement, image d'un graphe) ouvre une fenêtre pour choisir l'emplacement et le nom. Dans Chrome et Edge (GitHub Pages, application installée, fichier local), c'est l'explorateur de fichiers du système : dossier et nom au choix, le champ « Type » indique le format avec son extension (ex. « Fichier CODE V (*.seq) »). Dans Firefox, Safari ou dans claude.ai, une fenêtre de Focale permet de modifier le nom (l'extension est conservée) ; le fichier va ensuite dans le dossier de téléchargement, sauf si le navigateur est réglé sur « Demander où enregistrer chaque fichier ». Échap ou Annuler abandonne l'enregistrement.</li>
 <li>Après un import ou un export, un <b>rapport</b> liste ce qui a été converti ou ignoré.</li></ul>
 <h4>Zemax OpticStudio (.zmx, séquentiel)</h4>
 <table class="ht"><tr><th>Élément</th><th>Correspondance</th></tr>
@@ -7974,6 +7974,7 @@ function askSaveName(name) {
     const ov = document.createElement('div'); ov.className = 'svov';
     ov.innerHTML = `<div class="svbox" role="dialog" aria-label="Enregistrer sous"><h3>Enregistrer sous</h3>
       <label>Nom du fichier</label><div class="row" style="gap:4px;align-items:center"><input class="in" id="svName" style="flex:1" spellcheck="false" value="${esc(base)}">${ext ? `<span class="hint">.${esc(ext)}</span>` : ''}</div>
+      ${ext ? `<label style="margin-top:8px">Type</label><div>${esc(DLDESC[ext] || 'Fichier ' + ext.toUpperCase())} (*.${esc(ext)})</div>` : ''}
       <div class="hint" style="margin-top:8px">${TOP ? 'Ce navigateur ne permet pas de choisir le dossier depuis la page : le fichier va dans le dossier de téléchargement. Pour choisir l\'emplacement à chaque fois, activez « Demander où enregistrer chaque fichier » dans les réglages de téléchargement du navigateur (Chrome / Edge ouvrent directement l\'explorateur).' : 'Dans claude.ai, le fichier passe par la fenêtre de téléchargement de Claude puis par votre navigateur. Pour choisir le dossier, activez « Demander où enregistrer chaque fichier » dans les réglages du navigateur, ou ouvrez Focale depuis GitHub Pages / l\'application installée (l\'explorateur de fichiers s\'ouvre alors directement).'}</div>
       <div class="row" style="justify-content:flex-end;gap:6px;margin-top:12px"><button class="tb" data-sv="0">Annuler</button><button class="tb pri" data-sv="1">Enregistrer</button></div></div>`;
     document.body.appendChild(ov);
@@ -7992,7 +7993,7 @@ async function download(name, text, type = 'application/json') {
   if (TOP && window.showSaveFilePicker) {
     try {
       const mime = MIME[ext] && MIME[ext] !== 'text/plain' ? MIME[ext] : 'text/plain';
-      const h = await showSaveFilePicker({ suggestedName: name, types: ext ? [{ description: DLDESC[ext] || ext.toUpperCase(), accept: { [mime]: ['.' + ext] } }] : undefined });
+      const h = await showSaveFilePicker({ suggestedName: name, types: ext ? [{ description: `${DLDESC[ext] || 'Fichier ' + ext.toUpperCase()} (*.${ext})`, accept: { [mime]: ['.' + ext] } }] : undefined });
       const w = await h.createWritable(); await w.write(b); await w.close(); toast('Enregistré : ' + h.name); return h.name;
     } catch (e) { if (e && e.name === 'AbortError') { toast('Enregistrement annulé'); return false; } /* sinon (sécurité, activation perdue…) : fenêtre interne */ }
   }
@@ -8012,7 +8013,7 @@ async function download(name, text, type = 'application/json') {
 async function openFile() {
   if (window.showOpenFilePicker && TOP) {
     try {
-      const [h] = await showOpenFilePicker({ types: [{ description: 'Systèmes optiques et catalogues', accept: { 'application/json': ['.json'], 'text/plain': ['.zmx', '.seq', '.agf', '.txt'] } }] });
+      const [h] = await showOpenFilePicker({ types: [{ description: 'Systèmes optiques et catalogues (*.json, *.zmx, *.seq, *.agf, *.txt)', accept: { 'application/json': ['.json'], 'text/plain': ['.zmx', '.seq', '.agf', '.txt'] } }] });
       const f = await h.getFile(); await readAndImport(f); FS.handle = /\.json$/i.test(f.name) ? h : null;
     } catch (e) { if (e.name !== 'AbortError') toast('Ouverture impossible : ' + e.message); }
   } else $('#fileIn').click();
@@ -8021,7 +8022,7 @@ async function saveFile(as) {
   const txt = sysJSON();
   if (window.showSaveFilePicker && TOP) {
     try {
-      if (!FS.handle || as) FS.handle = await showSaveFilePicker({ suggestedName: fileBase() + '.json', types: [{ description: 'Système Focale', accept: { 'application/json': ['.json'] } }] });
+      if (!FS.handle || as) FS.handle = await showSaveFilePicker({ suggestedName: fileBase() + '.json', types: [{ description: 'Système Focale (*.json)', accept: { 'application/json': ['.json'] } }] });
       const w = await FS.handle.createWritable(); await w.write(txt); await w.close(); toast('Enregistré : ' + FS.handle.name); return;
     } catch (e) { if (e.name === 'AbortError') return; }
   }

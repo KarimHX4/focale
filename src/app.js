@@ -2971,6 +2971,7 @@ function askSaveName(name) {
     const ov = document.createElement('div'); ov.className = 'svov';
     ov.innerHTML = `<div class="svbox" role="dialog" aria-label="Enregistrer sous"><h3>Enregistrer sous</h3>
       <label>Nom du fichier</label><div class="row" style="gap:4px;align-items:center"><input class="in" id="svName" style="flex:1" spellcheck="false" value="${esc(base)}">${ext ? `<span class="hint">.${esc(ext)}</span>` : ''}</div>
+      ${ext ? `<label style="margin-top:8px">Type</label><div>${esc(DLDESC[ext] || 'Fichier ' + ext.toUpperCase())} (*.${esc(ext)})</div>` : ''}
       <div class="hint" style="margin-top:8px">${TOP ? 'Ce navigateur ne permet pas de choisir le dossier depuis la page : le fichier va dans le dossier de téléchargement. Pour choisir l\'emplacement à chaque fois, activez « Demander où enregistrer chaque fichier » dans les réglages de téléchargement du navigateur (Chrome / Edge ouvrent directement l\'explorateur).' : 'Dans claude.ai, le fichier passe par la fenêtre de téléchargement de Claude puis par votre navigateur. Pour choisir le dossier, activez « Demander où enregistrer chaque fichier » dans les réglages du navigateur, ou ouvrez Focale depuis GitHub Pages / l\'application installée (l\'explorateur de fichiers s\'ouvre alors directement).'}</div>
       <div class="row" style="justify-content:flex-end;gap:6px;margin-top:12px"><button class="tb" data-sv="0">Annuler</button><button class="tb pri" data-sv="1">Enregistrer</button></div></div>`;
     document.body.appendChild(ov);
@@ -2989,7 +2990,7 @@ async function download(name, text, type = 'application/json') {
   if (TOP && window.showSaveFilePicker) {
     try {
       const mime = MIME[ext] && MIME[ext] !== 'text/plain' ? MIME[ext] : 'text/plain';
-      const h = await showSaveFilePicker({ suggestedName: name, types: ext ? [{ description: DLDESC[ext] || ext.toUpperCase(), accept: { [mime]: ['.' + ext] } }] : undefined });
+      const h = await showSaveFilePicker({ suggestedName: name, types: ext ? [{ description: `${DLDESC[ext] || 'Fichier ' + ext.toUpperCase()} (*.${ext})`, accept: { [mime]: ['.' + ext] } }] : undefined });
       const w = await h.createWritable(); await w.write(b); await w.close(); toast('Enregistré : ' + h.name); return h.name;
     } catch (e) { if (e && e.name === 'AbortError') { toast('Enregistrement annulé'); return false; } /* sinon (sécurité, activation perdue…) : fenêtre interne */ }
   }
@@ -3009,7 +3010,7 @@ async function download(name, text, type = 'application/json') {
 async function openFile() {
   if (window.showOpenFilePicker && TOP) {
     try {
-      const [h] = await showOpenFilePicker({ types: [{ description: 'Systèmes optiques et catalogues', accept: { 'application/json': ['.json'], 'text/plain': ['.zmx', '.seq', '.agf', '.txt'] } }] });
+      const [h] = await showOpenFilePicker({ types: [{ description: 'Systèmes optiques et catalogues (*.json, *.zmx, *.seq, *.agf, *.txt)', accept: { 'application/json': ['.json'], 'text/plain': ['.zmx', '.seq', '.agf', '.txt'] } }] });
       const f = await h.getFile(); await readAndImport(f); FS.handle = /\.json$/i.test(f.name) ? h : null;
     } catch (e) { if (e.name !== 'AbortError') toast('Ouverture impossible : ' + e.message); }
   } else $('#fileIn').click();
@@ -3018,7 +3019,7 @@ async function saveFile(as) {
   const txt = sysJSON();
   if (window.showSaveFilePicker && TOP) {
     try {
-      if (!FS.handle || as) FS.handle = await showSaveFilePicker({ suggestedName: fileBase() + '.json', types: [{ description: 'Système Focale', accept: { 'application/json': ['.json'] } }] });
+      if (!FS.handle || as) FS.handle = await showSaveFilePicker({ suggestedName: fileBase() + '.json', types: [{ description: 'Système Focale (*.json)', accept: { 'application/json': ['.json'] } }] });
       const w = await FS.handle.createWritable(); await w.write(txt); await w.close(); toast('Enregistré : ' + FS.handle.name); return;
     } catch (e) { if (e.name === 'AbortError') return; }
   }
