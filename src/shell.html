@@ -377,6 +377,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
         <span class="hint" style="margin-left:6px">Rayons</span>
         <span class="dd nrc"><input class="in" id="nRays" type="number" min="3" max="100" step="1" value="7" style="height:24px;width:58px" title="Nombre de rayons par champ : un entier de 3 à 100 (Entrée pour valider, flèches ou molette pour ajuster), ou ▾ pour une valeur courante"><button class="bt" data-menu="nRaysMenu" title="Valeurs courantes" aria-label="Valeurs courantes du nombre de rayons">▾</button>
           <div class="menu" id="nRaysMenu" style="min-width:110px"><button data-nr="3">3 rayons</button><button data-nr="5">5 rayons</button><button data-nr="7">7 rayons</button><button data-nr="11">11 rayons</button><button data-nr="15">15 rayons</button><button data-nr="21">21 rayons</button><button data-nr="31">31 rayons</button><button data-nr="51">51 rayons</button></div></span>
+        <select class="in" id="ray3" style="height:24px;display:none" title="Motif des rayons dans la vue 3D : éventails X et Y (croix, « XY fan » de Zemax), éventail Y seul, anneau au bord de la pupille ou grille remplissant la pupille"></select>
         <button class="bt" data-act="fit" title="Ajuster la vue (double-clic)">Ajuster</button>
         <span class="grow"></span>
         <span class="hint">molette : zoom · glisser : déplacer · clic : sélectionner</span>

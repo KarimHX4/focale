@@ -52,14 +52,14 @@ const elemOf = s => s.elem === 'grating' ? (OE.isMirror(s) ? 'rgrating' : 'grati
 const App = {
   sys: null, M: null, sel: 1, hist: [], hmeta: [], hi: -1, focus: null,
   panes: [{ type: 'spot' }, { type: 'wfe', fi: 0 }, { type: 'mtf' }, { type: 'psf', fi: 0 }, { type: 'rayfan' }, { type: 'footprint' }],
-  grid: 4, mode: '2d', view: { auto: true, s: 1, ox: 0, oy: 0, yaw: 0.55, pitch: 0.32 }, nRays: 7, showAsph: false, qf: { crit: 'SPOT', wl: 'central' }, asst: true, fw: {},
+  grid: 4, mode: '2d', view: { auto: true, s: 1, ox: 0, oy: 0, yaw: 0.55, pitch: 0.32 }, nRays: 7, ray3: 'xy', showAsph: false, qf: { crit: 'SPOT', wl: 'central' }, asst: true, fw: {},
 };
-function save() { try { localStorage.setItem('focale.sys', toJSON(App.sys)); localStorage.setItem('focale.ui', JSON.stringify({ panes: App.panes, grid: App.grid, qf: App.qf, asst: App.asst, fw: App.fw, nRays: App.nRays, th: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light' })); } catch (e) { } }
+function save() { try { localStorage.setItem('focale.sys', toJSON(App.sys)); localStorage.setItem('focale.ui', JSON.stringify({ panes: App.panes, grid: App.grid, qf: App.qf, asst: App.asst, fw: App.fw, nRays: App.nRays, ray3: App.ray3, th: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light' })); } catch (e) { } }
 function load() {
   try {
     const s = localStorage.getItem('focale.sys'); if (s) App.sys = normalize(fromJSON(s));
     const u = JSON.parse(localStorage.getItem('focale.ui') || 'null');
-    if (u) { if (Array.isArray(u.panes) && u.panes.length >= 6) App.panes = u.panes; if (u.grid) App.grid = u.grid; if (u.qf) App.qf = { ...App.qf, ...u.qf }; if (u.asst === false) App.asst = false; if (u.fw && typeof u.fw === 'object') App.fw = u.fw; if (Number.isInteger(u.nRays) && u.nRays >= 3 && u.nRays <= 100) App.nRays = u.nRays; }
+    if (u) { if (Array.isArray(u.panes) && u.panes.length >= 6) App.panes = u.panes; if (u.grid) App.grid = u.grid; if (u.qf) App.qf = { ...App.qf, ...u.qf }; if (u.asst === false) App.asst = false; if (u.fw && typeof u.fw === 'object') App.fw = u.fw; if (Number.isInteger(u.nRays) && u.nRays >= 3 && u.nRays <= 100) App.nRays = u.nRays; if (RAY3.some(o => o[0] === u.ray3)) App.ray3 = u.ray3; }
     // thème : sombre par défaut (premier lancement) ; ensuite le dernier choix de l'utilisateur
     document.documentElement.dataset.theme = u && u.th === 'light' ? '' : 'dark';
   } catch (e) { App.sys = null; }
@@ -882,14 +882,23 @@ function layoutGeom(M) {
   M.geom = { surfs, zmin, zmax, ymin: Math.min(ymin, -1e-3), ymax: Math.max(ymax, 1e-3), span, lead, fin, G3 };
   return M.geom;
 }
+/** points de la pupille relative tracés dans le layout : éventail Y (méridien), éventails X et Y (« XY fan » de Zemax),
+    anneau (bord de pupille + rayon principal) ou grille carrée dans la pupille */
+const RAY3 = [['xy', 'Éventails X et Y'], ['y', 'Éventail Y (méridien)'], ['ring', 'Anneau (bord de pupille)'], ['grid', 'Grille dans la pupille']];
+function pupilPattern(kind, n, obs = 0) {
+  const P = [], ok = (x, y) => Math.hypot(x, y) >= obs - 1e-9, lin = k => n === 1 ? 0 : -1 + 2 * k / (n - 1);
+  if (kind === 'ring') { P.push([0, 0]); for (let k = 0; k < Math.max(4, n); k++) { const a = 2 * Math.PI * k / Math.max(4, n); P.push([Math.cos(a), Math.sin(a)]); } return P.filter(([x, y]) => ok(x, y) || (!x && !y && !obs)); }
+  if (kind === 'grid') { const m = Math.min(n, 15); for (let i = 0; i < m; i++) for (let j = 0; j < m; j++) { const x = m === 1 ? 0 : -1 + 2 * i / (m - 1), y = m === 1 ? 0 : -1 + 2 * j / (m - 1); if (x * x + y * y <= 1 + 1e-9 && ok(x, y)) P.push([x, y]); } return P; }
+  for (let k = 0; k < n; k++) { const p = lin(k); if (Math.abs(p) >= obs - 1e-9) P.push([0, p]); }
+  if (kind === 'xy') for (let k = 0; k < n; k++) { const p = lin(k); if (p && Math.abs(p) >= obs - 1e-9) P.push([p, 0]); }
+  return P;
+}
 function layoutRays(M, n, three) {
   const out = [], S = M.sys, G = layoutGeom(M);
   S.fields.forEach((f, fi) => {
-    const fans = three ? [[0, 1], [1, 0]] : [[0, 1]];
-    for (const [ax, ay] of fans) for (let k = 0; k < n; k++) {
-      const p = n === 1 ? 0 : -1 + 2 * k / (n - 1);
-      if (Math.abs(p) < M.obs - 1e-9) continue;
-      const pts = []; const r = OE.ray(M, M.pw, f, p * ax, p * ay, { pts });
+    const P = pupilPattern(three ? App.ray3 : 'y', n, M.obs);
+    for (const [px, py] of P) {
+      const pts = []; const r = OE.ray(M, M.pw, f, px, py, { pts });
       if (!pts.length) continue;
       let p0;
       if (M.objInf) { const d = OE.fieldDir(f), q = pts[0], L = G.lead + (q[2] - M.zg[1]); p0 = [q[0] - d[0] * L, q[1] - d[1] * L, q[2] - d[2] * L]; }
@@ -905,6 +914,7 @@ function drawLayout(tgt) {
   const cv = $('#lay'), { c, w, h } = tgt || prepCanvas(cv), M = App.M;
   if (!tgt) $('#legend').innerHTML = App.sys.fields.map((f, i) => `<span><span class="sw" style="background:${fcol(i)}"></span> ${M && M.ok ? fLabel(M, i) : fmt(f.y, 4)}</span>`).join('');
   $$('#laySeg button').forEach(x => x.classList.toggle('on', x.dataset.m === App.mode));
+  { const r3 = $('#ray3'); if (r3) { r3.style.display = App.mode === '3d' ? '' : 'none'; if (r3.value !== App.ray3) r3.value = App.ray3; } }
   if (!M || !M.ok) { text(c, (M && M.errors || ['Erreur']).join('  ·  '), 14, 14, { col: '#dc2626' }); return; }
   const G = layoutGeom(M);
   if (App.mode === '3d') return draw3D(c, w, h, M, G);
@@ -3117,6 +3127,7 @@ function init() {
     }
   });
   $('#gridSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { App.grid = +b.dataset.g; save(); buildPanes(); } });
+  { const r3 = $('#ray3'); r3.innerHTML = RAY3.map(([k, l]) => `<option value="${k}">${l}</option>`).join(''); r3.value = App.ray3; r3.addEventListener('change', () => { App.ray3 = r3.value; save(); drawLayout(); }); }
   $('#laySeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; App.mode = b.dataset.m; drawLayout(); });
   { const nr = $('#nRays'); nr.value = App.nRays;
     const setN = (draw) => { const v = Math.round(parseNum(nr.value, false)); if (!isFinite(v)) { nr.value = App.nRays; return; } const n = Math.max(3, Math.min(100, v)); if (String(n) !== nr.value) nr.value = n; if (n !== App.nRays) { App.nRays = n; save(); if (draw) drawLayout(); } };
