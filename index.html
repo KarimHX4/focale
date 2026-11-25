@@ -250,7 +250,7 @@ table.gtab tr.gsel td *{color:#fff!important}
 .dlg .df{flex:none;padding:10px 18px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;align-items:center}
 .hn{display:block;width:100%;text-align:left;border:0;background:none;padding:6px 9px;border-radius:7px;cursor:pointer;font-size:13px;color:var(--fg)}
 .hn:hover{background:var(--panel2)}.hn.on{background:var(--acc2);color:var(--acc);font-weight:600}
-.help{font-size:13.5px;line-height:1.6}.help h3{margin:4px 0 8px;font-size:17px}.help h4{margin:14px 0 4px;font-size:13.5px}.help hr{border:0;border-top:1px solid var(--line);margin:18px 0}
+.help{font-size:13.5px;line-height:1.6}.help td.fm{font-family:'STIX Two Text',Cambria,Georgia,'Times New Roman',serif;font-size:14.5px;white-space:normal;min-width:200px}.help table.ht{margin:4px 0 10px}.help h3{margin:4px 0 8px;font-size:17px}.help h4{margin:14px 0 4px;font-size:13.5px}.help hr{border:0;border-top:1px solid var(--line);margin:18px 0}
 .help code{font-family:var(--mono);font-size:12px;background:var(--panel2);padding:1px 4px;border-radius:4px}.help mark{background:#fde68a;color:#111;border-radius:2px}
 table.ht{border-collapse:collapse;width:100%;font-size:12.5px}table.ht td,table.ht th{border-bottom:1px solid var(--line);padding:5px 8px;text-align:left;vertical-align:top}table.ht th{color:var(--mut);font-weight:500}table.ht td:first-child{white-space:nowrap;font-weight:600}
 .rgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:2px 10px;font-size:12.5px}.rgrid label{display:flex;align-items:center;gap:5px;padding:2px 0;cursor:pointer}
@@ -400,7 +400,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 <div class="toast" id="toast"></div>
 <input type="file" id="fileIn" accept=".json,.zmx,.seq,.txt,.agf" style="display:none">
 <div class="drop" id="drop">Déposez un fichier .zmx, .seq, .json ou .agf</div>
-<script>const FOCALE_VERSION = '7111bddd';</script>
+<script>const FOCALE_VERSION = 'ae999494';</script>
 <script id="js-engine">
 'use strict';
 /* =====================================================================
@@ -3775,13 +3775,36 @@ const HELP = [
 <li><i>Oculaires, microscopie, relais</i> : oculaire de Plössl et objectif de microscope 10× (tracés inversés, de la pupille vers le plan focal), relais 1:1, expanseur de faisceau de Galilée ×4.</li>
 <li><i>Composants spéciaux</i> : spectrographe à réseau, polariseur et lame λ/4.</li></ul>
 Les combinaisons ont été optimisées dans Focale (spot, front d'onde) : ce sont de bons points de départ, pas des formules de fabricant. Survolez un exemple pour voir son titre complet.</li>
-<li><b>Réglez le système</b> dans le panneau de gauche : ouverture, champs, longueurs d'onde.</li>
+<li><b>Réglez le système</b> dans le panneau de gauche : ouverture, champs, longueurs d'onde. Pour la démarche complète, voir <i>Méthode de conception</i> ; pour les relations de base (conjugaison, F/#, Airy, achromat, Cassegrain…), <i>Formules d'optique utiles</i> ; vocabulaire : <i>Glossaire</i>.</li>
 <li><b>Saisissez les surfaces</b> dans l'éditeur : rayon, épaisseur, verre. Choisissez le <b>type d'élément</b> (dioptre, miroir, réseau, lentille idéale, polariseur, lame d'onde) dans la colonne <i>Élément</i>.</li>
 <li><b>Observez</b> le layout et les fenêtres d'analyse : tout se recalcule à chaque modification.</li>
 <li><b>Optimisez</b> : cliquez sur <b>V</b> à côté des paramètres à faire varier, puis <i>Optimiser</i>.</li>
 <li><b>Tolérancez</b> pour estimer la sensibilité à la fabrication, puis <b>enregistrez</b> (Ctrl+S).</li>
 </ol>
 <p class="hint">Astuce : double-cliquez sur l'en-tête d'une fenêtre d'analyse pour l'agrandir ; Échap pour revenir.</p>` },
+
+  { id: 'methode', t: 'Méthode de conception', h: `
+<p>Démarche type, du cahier des charges au plan de fabrication. Chaque étape renvoie aux outils de Focale.</p>
+<ol>
+<li><b>Cahier des charges</b> : focale (ou grandissement), ouverture (F/#, ON), champ (angle, hauteur objet ou taille du capteur), bande spectrale et poids, encombrement (longueur, tirage, diamètre), qualité requise (FTM à une fréquence, spot, Strehl, distorsion), environnement (températures), contraintes de coût (verres préférés, nombre de lentilles, asphères).</li>
+<li><b>Premier ordre</b> : avec les formules paraxiales (rubrique <i>Formules d'optique</i>), fixez la puissance de chaque groupe, leurs écartements et la position du diaphragme. Vérifiez l'invariant de Lagrange et l'étendue : ils disent si l'ouverture et le champ demandés sont compatibles avec le capteur ou la source.</li>
+<li><b>Point de départ</b> : un <i>Exemple</i> proche (Cooke, Tessar, Double Gauss, Petzval, téléobjectif, télescope…), un brevet, ou un système construit lentille par lentille à partir du <i>Système vide</i>. Mettez-le à l'échelle de la focale voulue, puis ajustez ouverture, champs et longueurs d'onde. La <b>complexité</b> croît avec N et le champ : singulet (F/10, quelques degrés), doublet (F/5, ±2°), triplet (F/4, ±20°), Double Gauss (F/2, ±20°)…</li>
+<li><b>Variables et fonction de mérite</b> : boutons <b>V</b> sur les rayons d'abord, puis les épaisseurs d'air, enfin les épaisseurs de verre et les verres (modèles nd/νd). Critère image (spot RMS pour un système géométrique, front d'onde RMS pour un système proche de la diffraction), plus des opérandes : EFL ou PMAG (contrainte de premier ordre), TTL, épaisseurs minimales au centre et au bord (MNCT, MNET, MNCA, MNEA) pour garder un système fabricable, distorsion, chromatisme…</li>
+<li><b>Optimisation locale</b> (moindres carrés amortis) puis, si le résultat stagne, <b>recherche globale</b> pour explorer d'autres formes. Mise au point : solve <b>M</b> sur la dernière épaisseur ou <b>Quick focus</b>.</li>
+<li><b>Verres</b> : rendez les verres variables (modèles nd/νd), optimisez, puis <b>substituez</b> par les verres réels les plus proches (catalogues et verres préférés), et réoptimisez. Vérifiez transmission, prix relatif et disponibilité (fenêtre Verres).</li>
+<li><b>Analyse</b> : spot, ray fans, OPD, FTM (sur l'axe, en champ et through-focus), courbure de champ et distorsion, éclairement relatif, chromatisme, fantômes, thermique. Comparez au cahier des charges, revenez à l'étape 4 si besoin.</li>
+<li><b>Tolérancement</b> : tolérances par défaut (ou ISO 10110), compensateur (mise au point), sensibilités, Monte-Carlo : la performance <i>fabriquée</i> à 90 % doit encore tenir la spécification. Les éléments les plus sensibles indiquent où resserrer ou modifier la combinaison.</li>
+<li><b>Livrables</b> : rapport de conception, rapport de tolérancement, plans ISO 10110, exports CODE V (.seq) et Zemax (.zmx) pour un contrôle croisé.</li>
+</ol>
+<h4>Conseils</h4>
+<ul>
+<li>Gardez l'historique (Ctrl+H) et créez des <b>points de sauvegarde</b> avant chaque essai : on revient facilement à une version antérieure.</li>
+<li>Commencez avec peu de rayons et de champs, puis densifiez pour la validation finale.</li>
+<li>Une variable inutile ralentit et rend l'optimisation instable : rendez variables seulement les paramètres qui ont un effet.</li>
+<li>Si l'optimisation propose des épaisseurs négatives ou des lentilles trop fines, augmentez le poids des contraintes MNCT / MNET / MNCA / MNEA.</li>
+<li>Pour comparer deux variantes, utilisez la multi-configuration ou des points de sauvegarde.</li>
+<li>Système proche de la diffraction : jugez sur le front d'onde RMS (objectif &lt; λ/14) et la FTM, pas sur le spot.</li>
+</ul>` },
 
   { id: 'interface', t: 'L\'interface', h: `
 <ul>
@@ -3939,6 +3962,28 @@ Les combinaisons ont été optimisées dans Focale (spot, front d'onde) : ce son
 <h4>Calculs en tâche de fond</h4>
 <p>Les analyses longues — <b>FTM</b>, FTM through-focus, FTM selon le champ, éclairement relatif, analyse thermique — et tout le <b>tolérancement</b> (sensibilités, tolérances inverses, Monte-Carlo) sont calculés dans des <b>Web Workers</b>, en parallèle sur plusieurs cœurs du processeur (jusqu'à 4) : l'interface reste fluide, on peut continuer à éditer pendant le calcul. La fenêtre concernée affiche une barre de progression, et la barre d'état un indicateur « n calculs · % ». Les résultats sont gardés en mémoire : revenir à un système déjà calculé est immédiat. Un calcul devenu inutile (système modifié entre-temps) est abandonné. Si l'hébergement interdit les workers, les mêmes calculs se font dans la page, par petites tranches. Le Monte-Carlo reste reproductible avec une graine, quel que soit le nombre de cœurs. Fermer la fenêtre de tolérancement n'interrompt plus le calcul (bouton Arrêter pour cela).</p>
 <p>Le bouton <b>?</b> de chaque fenêtre d'analyse ouvre directement la ligne correspondante de cette aide. Chaque fenêtre d'analyse se détache avec <b>⧉</b> (fenêtre flottante redimensionnable) ; <b>+ Fenêtre</b> en ajoute d'autres.</p>` },
+
+  { id: 'lecture', t: 'Lire les analyses', h: `
+<p>Comment reconnaître les aberrations dans les graphes de Focale. Px, Py : coordonnées pupillaires normalisées ; ey, ex : aberrations transverses (ray fan) ; W : écart de front d'onde (OPD fan).</p>
+<table class="ht"><tr><th>Aberration</th><th>Ray fan (ey en fonction de Py)</th><th>Spot</th><th>Autres indices</th></tr>
+<tr><td>Défocalisation</td><td>Droite passant par l'origine</td><td>Disque uniforme</td><td>OPD fan en parabole ; corrigée par Quick focus ou le solve M.</td></tr>
+<tr><td>Sphérique</td><td>Courbe en S, impaire (ε ∝ Py³), identique pour tous les champs</td><td>Cœur brillant et halo, symétrique</td><td>OPD en ρ⁴ ; somme de Seidel SI ; through-focus FTM asymétrique.</td></tr>
+<tr><td>Coma</td><td>Courbe en U (paire) dans le fan tangentiel, croît linéairement avec le champ</td><td>Comète, queue orientée vers ou à l'opposé de l'axe</td><td>SII ; annulée par la symétrie autour du diaphragme.</td></tr>
+<tr><td>Astigmatisme</td><td>Droites de pentes différentes en tangentiel et en sagittal</td><td>Ellipse ou trait selon la mise au point</td><td>Courbes T et S séparées dans « Courbure de champ » ; FTM T ≠ S.</td></tr>
+<tr><td>Courbure de champ</td><td>Pente qui varie avec le champ (défocalisation croissante)</td><td>Spots nets au centre, flous au bord</td><td>Courbes T et S ensemble, écartées de zéro ; somme de Petzval.</td></tr>
+<tr><td>Distorsion</td><td>Aucun effet sur la netteté</td><td>Spots nets mais déplacés</td><td>Courbe « Distorsion » et grille de distorsion (barillet : négative, coussinet : positive).</td></tr>
+<tr><td>Chromatisme axial</td><td>Droites de pentes différentes selon λ (sur l'axe)</td><td>Spots concentriques colorés</td><td>Analyse « Chromatisme » (foyer en fonction de λ).</td></tr>
+<tr><td>Chromatisme latéral</td><td>Courbes décalées verticalement selon λ (hors axe)</td><td>Spots colorés décalés radialement</td><td>Réduit la FTM polychromatique hors axe.</td></tr>
+<tr><td>Vignetage</td><td>Courbe coupée avant Py = ±1</td><td>Spot tronqué</td><td>Footprint, éclairement relatif.</td></tr>
+</table>
+<h4>Repères de qualité</h4>
+<ul>
+<li><b>Limité par la diffraction</b> : front d'onde RMS &lt; λ/14 (Strehl &gt; 0,8), spot RMS bien inférieur au rayon d'Airy (cercle pointillé du spot).</li>
+<li><b>FTM</b> : comparez la courbe à la limite de diffraction tracée ; pour un capteur, regardez la FTM à Nyquist (1/(2 × pixel)) et à la moitié de Nyquist.</li>
+<li><b>Énergie encerclée</b> : diamètre contenant 80 % de l'énergie, à comparer à la taille d'un pixel ou d'un cœur de fibre.</li>
+<li><b>Through-focus</b> : la largeur de la courbe donne la profondeur de foyer réelle ; un pic décalé entre T et S trahit l'astigmatisme.</li>
+<li><b>Distorsion</b> : &lt; 1 à 2 % pour la photographie, &lt; 0,1 % pour la métrologie (ou objectif télécentrique).</li>
+</ul>` },
 
   { id: 'polarisation', t: 'Polarisation', h: `
 <p>Focale suit le <b>champ électrique complexe 3D</b> le long de chaque rayon :</p>
@@ -4118,7 +4163,7 @@ La liste <b>Meilleures solutions</b> (12 solutions distinctes, avec leur mérite
 
   { id: 'validation', t: 'Validation CODE V', h: `
 <p>Les conventions de Focale sont vérifiées contre des sorties réelles de CODE V 2024.03, reprises dans les tests automatiques (<code>node tests/engine.test.js</code>). Cas actuel : objectif « DigCamera » du tutoriel CODE V (6 dioptres, verres fictifs, objet à 750 mm, champs 0 / 11 / 19 / 26,5°, vignetage, image défocalisée).</p>
-<table><tr><th>Grandeur (CODE V)</th><th>CODE V</th><th>Focale</th></tr>
+<table class="ht"><tr><th>Grandeur (CODE V)</th><th>CODE V</th><th>Focale</th></tr>
 <tr><td>Indices des verres fictifs 743972.448504 et 736020.283993 à 656 / 589 / 430 nm</td><td>6 décimales</td><td>écart &lt; 1 ppm</td></tr>
 <tr><td>FIR : EFL, BFL, FNO à l'infini, FNO aux conjugués, Ø et position des pupilles, IMG DIS, OAL, image paraxiale (THI, HT)</td><td>4 décimales</td><td>identiques</td></tr>
 <tr><td>Hauteurs objet des champs angulaires</td><td>−146,03323 / −258,69045 / −374,60028</td><td>écart &lt; 2·10⁻⁶ mm</td></tr>
@@ -4140,6 +4185,168 @@ La liste <b>Meilleures solutions</b> (12 solutions distinctes, avec leur mérite
 <li>Pupille normalisée (Px, Py) dans [−1, 1], obstruction exclue ; avec des facteurs de vignetage, relative au faisceau vignetté.</li>
 <li>OPD (convention CODE V / Zemax) = chemin du rayon principal − chemin du rayon, sur la sphère de référence : <b>OPD &gt; 0 = front d'onde en avance</b>. Une sphérique sous-corrigée (lentille simple) donne W040 &gt; 0, de même signe que la somme de Seidel SI (W040 = SI/8).</li>
 <li>Aberrations transverses : ε = SI/(2 n′u′) pour la sphérique (u′ &lt; 0 pour un faisceau convergent) ; mêmes conventions de signe que les coefficients de Seidel de Zemax.</li></ul>` },
+
+  { id: 'formules', t: 'Formules d\'optique utiles', h: `
+<p>Rappel des relations les plus utiles pour dimensionner un système <b>avant</b> de l'optimiser, puis pour interpréter les analyses. Conventions : longueurs en mm, distances algébriques comptées dans le sens de la lumière, système dans l'air (n = 1) sauf mention contraire, <i>f′</i> focale image, <i>N</i> nombre d'ouverture, λ en mm dans les formules dimensionnelles (0,55 µm = 0,00055 mm).</p>
+<p class="hint">Sommaire : optique paraxiale · lentilles · ouverture et pupilles · diffraction et qualité d'image · aberrations · chromatisme et verres · thermique · miroirs et télescopes · réseaux et surfaces diffractives · faisceaux laser · radiométrie et traitements · instruments visuels · capteurs.</p>
+
+<h4>Optique paraxiale</h4>
+<table class="ht"><tr><th>Relation</th><th>Formule</th><th>Remarques</th></tr>
+<tr><td>Conjugaison (Descartes)</td><td class="fm">n′/x′ − n/x = n′/f′</td><td>x, x′ mesurés depuis les plans principaux H, H′ ; dans l'air : 1/x′ − 1/x = 1/f′ (objet réel : x &lt; 0).</td></tr>
+<tr><td>Conjugaison (Newton)</td><td class="fm">z · z′ = f · f′ = −f′²</td><td>z, z′ mesurés depuis les foyers F et F′ (dans l'air, f = −f′).</td></tr>
+<tr><td>Grandissement transversal</td><td class="fm">m = n x′ / (n′ x) = −z′/f′ = f/z</td><td>Dans l'air m = x′/x. Conjugaison 1:1 : x = −2f′, x′ = 2f′.</td></tr>
+<tr><td>Grandissement longitudinal</td><td class="fm">m<sub>L</sub> = (n′/n) m²</td><td>Une mise au point côté objet de Δz déplace l'image de m² Δz.</td></tr>
+<tr><td>Puissance d'un dioptre</td><td class="fm">φ = (n′ − n)/R = (n′ − n) c</td><td>Miroir dans un milieu d'indice n : φ = −2n/R, focale |R|/2.</td></tr>
+<tr><td>Rayon paraxial (raytrace y-nu)</td><td class="fm">n′u′ = nu − y φ ;  y<sub>k+1</sub> = y<sub>k</sub> + e<sub>k</sub> u′<sub>k</sub></td><td>C'est le tracé utilisé par Focale pour toutes les données du premier ordre.</td></tr>
+<tr><td>Invariant de Lagrange</td><td class="fm">H = n (ȳ u − y ū) = n h u (plan objet)</td><td>y, u : rayon marginal ; ȳ, ū : rayon principal. Conservé à travers le système : hauteur image h′ = H/(n′u′). Affiché dans les données paraxiales.</td></tr>
+<tr><td>Étendue géométrique</td><td class="fm">G = π² H²  (≈ π A · ON² ; n = 1)</td><td>Ne peut que se conserver ou croître : borne le couplage source → système (fibre, LED…).</td></tr>
+<tr><td>Somme de Petzval</td><td class="fm">P = Σ c<sub>j</sub> (n′<sub>j</sub> − n<sub>j</sub>) / (n<sub>j</sub> n′<sub>j</sub>) ; lentilles minces dans l'air : P = Σ φ<sub>i</sub>/n<sub>i</sub></td><td>Rayon de la surface de Petzval R<sub>P</sub> = −1/P (dans l'air). Ne dépend ni de la forme des lentilles ni de la position du diaphragme : seuls les indices et les puissances comptent (d'où lentilles divergentes à faible indice, ou « field flattener » près de l'image).</td></tr>
+</table>
+
+<h4>Lentilles</h4>
+<table class="ht"><tr><th>Relation</th><th>Formule</th><th>Remarques</th></tr>
+<tr><td>Lentille mince (lunetier)</td><td class="fm">φ = 1/f′ = (n − 1)(1/R<sub>1</sub> − 1/R<sub>2</sub>)</td><td>N-BK7 plan-convexe : R = 0,517 f′ ; biconvexe symétrique : R = 1,034 f′.</td></tr>
+<tr><td>Lentille épaisse</td><td class="fm">φ = (n − 1)[1/R<sub>1</sub> − 1/R<sub>2</sub> + (n − 1) e / (n R<sub>1</sub> R<sub>2</sub>)]</td><td>Plans principaux : H à −f′(n − 1)e/(n R<sub>2</sub>) du 1<sup>er</sup> sommet, H′ à −f′(n − 1)e/(n R<sub>1</sub>) du 2<sup>e</sup>.</td></tr>
+<tr><td>Deux lentilles minces (Gullstrand)</td><td class="fm">φ = φ<sub>1</sub> + φ<sub>2</sub> − e φ<sub>1</sub> φ<sub>2</sub></td><td>Tirage (dernière lentille → foyer) : BFL = (1 − e φ<sub>1</sub>)/φ. Base du téléobjectif (φ<sub>2</sub> &lt; 0) et du rétrofocus (φ<sub>1</sub> &lt; 0).</td></tr>
+<tr><td>Téléobjectif</td><td class="fm">φ<sub>2</sub> = (φ − φ<sub>1</sub>) / (1 − e φ<sub>1</sub>)</td><td>Rapport télé = longueur totale / f′ &lt; 1. Exemple « Téléobjectif f=200 » : 0,7.</td></tr>
+<tr><td>Facteur de forme</td><td class="fm">q = (R<sub>2</sub> + R<sub>1</sub>)/(R<sub>2</sub> − R<sub>1</sub>)</td><td>Aberration sphérique minimale (objet à l'infini) : q ≈ 2(n² − 1)/(n + 2) → 0,74 pour N-BK7 (face la plus bombée vers l'infini).</td></tr>
+<tr><td>Lentille équiconvexe 1:1</td><td class="fm">x = −2f′, x′ = 2f′, distance objet-image ≈ 4f′</td><td>Distance minimale entre un objet et son image réelle : 4f′.</td></tr>
+</table>
+
+<h4>Ouverture et pupilles</h4>
+<table class="ht"><tr><th>Relation</th><th>Formule</th><th>Remarques</th></tr>
+<tr><td>Nombre d'ouverture</td><td class="fm">N = f′/D</td><td>D : diamètre de la pupille d'entrée (EPD). « F/# image » de Focale.</td></tr>
+<tr><td>F/# de travail</td><td class="fm">N<sub>w</sub> = 1/(2 n′ u′) ≈ (1 − m/m<sub>p</sub>) N</td><td>m : grandissement, m<sub>p</sub> : grandissement pupillaire (≈ 1) ; vaut N à l'infini, ≈ 2N en 1:1. C'est le FNO de CODE V.</td></tr>
+<tr><td>Ouverture numérique</td><td class="fm">ON = n sin u ≈ 1/(2 N<sub>w</sub>)</td><td>Objet (NAO) ou image (NA de CODE V).</td></tr>
+<tr><td>Profondeur de foyer (diffraction)</td><td class="fm">Δz′ = ± 2 λ N<sub>w</sub>²</td><td>Défocalisation qui produit λ/4 crête-à-crête (W<sub>020</sub> = λ/4). F/4 à 0,55 µm : ± 18 µm.</td></tr>
+<tr><td>Défocalisation ↔ front d'onde</td><td class="fm">W<sub>020</sub> = Δz′ / (8 N<sub>w</sub>²) = Δz′ · ON²/2</td><td>Écart RMS correspondant : W<sub>020</sub>/√12 ≈ 0,29 W<sub>020</sub> (sans tilt ni piston).</td></tr>
+<tr><td>Profondeur de foyer géométrique</td><td class="fm">Δz′ = ± N<sub>w</sub> · c</td><td>c : diamètre de tache tolérée (pixel, cercle de confusion).</td></tr>
+<tr><td>Hyperfocale</td><td class="fm">H ≈ f′² / (N c) + f′</td><td>Mise au point à H : tout est net de H/2 à l'infini.</td></tr>
+<tr><td>Pupilles</td><td>—</td><td>Pupille d'entrée = image du diaphragme par ce qui le précède, pupille de sortie = image par ce qui le suit. Télécentrique image : pupille de sortie à l'infini (diaphragme au foyer objet du groupe arrière).</td></tr>
+</table>
+
+<h4>Diffraction et qualité d'image</h4>
+<table class="ht"><tr><th>Relation</th><th>Formule</th><th>Remarques</th></tr>
+<tr><td>Tache d'Airy</td><td class="fm">r<sub>Airy</sub> = 1,22 λ N<sub>w</sub> ;  θ = 1,22 λ/D</td><td>Rayon du premier anneau noir (tracé en pointillés sur le spot). 84 % de l'énergie dans ce rayon.</td></tr>
+<tr><td>Pouvoir séparateur</td><td class="fm">Rayleigh : 1,22 λ N<sub>w</sub>  ·  Sparrow : 0,947 λ N<sub>w</sub></td><td>Séparation de deux points incohérents.</td></tr>
+<tr><td>Strehl (Maréchal)</td><td class="fm">S ≈ exp[−(2π σ)²]</td><td>σ : écart RMS du front d'onde en ondes. S ≥ 0,8 ⇔ σ ≤ λ/14 (0,071 λ) : critère « limité par la diffraction ».</td></tr>
+<tr><td>Critère de Rayleigh</td><td class="fm">W<sub>PV</sub> ≤ λ/4</td><td>Équivaut à σ ≈ λ/14 pour une défocalisation pure, mais pas pour toutes les aberrations : préférer le RMS.</td></tr>
+<tr><td>Fréquence de coupure</td><td class="fm">ν<sub>c</sub> = 1/(λ N<sub>w</sub>)  (cycles/mm)</td><td>F/4 à 0,55 µm : 455 cy/mm. Au-delà, la FTM est nulle quelle que soit la correction.</td></tr>
+<tr><td>FTM limitée par la diffraction</td><td class="fm">FTM(ν) = (2/π)[φ − cos φ sin φ], φ = arccos(ν/ν<sub>c</sub>)</td><td>Pupille circulaire pleine, lumière incohérente ; une obstruction centrale abaisse les moyennes fréquences.</td></tr>
+<tr><td>Spot géométrique ou diffraction ?</td><td>—</td><td>Si le spot RMS est bien inférieur au rayon d'Airy, le système est limité par la diffraction : jugez-le sur le front d'onde, la PSF et la FTM, pas sur le spot.</td></tr>
+</table>
+
+<h4>Aberrations</h4>
+<table class="ht"><tr><th>Relation</th><th>Formule</th><th>Remarques</th></tr>
+<tr><td>Développement de Seidel</td><td class="fm">W = W<sub>040</sub>ρ⁴ + W<sub>131</sub>Hρ³cos θ + W<sub>222</sub>H²ρ²cos²θ + W<sub>220</sub>H²ρ² + W<sub>311</sub>H³ρ cos θ</td><td>ρ : pupille normalisée, H : champ normalisé. Sphérique, coma, astigmatisme, courbure (Petzval), distorsion.</td></tr>
+<tr><td>Sommes de Seidel → coefficients</td><td class="fm">W<sub>040</sub> = S<sub>I</sub>/8, W<sub>131</sub> = S<sub>II</sub>/2, W<sub>222</sub> = S<sub>III</sub>/2, W<sub>220</sub> = S<sub>IV</sub>/4, W<sub>311</sub> = S<sub>V</sub>/2</td><td>Analyse « Seidel » de Focale (contributions surface par surface).</td></tr>
+<tr><td>Front d'onde → rayon</td><td class="fm">ε<sub>y</sub> = −(1/(n′u′)) ∂W/∂ρ<sub>y</sub></td><td>Aberration transverse (ray fan) en fonction de la dérivée du front d'onde (OPD fan).</td></tr>
+<tr><td>Sphérique d'une lentille mince</td><td>—</td><td>∝ D⁴/f′³ en W ; le spot transverse varie comme 1/N³ : diviser N par 2 multiplie le flou par 8.</td></tr>
+<tr><td>Coma, distorsion</td><td>—</td><td>Annulées par la <b>symétrie</b> autour du diaphragme (Double Gauss, relais 1:1) ; la coma dépend de la forme des lentilles et de la position du diaphragme.</td></tr>
+<tr><td>Distorsion</td><td class="fm">D = (y<sub>réel</sub> − y<sub>parax</sub>)/y<sub>parax</sub> × 100 %</td><td>Objectif « rectilinéaire » : y = f′ tan θ ; f-thêta (scanner) : y = f′ θ ; fisheye équisolide : y = 2f′ sin(θ/2).</td></tr>
+<tr><td>Zernike (Fringe)</td><td class="fm">Z<sub>4</sub> défocus, Z<sub>5,6</sub> astigmatisme, Z<sub>7,8</sub> coma, Z<sub>9</sub> sphérique</td><td>Coefficients orthogonaux : σ² = Σ (coefficients normalisés)².</td></tr>
+</table>
+
+<h4>Chromatisme et verres</h4>
+<table class="ht"><tr><th>Relation</th><th>Formule</th><th>Remarques</th></tr>
+<tr><td>Constringence (Abbe)</td><td class="fm">V<sub>d</sub> = (n<sub>d</sub> − 1)/(n<sub>F</sub> − n<sub>C</sub>)</td><td>d = 587,6 nm, F = 486,1 nm, C = 656,3 nm. Couronnes V &gt; 50, flints V &lt; 50.</td></tr>
+<tr><td>Dispersion partielle</td><td class="fm">P<sub>g,F</sub> = (n<sub>g</sub> − n<sub>F</sub>)/(n<sub>F</sub> − n<sub>C</sub>) ;  ligne normale ≈ 0,6438 − 0,001682 V<sub>d</sub></td><td>ΔP<sub>g,F</sub> : écart à la ligne normale (verres « anormaux » : FK, FPL, KZFS).</td></tr>
+<tr><td>Code verre</td><td class="fm">517642 ↔ n<sub>d</sub> = 1,517, V<sub>d</sub> = 64,2</td><td>CODE V : 743972.448504 ↔ n<sub>d</sub> = 1,743972, V<sub>d</sub> = 44,8504.</td></tr>
+<tr><td>Sellmeier</td><td class="fm">n² − 1 = Σ B<sub>i</sub> λ² / (λ² − C<sub>i</sub>)</td><td>Formule des catalogues Schott, Ohara, CDGM, Hoya (λ en µm).</td></tr>
+<tr><td>Chromatisme axial (lentille mince)</td><td class="fm">Δf′<sub>F−C</sub> ≈ −f′ / V</td><td>N-BK7, f′ = 100 : 1,6 mm entre F et C.</td></tr>
+<tr><td>Doublet achromatique mince</td><td class="fm">φ<sub>1</sub> = φ V<sub>1</sub>/(V<sub>1</sub> − V<sub>2</sub>) ;  φ<sub>2</sub> = −φ V<sub>2</sub>/(V<sub>1</sub> − V<sub>2</sub>)</td><td>Condition φ<sub>1</sub>/V<sub>1</sub> + φ<sub>2</sub>/V<sub>2</sub> = 0. Plus V<sub>1</sub> − V<sub>2</sub> est grand, plus les courbures sont faibles.</td></tr>
+<tr><td>Spectre secondaire</td><td class="fm">Δf′<sub>sec</sub> ≈ f′ (P<sub>1</sub> − P<sub>2</sub>)/(V<sub>1</sub> − V<sub>2</sub>)</td><td>P : dispersion partielle pour la raie considérée (P<sub>g,F</sub> pour le foyer g). Écart entre d et F = C ≈ f′/2000 pour un achromat classique. Apochromat : verres de même P et de V très différents (S-FPL53 + KZFS, exemple « Doublet apochromatique »).</td></tr>
+<tr><td>Chromatisme latéral</td><td>—</td><td>Grandissement différent selon λ : se corrige par la symétrie autour du diaphragme ou en achromatisant chaque groupe. Analyse « Chromatisme ».</td></tr>
+</table>
+
+<h4>Thermique</h4>
+<table class="ht"><tr><th>Relation</th><th>Formule</th><th>Remarques</th></tr>
+<tr><td>Coefficient thermo-optique</td><td class="fm">β = (dn/dT)/(n − 1) − α</td><td>Lentille mince : df′/dT = −β f′. α : dilatation du verre.</td></tr>
+<tr><td>Miroir</td><td class="fm">df′/dT = α f′</td><td>Seule la dilatation du substrat compte (Zerodur, ULE ≈ 0).</td></tr>
+<tr><td>Athermalisation</td><td class="fm">−β f′ = α<sub>m</sub> L</td><td>Le foyer doit suivre la dilatation de la monture (α<sub>m</sub>, longueur L). Analyse « Thermique » et Données système → Environnement.</td></tr>
+</table>
+
+<h4>Miroirs et télescopes</h4>
+<table class="ht"><tr><th>Relation</th><th>Formule</th><th>Remarques</th></tr>
+<tr><td>Flèche d'une conique asphérique</td><td class="fm">z = c r² / (1 + √(1 − (1 + k) c² r²)) + A<sub>4</sub> r⁴ + A<sub>6</sub> r⁶ + …</td><td>k = 0 sphère, −1 &lt; k &lt; 0 ellipse allongée, k = −1 parabole, k &lt; −1 hyperbole, k &gt; 0 ellipse aplatie.</td></tr>
+<tr><td>Miroir sphérique</td><td class="fm">f′ = R/2 ;  W<sub>040</sub> = D⁴ / (512 f′³)</td><td>Parabole (k = −1) : stigmatique sur l'axe pour un objet à l'infini, mais coma hors axe.</td></tr>
+<tr><td>Cassegrain : géométrie</td><td class="fm">m = f′/f′<sub>1</sub> ;  d = (m f′<sub>1</sub> − b)/(m + 1)</td><td>f′<sub>1</sub> : focale du primaire, d : distance primaire-secondaire, b : tirage derrière le primaire.</td></tr>
+<tr><td>Cassegrain : secondaire</td><td class="fm">|R<sub>2</sub>| = 2 s s′ / (s′ − s),  s = f′<sub>1</sub> − d,  s′ = d + b</td><td>Obstruction ≈ s/f′<sub>1</sub> (diamètre du secondaire / primaire).</td></tr>
+<tr><td>Cassegrain classique</td><td class="fm">k<sub>1</sub> = −1 ;  k<sub>2</sub> = −[(m + 1)/(m − 1)]²</td><td>Exemple « Télescope Cassegrain » (m = 3, k<sub>2</sub> = −4).</td></tr>
+<tr><td>Ritchey-Chrétien</td><td class="fm">k<sub>1</sub> = −1 − 2(1 + β)/(m²(m − β)) ;  k<sub>2</sub> = −[((m + 1)/(m − 1))² + 2m(m + 1)/((m − 1)³(m − β))]</td><td>β = b/f′<sub>1</sub>. Annule sphérique et coma (aplanétique). Exemple « Ritchey-Chrétien » (m = 2,67, β = 0,25 : k<sub>1</sub> = −1,145, k<sub>2</sub> = −6,59 ; l'exemple optimisé sur le champ en est proche).</td></tr>
+<tr><td>Lame de Schmidt</td><td class="fm">z(r) = (r⁴ − K r<sub>0</sub>² r²) / (4 (n − 1) R³)</td><td>Au centre de courbure du miroir de rayon R ; K = 1,5 minimise le chromatisme (zone neutre à 0,87 r<sub>0</sub>). Surface focale courbe de rayon R/2.</td></tr>
+</table>
+
+<h4>Réseaux et surfaces diffractives</h4>
+<table class="ht"><tr><th>Relation</th><th>Formule</th><th>Remarques</th></tr>
+<tr><td>Équation des réseaux</td><td class="fm">sin θ<sub>m</sub> = sin θ<sub>i</sub> + m λ / d</td><td>d : pas (1/traits par mm), m : ordre. Littrow : 2 d sin θ = m λ.</td></tr>
+<tr><td>Dispersion angulaire</td><td class="fm">dθ/dλ = m / (d cos θ<sub>m</sub>)</td><td>Dispersion linéaire au foyer d'un objectif f′ : f′ dθ/dλ.</td></tr>
+<tr><td>Pouvoir de résolution</td><td class="fm">λ/Δλ = m N<sub>traits éclairés</sub></td><td>—</td></tr>
+<tr><td>Surface diffractive (DOE)</td><td class="fm">ϕ(r) = Σ A<sub>i</sub> (r/R<sub>n</sub>)<sup>2i</sup> ;  φ<sub>DOE</sub> = −m λ A<sub>1</sub> / (π R<sub>n</sub>²)</td><td>Phase en radians (Zemax Binary 2). La puissance est proportionnelle à λ.</td></tr>
+<tr><td>« Constringence » d'un DOE</td><td class="fm">V<sub>DOE</sub> = λ<sub>d</sub>/(λ<sub>F</sub> − λ<sub>C</sub>) = −3,45</td><td>Négative : un DOE achromatise une lentille de même signe avec ≈ 5 % de la puissance totale (exemple « Singulet hybride »).</td></tr>
+</table>
+
+<h4>Faisceaux laser (gaussiens)</h4>
+<table class="ht"><tr><th>Relation</th><th>Formule</th><th>Remarques</th></tr>
+<tr><td>Rayon du faisceau</td><td class="fm">w(z) = w<sub>0</sub> √(1 + (z/z<sub>R</sub>)²),  z<sub>R</sub> = π w<sub>0</sub>² / (M² λ)</td><td>w : rayon à 1/e² en intensité ; z<sub>R</sub> : longueur de Rayleigh.</td></tr>
+<tr><td>Divergence</td><td class="fm">θ = M² λ / (π w<sub>0</sub>)</td><td>Demi-angle à 1/e².</td></tr>
+<tr><td>Focalisation</td><td class="fm">w′<sub>0</sub> ≈ M² λ f′ / (π w)</td><td>w : rayon du faisceau sur la lentille. Expanseur ×G : divergence ÷ G, tache focale ÷ G.</td></tr>
+<tr><td>Troncature</td><td>—</td><td>Ouverture ≥ 1,5 × diamètre 1/e² pour moins de 1 % de pertes (apodisation gaussienne : Données système → Pupille).</td></tr>
+</table>
+
+<h4>Radiométrie et traitements</h4>
+<table class="ht"><tr><th>Relation</th><th>Formule</th><th>Remarques</th></tr>
+<tr><td>Éclairement image (axe)</td><td class="fm">E = π L T sin²u′ ≈ π L T / (4 N<sub>w</sub>²)</td><td>L : luminance de l'objet, T : transmission. Ouvrir d'un diaphragme (N ÷ √2) double E.</td></tr>
+<tr><td>Loi en cos⁴</td><td class="fm">E(θ) ≈ E<sub>0</sub> cos⁴ θ</td><td>Sans vignetage ni distorsion ; l'analyse « Éclairement relatif » calcule la valeur réelle.</td></tr>
+<tr><td>Réflexion de Fresnel (incidence normale)</td><td class="fm">R = ((n − 1)/(n + 1))²</td><td>4 % par face pour n = 1,5 ; 9,6 % pour n = 1,9. Origine des images fantômes.</td></tr>
+<tr><td>Antireflet monocouche λ/4</td><td class="fm">R = ((n<sub>s</sub> − n<sub>c</sub>²)/(n<sub>s</sub> + n<sub>c</sub>²))²</td><td>MgF<sub>2</sub> (n<sub>c</sub> = 1,38) sur N-BK7 : 1,3 % ; nul si n<sub>c</sub> = √n<sub>s</sub>.</td></tr>
+<tr><td>Transmission interne</td><td class="fm">T = T<sub>ref</sub>^(e / e<sub>ref</sub>)</td><td>Loi de Beer : catalogues donnés pour 10 ou 25 mm.</td></tr>
+</table>
+
+<h4>Instruments visuels</h4>
+<table class="ht"><tr><th>Relation</th><th>Formule</th><th>Remarques</th></tr>
+<tr><td>Loupe, oculaire</td><td class="fm">G = 250 / f′</td><td>250 mm : distance minimale de vision distincte conventionnelle.</td></tr>
+<tr><td>Lunette, télescope</td><td class="fm">G = f′<sub>objectif</sub> / f′<sub>oculaire</sub> ;  pupille de sortie = D / G</td><td>Pupille de sortie 2 à 7 mm (œil) ; grossissement résolvant ≈ D (mm).</td></tr>
+<tr><td>Microscope (infini)</td><td class="fm">M = (f′<sub>tube</sub> / f′<sub>objectif</sub>) × (250 / f′<sub>oculaire</sub>)</td><td>f′<sub>tube</sub> = 200 mm (Nikon, Leica), 180 (Olympus), 165 (Zeiss) ; champ objet = indice de champ / grandissement de l'objectif.</td></tr>
+<tr><td>Résolution du microscope</td><td class="fm">d = 0,61 λ / ON</td><td>ON 0,25 à 0,55 µm : 1,3 µm.</td></tr>
+</table>
+
+<h4>Capteurs</h4>
+<table class="ht"><tr><th>Relation</th><th>Formule</th><th>Remarques</th></tr>
+<tr><td>Fréquence de Nyquist</td><td class="fm">ν<sub>N</sub> = 1 / (2 p)</td><td>p : pas des pixels. 3,45 µm → 145 cy/mm.</td></tr>
+<tr><td>Échantillonnage</td><td class="fm">Q = λ N<sub>w</sub> / p</td><td>Q = 2 : PSF échantillonnée à Nyquist ; Q &lt; 1 : capteur limitant ; Q &gt; 2 : optique limitante.</td></tr>
+<tr><td>FTM du pixel</td><td class="fm">FTM<sub>pix</sub>(ν) = |sinc(π p ν)|</td><td>Multiplie la FTM optique (analyse « Détecteur »). Vaut 0,64 à Nyquist.</td></tr>
+<tr><td>Champ couvert</td><td class="fm">θ = arctan(h / f′)</td><td>h : demi-diagonale du capteur ; capteur 24 × 36 : h = 21,6 mm.</td></tr>
+</table>` },
+
+  { id: 'glossaire', t: 'Glossaire', h: `
+<table class="ht"><tr><th>Terme</th><th>Définition</th></tr>
+<tr><td>Aberration</td><td>Écart entre l'image réelle et l'image idéale (paraxiale) : sphérique, coma, astigmatisme, courbure de champ, distorsion (Seidel), chromatisme axial et latéral.</td></tr>
+<tr><td>Achromat / apochromat</td><td>Système corrigé du chromatisme axial pour deux longueurs d'onde (F et C) / pour trois (g, F, C), avec un spectre secondaire réduit.</td></tr>
+<tr><td>Afocal</td><td>Système sans puissance (focale infinie) : un faisceau parallèle en sort parallèle (lunette de Galilée, expanseur de faisceau).</td></tr>
+<tr><td>Aplanétique</td><td>Corrigé de la sphérique et de la coma (Ritchey-Chrétien, condition des sinus respectée).</td></tr>
+<tr><td>BFL / tirage</td><td>Distance entre la dernière surface et le foyer (ou le plan image).</td></tr>
+<tr><td>Diaphragme d'ouverture</td><td>Surface qui limite le faisceau sur l'axe (STO). Ses images sont les pupilles d'entrée et de sortie.</td></tr>
+<tr><td>Diaphragme de champ</td><td>Surface qui limite l'étendue du champ (souvent au foyer d'un oculaire ou au capteur).</td></tr>
+<tr><td>EFL</td><td>Focale effective (distance du plan principal image au foyer image).</td></tr>
+<tr><td>EPD</td><td>Diamètre de la pupille d'entrée.</td></tr>
+<tr><td>F/#, N</td><td>Nombre d'ouverture f′/D ; F/# de travail : 1/(2 n′u′) aux conjugués utilisés.</td></tr>
+<tr><td>FTM (MTF)</td><td>Fonction de transfert de modulation : contraste transmis en fonction de la fréquence spatiale (cycles/mm), en tangentiel (T) et sagittal (S).</td></tr>
+<tr><td>Front d'onde, OPD</td><td>Différence de chemin optique entre un rayon et le rayon principal, sur la sphère de référence ; en ondes (λ). RMS et crête-à-crête (PV).</td></tr>
+<tr><td>Invariant de Lagrange</td><td>Produit hauteur × angle × indice conservé à travers le système ; fixe l'étendue.</td></tr>
+<tr><td>Méridien / sagittal</td><td>Plan contenant l'axe et le point de champ (tangentiel, Y) / plan perpendiculaire (X).</td></tr>
+<tr><td>ON (NA)</td><td>Ouverture numérique n sin u.</td></tr>
+<tr><td>Paraxial</td><td>Approximation des petits angles (sin u ≈ u) : premier ordre, sans aberrations.</td></tr>
+<tr><td>Petzval (surface de)</td><td>Surface image courbe naturelle d'un système sans astigmatisme ; sa courbure ne dépend que des puissances et des indices.</td></tr>
+<tr><td>PSF</td><td>Réponse impulsionnelle : image d'un point. Strehl : son maximum rapporté à celui d'un système parfait.</td></tr>
+<tr><td>Pupille d'entrée / de sortie</td><td>Images du diaphragme d'ouverture vues depuis l'objet / depuis l'image.</td></tr>
+<tr><td>Rayon marginal / principal</td><td>Rayon issu du point objet sur l'axe passant au bord du diaphragme / rayon issu du bord du champ passant au centre du diaphragme.</td></tr>
+<tr><td>Solve</td><td>Paramètre calculé automatiquement (ex. M : épaisseur qui place l'image au foyer paraxial).</td></tr>
+<tr><td>Spot (diagramme de)</td><td>Points d'impact des rayons sur l'image ; RMS (écart quadratique au barycentre) et GEO (rayon maximal).</td></tr>
+<tr><td>Télécentrique</td><td>Pupille (d'entrée ou de sortie) à l'infini : rayons principaux parallèles à l'axe, grandissement insensible à la mise au point.</td></tr>
+<tr><td>TTL / OAL</td><td>Longueur totale de la 1<sup>re</sup> surface à l'image / longueur de la 1<sup>re</sup> à la dernière surface (CODE V OAL).</td></tr>
+<tr><td>Vignetage</td><td>Réduction du faisceau hors axe par des ouvertures autres que le diaphragme (facteurs VUY, VLY, VUX, VLX).</td></tr>
+</table>` },
 
   { id: 'limites', t: 'Limites connues', h: `
 <ul><li>Tracé séquentiel uniquement (pas de lumière parasite ni de chemins multiples).</li>
