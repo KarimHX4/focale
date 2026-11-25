@@ -324,7 +324,8 @@ const IO = (() => {
     const body = [];
     body.push(`SO ${r(objInf ? 0 : S[0].r)} ${objInf ? '1e+18' : r(S[0].t)}${S[0].glass && !E.isAir(S[0].glass) ? ' ' + gl(S[0].glass) : ''}`);
     for (let i = 1; i < N; i++) {
-      const x = S[i]; body.push(`${x.stop ? 'STO' : 'S'} ${r(x.r)} ${r(x.tsolve === 'M' ? TS[i] : x.t)} ${gl(x.glass)}`.trim());
+      const x = S[i]; body.push(`S ${r(x.r)} ${r(x.tsolve === 'M' ? TS[i] : x.t)} ${gl(x.glass)}`.trim());
+      if (x.stop) body.push('  STO'); // qualificatif de la surface courante, comme les .seq écrits par CODE V (« STO r t » n'y crée pas de surface)
       if (x.tsolve === 'M' && i !== N - 1) W.push(`S${i} : solve de mise au point exporté comme épaisseur fixe`);
       if (x.comment) body.push(`  SLB "${String(x.comment).replace(/"/g, "'")}"`);
       const asp = E.ASPK.some(a => x[a]);

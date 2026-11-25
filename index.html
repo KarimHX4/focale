@@ -396,7 +396,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 <div class="toast" id="toast"></div>
 <input type="file" id="fileIn" accept=".json,.zmx,.seq,.txt,.agf" style="display:none">
 <div class="drop" id="drop">Déposez un fichier .zmx, .seq, .json ou .agf</div>
-<script>const FOCALE_VERSION = 'a9280324';</script>
+<script>const FOCALE_VERSION = 'dec0f174';</script>
 <script id="js-engine">
 'use strict';
 /* =====================================================================
@@ -4092,7 +4092,7 @@ La liste <b>Meilleures solutions</b> (12 solutions distinctes, avec leur mérite
 <table class="ht"><tr><th>Élément</th><th>Correspondance</th></tr>
 <tr><td>Système</td><td>TITLE, DIM / DDM (M, C, I → mm), EPD / FNO (→ F/# de travail paraxial) / NAO / NA (ON image), WL, REF, WTW, XAN/YAN, XOB/YOB, XIM/YIM, XRI/YRI (type de champ conservé), WTF, <b>VUY / VLY / VUX / VLX</b> (vignetage), <b>TEM / PRE</b> (température °C, pression en mmHg comme CODE V : 760 = 1 atm), PUI (apodisation gaussienne). Les listes acceptent aussi la forme indexée : <code>WTW W2 2</code>, <code>VUY F3 0.2</code>, <code>YAN F2 14</code>.</td></tr>
 <tr><td>Surfaces</td><td>SO, S, STO, SI, RDM/RDN, RDY/CUY/THI/GLA/GL1, K, <b>A…J</b> (A4 à A20), CIR (CIR EDG ignoré : bord mécanique), REFL et RMD REFL, PIM, XDE…CDE, DAR, BEN (REV → DAR), GRT/GRO/GRS/GRX/GRY (réseau), <b>SLB</b> (étiquette → commentaire), SPS XYP + SCO (polynôme XY, à vérifier), CCY/THC/KC/AC…DC 0 (variables), GLC 0 (verre fictif variable), TCE.</td></tr>
-<tr><td>Qualificatifs</td><td>Les commandes qui désignent une surface explicitement sont appliquées à cette surface : <code>THI S7 4</code>, <code>CIR S2 10</code>, <code>SLB S4 'L2'</code>, <code>STO S3</code>, <code>CCY S1 0</code>…</td></tr>
+<tr><td>Qualificatifs</td><td>Les commandes qui désignent une surface explicitement sont appliquées à cette surface : <code>THI S7 4</code>, <code>CIR S2 10</code>, <code>SLB S4 'L2'</code>, <code>STO S3</code>, <code>CCY S1 0</code>… À l'export, le diaphragme est écrit comme CODE V l'écrit lui-même : ligne <code>S rayon épaisseur verre</code> suivie du qualificatif <code>STO</code> (une ligne « STO rayon épaisseur » ne crée pas de surface dans CODE V 2024 : la surface serait perdue). À l'import, les deux formes sont acceptées.</td></tr>
 <tr><td>Ignorées sans remarque</td><td>UID, DER, DOR, GCH, GLB, CAT, INI, GO, CUM, THM, VIE, PLO, WRL, EVA… (identifiants, incréments de dérivée, préférences, affichage : sans effet sur l'optique).</td></tr>
 <tr><td>Défocalisation</td><td>L'épaisseur de la surface image (<code>SI 0 -0.025</code> ou <code>THI SI</code>) est la défocalisation de CODE V (réglée par exemple par la mise au point rapide) : elle est ajoutée à l'épaisseur avant l'image, avec une remarque.</td></tr>
 <tr><td>Zoom</td><td><b>ZOO</b> : nombre de positions (<code>ZOO 3</code>), paramètres zoomés (<code>ZOO THI S6 10 20 30</code>, <code>ZOO YAN F2 10 15 20</code>, <code>ZOO WL W1 486 550 656</code>…) et qualificatif de position (<code>THI S6 Z2 20</code>) → multi-configuration (épaisseur, rayon, conique, verre, demi-diamètre, décentrements, ouverture, champs, longueurs d'onde et poids, température, pression).</td></tr>
@@ -4465,7 +4465,8 @@ const IO = (() => {
     const body = [];
     body.push(`SO ${r(objInf ? 0 : S[0].r)} ${objInf ? '1e+18' : r(S[0].t)}${S[0].glass && !E.isAir(S[0].glass) ? ' ' + gl(S[0].glass) : ''}`);
     for (let i = 1; i < N; i++) {
-      const x = S[i]; body.push(`${x.stop ? 'STO' : 'S'} ${r(x.r)} ${r(x.tsolve === 'M' ? TS[i] : x.t)} ${gl(x.glass)}`.trim());
+      const x = S[i]; body.push(`S ${r(x.r)} ${r(x.tsolve === 'M' ? TS[i] : x.t)} ${gl(x.glass)}`.trim());
+      if (x.stop) body.push('  STO'); // qualificatif de la surface courante, comme les .seq écrits par CODE V (« STO r t » n'y crée pas de surface)
       if (x.tsolve === 'M' && i !== N - 1) W.push(`S${i} : solve de mise au point exporté comme épaisseur fixe`);
       if (x.comment) body.push(`  SLB "${String(x.comment).replace(/"/g, "'")}"`);
       const asp = E.ASPK.some(a => x[a]);
