@@ -344,7 +344,7 @@ function lde(act) {
 /* ---------------- Panneau système ---------------- */
 const AIMOPTS = [['none', 'Pupille paraxiale'], ['chief', 'Rayon principal au diaphragme (CODE V)'], ['full', 'Réelle : tous les rayons (ray aiming)']];
 function setAim(v) { commit(s => { s.rayAiming = v === 'full'; if (v === 'chief') s.aimMode = 'chief'; else delete s.aimMode; }); }
-const APTYPES = [['EPD', 'Diamètre pupille d\'entrée (mm)'], ['FNO', 'F/# image (EFL / EPD)'], ['NA', 'Ouverture numérique objet'], ['NAI', 'Ouverture numérique image'], ['STOP', 'Demi-diamètre du diaphragme (mm)']];
+const APTYPES = [['EPD', 'Diamètre pupille d\'entrée (mm)'], ['FNO', 'F/# image (EFL / EPD)'], ['WFNO', 'F/# de travail paraxial (FNO de CODE V)'], ['NA', 'Ouverture numérique objet'], ['NAI', 'Ouverture numérique image'], ['STOP', 'Demi-diamètre du diaphragme (mm)']];
 /** change le type de champ ; convert : recalcule les valeurs pour garder les mêmes points de champ (CODE V « Convert Fields ») */
 function setFieldType(to, convert) {
   const s = App.sys, from = ftypeOf(s); if (to === from) return;
@@ -393,6 +393,7 @@ function renderSide() {
       <span>Distance image parax.</span><span>${fx(p.imgDist, 4)}</span>
       <span>F/# (EFL/EPD)</span><span>${fx(p.fno, 3)}</span>
       <span>F/# de travail</span><span>${fx(p.wfno, 3)}</span>
+      ${objInf ? '' : `<span>F/# à l'infini (EFL/EPD)</span><span>${fx(p.fno, 3)}</span>`}
       <span>ON image</span><span>${fx(p.imgSpaceNA, 4)}</span>
       ${objInf ? '' : `<span>ON objet</span><span>${fx(p.objNA, 4)}</span><span>Grandissement</span><span>${fx(p.mag, 4)}</span>`}
       <span>Diam. pupille entrée</span><span>${fx(p.epd, 3)}</span>
@@ -404,7 +405,7 @@ function renderSide() {
       <span>Longueur totale</span><span>${fx(p.ttl, 3)}</span>
       <span>Invariant de Lagrange</span><span>${fx(p.H, 5)}</span>
       <span>λ primaire</span><span>${fx(M.wls[M.pw] * 1000, 2)} nm</span></div>
-      <div class="hint" style="margin-top:6px">Positions relatives : PE / 1ʳᵉ surface, PS / plan image.</div>`);
+      <div class="hint" style="margin-top:6px">Positions relatives : PE / 1ʳᵉ surface, PS / plan image. Hauteur image et grandissement au plan image paraxial (comme CODE V).</div>`);
   }
   $('#side').innerHTML = h;
   if (keep) { const e = $('#side ' + keep); if (e) e.focus(); }
@@ -2095,7 +2096,7 @@ const SDTAB = {
       <div class="row" style="gap:6px"><button class="bt" data-sda="setvig" title="CODE V SET VIGNETTING : rayons limites qui passent juste les ouvertures fixées (🔒)">Calculer le vignetage (SET VIG)</button><button class="bt" data-sda="clrvig" ${vig ? '' : 'disabled'}>Effacer le vignetage</button>
         <span class="hint">${nFix ? `${nFix} ouverture(s) fixée(s) 🔒` : 'Aucune ouverture fixée : verrouillez des demi-diamètres (🔒) dans l\'éditeur'}</span></div>
       <div class="hint" style="margin-top:6px">Convention CODE V : la pupille non vignettée va de −1 + VLY à 1 − VUY en Y (de −1 + VLX à 1 − VUX en X). Les coordonnées pupillaires relatives (ray fans, spots, optimisation) et les demi-diamètres automatiques suivent ce faisceau vignetté ; les calculs de diffraction (front d'onde, PSF, FTM) découpent la pupille réelle par cette ellipse. Valeurs négatives : pupille agrandie.</div>
-      <div class="hint">Hauteur image paraxiale (YIM) : y = f·tan θ (objet à l'infini) ou grandissement × hauteur objet ; hauteur image réelle (YRI) : point d'impact du rayon principal réel, recherché par itération. Les angles en conjugué fini sont mesurés depuis la pupille d'entrée.</div>`;
+      <div class="hint">Hauteur image paraxiale (YIM) : y = f·tan θ (objet à l'infini) ou grandissement × hauteur objet ; hauteur image réelle (YRI) : point d'impact du rayon principal réel, recherché par itération. En conjugué fini, l'angle est celui du rayon principal réel (visé au centre du diaphragme), comme dans CODE V.</div>`;
     return h;
   },
   env() {

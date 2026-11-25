@@ -91,16 +91,28 @@ const OE = (() => {
    * la dispersion dans le bleu et le violet suit celle des verres réels.
    */
   const MODC = new Map();
+  /* Verre fictif nd/νd : modèle « ligne normale » de CODE V — la forme normalisée (n(λ) − nd)/(nF − nC) est linéaire en νd
+     (toutes les dispersions partielles sur une droite normale), écrite en coordonnée chromatique de Buchdahl ω (3 termes).
+     Coefficients κk = p + q·νd étalonnés sur les indices CODE V (validation DigCamera, 656/589/430 nm, écart < 1 ppm).
+     ΔPgF ajoute la déformation de la loi de Cauchy (nd et nF − nC conservés). */
+  const MODP = [-4.88928951, 3.48615848, 1.28012392], MODQ = [-0.00491961, -0.0658905, -0.01222097];
+  const bOm = l => { const d = l - 0.5875618; return d / (1 + 2.5 * d); };
   function modelN(nd, vd, dP, l) {
     const key = nd + '|' + vd + '|' + dP; let c = MODC.get(key);
     if (!c) {
-      const xd = 1 / 0.5875618 ** 2, xF = 1 / 0.4861327 ** 2, xC = 1 / 0.6562725 ** 2, xg = 1 / 0.4358343 ** 2;
-      const D = vd > 0 ? (nd - 1) / vd : 0, P = 0.6438 - 0.001682 * vd + dP;
-      const a11 = xF - xC, a12 = xF * xF - xC * xC, a21 = xg - xF, a22 = xg * xg - xF * xF, det = a11 * a22 - a12 * a21;
-      const B = (D * a22 - P * D * a12) / det, C = (a11 * P * D - a21 * D) / det;
-      c = [nd - B * xd - C * xd * xd, B, C]; if (MODC.size > 500) MODC.clear(); MODC.set(key, c);
+      const D = vd > 0 ? (nd - 1) / vd : 0, k = MODP.map((p, i) => p + MODQ[i] * vd);
+      const oF = bOm(0.4861327), oC = bOm(0.6562725), S = k.reduce((a, x, i) => a + x * (oF ** (i + 1) - oC ** (i + 1)), 0);
+      let cd = [0, 0];
+      if (dP) {
+        const xd = 1 / 0.5875618 ** 2, xF = 1 / 0.4861327 ** 2, xC = 1 / 0.6562725 ** 2, xg = 1 / 0.4358343 ** 2;
+        const a11 = xF - xC, a12 = xF * xF - xC * xC, a21 = xg - xF, a22 = xg * xg - xF * xF, det = a11 * a22 - a12 * a21;
+        cd = [-dP * D * a12 / det, a11 * dP * D / det]; cd.push(xd);
+      }
+      c = { D, k: k.map(x => x / S), cd }; if (MODC.size > 500) MODC.clear(); MODC.set(key, c);
     }
-    const x = 1 / (l * l); return c[0] + c[1] * x + c[2] * x * x;
+    const w = bOm(l); let n = nd + c.D * (c.k[0] * w + c.k[1] * w * w + c.k[2] * w * w * w);
+    if (dP) { const x = 1 / (l * l), xd = c.cd[2]; n += c.cd[0] * (x - xd) + c.cd[1] * (x * x - xd * xd); }
+    return n;
   }
   function recInfo(r) {
     if (!r.ndv) { const nd = dispN(r, 0.5875618), nF = dispN(r, 0.4861327), nC = dispN(r, 0.6562725); r.ndv = { nd, vd: (nd - 1) / (nF - nC) }; }
@@ -349,9 +361,10 @@ const OE = (() => {
       const um = Math.asin(Math.min(0.9999, ap.value / Math.abs(n[0])));
       epd = 2 * Math.tan(um) * Math.abs(zE + t0);
     }
-    if (ap.type === 'NAI' || ap.type === 'STOP') { // ON image, ou ouverture fixée par le demi-diamètre du diaphragme
+    if (ap.type === 'NAI' || ap.type === 'STOP' || ap.type === 'WFNO') { // ON image, F/# de travail paraxial (CODE V FNO), ou demi-diamètre du diaphragme
       let m1; if (objInf) m1 = ptrace(S, n, 0.5, 0); else { const u0 = 0.5 / (zE + t0); m1 = ptrace(S, n, u0 * t0, u0); }
-      if (ap.type === 'NAI') { const nI = Math.abs(n[N - 1]), uM1 = m1.nu[N - 1] / nI; epd = Math.abs(uM1) > 1e-15 ? Math.tan(Math.asin(Math.min(0.9999, ap.value / nI))) / Math.abs(uM1) : 1; }
+      if (ap.type === 'WFNO') { const w1 = Math.abs(m1.nu[N - 1]); epd = w1 > 1e-15 && ap.value > 0 ? 1 / (2 * w1 * ap.value) : 1; }
+      else if (ap.type === 'NAI') { const nI = Math.abs(n[N - 1]), uM1 = m1.nu[N - 1] / nI; epd = Math.abs(uM1) > 1e-15 ? Math.tan(Math.asin(Math.min(0.9999, ap.value / nI))) / Math.abs(uM1) : 1; }
       else { const y1 = Math.abs(m1.y[stopIdx]); epd = y1 > 1e-15 ? ap.value / y1 : 1; }
     }
     let mar;
@@ -372,13 +385,15 @@ const OE = (() => {
     const xpD = isFinite(xpZ) ? 2 * Math.abs(mar.y[N] + uM * xpZ) : Infinity;
     const H = chf.nu[0] * mar.y[1] - mar.nu[0] * chf.y[1];
     let ttl = 0; for (let j = 1; j < N; j++) ttl += S[j].t;
+    // hauteur image et grandissement paraxiaux au plan image paraxial (CODE V « PARAXIAL IMAGE HT », Zemax PIMH)
+    const atP = r => { const u = r.nu[N - 1] / nI; return isFinite(imgDist) ? r.y[N - 1] + u * imgDist : r.y[N]; };
     // pupille de sortie relative au dernier dioptre
     return {
       efl, epd, zE, stopR: Math.abs(mar.y[stopIdx]), mar, chf, unit, imgDist,
       bfl: (() => { const k = ra.nu[N - 1] / nI; return Math.abs(k) > 1e-15 ? -ra.y[N - 1] / k : Infinity; })(),
       wfno: 1 / (2 * Math.abs(mar.nu[N - 1])), fno: Math.abs(efl) / epd,
-      xpZ, xpD, H, ttl, imgH: chf.y[N], unitImgH: unit.y[N],
-      mag: objInf ? 0 : chiefFor(1).y[N],
+      xpZ, xpD, H, ttl, imgH: atP(chf), imgHs: chf.y[N], unitImgH: unit.y[N],
+      mag: objInf ? 0 : atP(chiefFor(1)),
       objNA: objInf ? 0 : Math.abs(n[0]) * Math.sin(Math.atan(Math.abs(mar.nu[0] / n[0]))),
       fmax: fm, imgSpaceNA: Math.abs(Math.sin(Math.atan(uM))) * Math.abs(nI),
     };
@@ -442,6 +457,30 @@ const OE = (() => {
     });
     M.aimCache.clear();
     if (bad.length) M.warnings.push(`Hauteur image réelle non atteinte pour le(s) champ(s) ${bad.join(', ')} : valeur paraxiale utilisée`);
+    M.par = paraxial(M.sys, M.nW[M.pw], M.stopIdx, M.objInf); M.epr = M.par.epd / 2;
+  }
+  /** champs angulaires avec objet à distance finie : hauteur objet telle que le rayon principal RÉEL (visé au centre du
+      diaphragme) fasse l'angle demandé dans l'espace objet (convention CODE V ; la conversion paraxiale passe par la pupille d'entrée paraxiale) */
+  function realAngleFields(M) {
+    const bad = [], ctx = M.ctxs[M.pw];
+    M.sys.fields.forEach((f, i) => {
+      const tx = Math.tan((M.ufields[i].x || 0) * DEG), ty = Math.tan((M.ufields[i].y || 0) * DEG);
+      if (!tx && !ty) return;
+      const dir = g => { const a = chiefAim(M, ctx, g), st = startAt(M, ctx, g, a[0], a[1]); return Math.abs(st.d[2]) > 1e-12 ? [st.d[0] / st.d[2], st.d[1] / st.d[2]] : null; };
+      let g = { ...f }, ok = true;
+      for (let it = 0; it < 30; it++) {
+        const e0 = dir(g); if (!e0) { ok = false; break; }
+        const ex = e0[0] - tx, ey = e0[1] - ty; if (Math.hypot(ex, ey) < 1e-13) break;
+        const h = 1e-6 * Math.max(1, Math.hypot(g.x, g.y));
+        const py = dir({ ...g, y: g.y + h }), px = dir({ ...g, x: g.x + h }); if (!py || !px) { ok = false; break; }
+        const j11 = (px[0] - e0[0]) / h, j21 = (px[1] - e0[1]) / h, j12 = (py[0] - e0[0]) / h, j22 = (py[1] - e0[1]) / h, det = j11 * j22 - j12 * j21;
+        if (!(Math.abs(det) > 1e-30)) { ok = false; break; }
+        g = { ...g, x: g.x - (j22 * ex - j12 * ey) / det, y: g.y - (-j21 * ex + j11 * ey) / det };
+      }
+      if (ok && isFinite(g.x) && isFinite(g.y)) { f.x = g.x; f.y = g.y; } else bad.push(i + 1);
+    });
+    M.aimCache.clear();
+    if (bad.length) M.warnings.push(`Angle réel du rayon principal non atteint pour le(s) champ(s) ${bad.join(', ')} : conversion paraxiale utilisée`);
     M.par = paraxial(M.sys, M.nW[M.pw], M.stopIdx, M.objInf); M.epr = M.par.epd / 2;
   }
   /** facteurs de vignetage CODE V (VUY, VLY, VUX, VLX) → ellipse { cx, cy, hx, hy } dans la pupille d'entrée normalisée */
@@ -517,6 +556,7 @@ const OE = (() => {
       t0: objInf ? 0 : S[0].t, obs: Math.max(0, Math.min(0.95, +sys.aperture.obscuration || 0)), env: E, ftype, ufields };
     M.epr = par.epd / 2;
     if (ftype === 'rim') realImageFields(M);
+    else if (ftype === 'ang' && !objInf && sys.realAng !== false) realAngleFields(M);
     computeSD(M);
     M.warnings = [...new Set(warnings)];
     return M;
@@ -739,7 +779,7 @@ const OE = (() => {
   /** rayon réel pour un champ {x, y} et une pupille normalisée (px, py) */
   function ray(M, wi, f, px, py, opts) {
     if (typeof f === 'number') f = { x: 0, y: f };
-    const v = opts && opts.noVig ? null : vigMap(f);
+    const v = (opts && opts.noVig) || (px === 0 && py === 0) ? null : vigMap(f); // le rayon principal passe toujours au centre du diaphragme (CODE V)
     if (v) {
       if (opts && opts.vigClip) { if (((px - v.cx) / v.hx) ** 2 + ((py - v.cy) / v.hy) ** 2 > 1 + 1e-9) return { vig: 1, why: 'vigf' }; }
       else { px = v.cx + v.hx * px; py = v.cy + v.hy * py; }

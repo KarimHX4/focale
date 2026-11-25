@@ -396,7 +396,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 <div class="toast" id="toast"></div>
 <input type="file" id="fileIn" accept=".json,.zmx,.seq,.txt,.agf" style="display:none">
 <div class="drop" id="drop">Déposez un fichier .zmx, .seq, .json ou .agf</div>
-<script>const FOCALE_VERSION = '1b1e4ce0';</script>
+<script>const FOCALE_VERSION = 'a9280324';</script>
 <script id="js-engine">
 'use strict';
 /* =====================================================================
@@ -491,16 +491,28 @@ const OE = (() => {
    * la dispersion dans le bleu et le violet suit celle des verres réels.
    */
   const MODC = new Map();
+  /* Verre fictif nd/νd : modèle « ligne normale » de CODE V — la forme normalisée (n(λ) − nd)/(nF − nC) est linéaire en νd
+     (toutes les dispersions partielles sur une droite normale), écrite en coordonnée chromatique de Buchdahl ω (3 termes).
+     Coefficients κk = p + q·νd étalonnés sur les indices CODE V (validation DigCamera, 656/589/430 nm, écart < 1 ppm).
+     ΔPgF ajoute la déformation de la loi de Cauchy (nd et nF − nC conservés). */
+  const MODP = [-4.88928951, 3.48615848, 1.28012392], MODQ = [-0.00491961, -0.0658905, -0.01222097];
+  const bOm = l => { const d = l - 0.5875618; return d / (1 + 2.5 * d); };
   function modelN(nd, vd, dP, l) {
     const key = nd + '|' + vd + '|' + dP; let c = MODC.get(key);
     if (!c) {
-      const xd = 1 / 0.5875618 ** 2, xF = 1 / 0.4861327 ** 2, xC = 1 / 0.6562725 ** 2, xg = 1 / 0.4358343 ** 2;
-      const D = vd > 0 ? (nd - 1) / vd : 0, P = 0.6438 - 0.001682 * vd + dP;
-      const a11 = xF - xC, a12 = xF * xF - xC * xC, a21 = xg - xF, a22 = xg * xg - xF * xF, det = a11 * a22 - a12 * a21;
-      const B = (D * a22 - P * D * a12) / det, C = (a11 * P * D - a21 * D) / det;
-      c = [nd - B * xd - C * xd * xd, B, C]; if (MODC.size > 500) MODC.clear(); MODC.set(key, c);
+      const D = vd > 0 ? (nd - 1) / vd : 0, k = MODP.map((p, i) => p + MODQ[i] * vd);
+      const oF = bOm(0.4861327), oC = bOm(0.6562725), S = k.reduce((a, x, i) => a + x * (oF ** (i + 1) - oC ** (i + 1)), 0);
+      let cd = [0, 0];
+      if (dP) {
+        const xd = 1 / 0.5875618 ** 2, xF = 1 / 0.4861327 ** 2, xC = 1 / 0.6562725 ** 2, xg = 1 / 0.4358343 ** 2;
+        const a11 = xF - xC, a12 = xF * xF - xC * xC, a21 = xg - xF, a22 = xg * xg - xF * xF, det = a11 * a22 - a12 * a21;
+        cd = [-dP * D * a12 / det, a11 * dP * D / det]; cd.push(xd);
+      }
+      c = { D, k: k.map(x => x / S), cd }; if (MODC.size > 500) MODC.clear(); MODC.set(key, c);
     }
-    const x = 1 / (l * l); return c[0] + c[1] * x + c[2] * x * x;
+    const w = bOm(l); let n = nd + c.D * (c.k[0] * w + c.k[1] * w * w + c.k[2] * w * w * w);
+    if (dP) { const x = 1 / (l * l), xd = c.cd[2]; n += c.cd[0] * (x - xd) + c.cd[1] * (x * x - xd * xd); }
+    return n;
   }
   function recInfo(r) {
     if (!r.ndv) { const nd = dispN(r, 0.5875618), nF = dispN(r, 0.4861327), nC = dispN(r, 0.6562725); r.ndv = { nd, vd: (nd - 1) / (nF - nC) }; }
@@ -749,9 +761,10 @@ const OE = (() => {
       const um = Math.asin(Math.min(0.9999, ap.value / Math.abs(n[0])));
       epd = 2 * Math.tan(um) * Math.abs(zE + t0);
     }
-    if (ap.type === 'NAI' || ap.type === 'STOP') { // ON image, ou ouverture fixée par le demi-diamètre du diaphragme
+    if (ap.type === 'NAI' || ap.type === 'STOP' || ap.type === 'WFNO') { // ON image, F/# de travail paraxial (CODE V FNO), ou demi-diamètre du diaphragme
       let m1; if (objInf) m1 = ptrace(S, n, 0.5, 0); else { const u0 = 0.5 / (zE + t0); m1 = ptrace(S, n, u0 * t0, u0); }
-      if (ap.type === 'NAI') { const nI = Math.abs(n[N - 1]), uM1 = m1.nu[N - 1] / nI; epd = Math.abs(uM1) > 1e-15 ? Math.tan(Math.asin(Math.min(0.9999, ap.value / nI))) / Math.abs(uM1) : 1; }
+      if (ap.type === 'WFNO') { const w1 = Math.abs(m1.nu[N - 1]); epd = w1 > 1e-15 && ap.value > 0 ? 1 / (2 * w1 * ap.value) : 1; }
+      else if (ap.type === 'NAI') { const nI = Math.abs(n[N - 1]), uM1 = m1.nu[N - 1] / nI; epd = Math.abs(uM1) > 1e-15 ? Math.tan(Math.asin(Math.min(0.9999, ap.value / nI))) / Math.abs(uM1) : 1; }
       else { const y1 = Math.abs(m1.y[stopIdx]); epd = y1 > 1e-15 ? ap.value / y1 : 1; }
     }
     let mar;
@@ -772,13 +785,15 @@ const OE = (() => {
     const xpD = isFinite(xpZ) ? 2 * Math.abs(mar.y[N] + uM * xpZ) : Infinity;
     const H = chf.nu[0] * mar.y[1] - mar.nu[0] * chf.y[1];
     let ttl = 0; for (let j = 1; j < N; j++) ttl += S[j].t;
+    // hauteur image et grandissement paraxiaux au plan image paraxial (CODE V « PARAXIAL IMAGE HT », Zemax PIMH)
+    const atP = r => { const u = r.nu[N - 1] / nI; return isFinite(imgDist) ? r.y[N - 1] + u * imgDist : r.y[N]; };
     // pupille de sortie relative au dernier dioptre
     return {
       efl, epd, zE, stopR: Math.abs(mar.y[stopIdx]), mar, chf, unit, imgDist,
       bfl: (() => { const k = ra.nu[N - 1] / nI; return Math.abs(k) > 1e-15 ? -ra.y[N - 1] / k : Infinity; })(),
       wfno: 1 / (2 * Math.abs(mar.nu[N - 1])), fno: Math.abs(efl) / epd,
-      xpZ, xpD, H, ttl, imgH: chf.y[N], unitImgH: unit.y[N],
-      mag: objInf ? 0 : chiefFor(1).y[N],
+      xpZ, xpD, H, ttl, imgH: atP(chf), imgHs: chf.y[N], unitImgH: unit.y[N],
+      mag: objInf ? 0 : atP(chiefFor(1)),
       objNA: objInf ? 0 : Math.abs(n[0]) * Math.sin(Math.atan(Math.abs(mar.nu[0] / n[0]))),
       fmax: fm, imgSpaceNA: Math.abs(Math.sin(Math.atan(uM))) * Math.abs(nI),
     };
@@ -842,6 +857,30 @@ const OE = (() => {
     });
     M.aimCache.clear();
     if (bad.length) M.warnings.push(`Hauteur image réelle non atteinte pour le(s) champ(s) ${bad.join(', ')} : valeur paraxiale utilisée`);
+    M.par = paraxial(M.sys, M.nW[M.pw], M.stopIdx, M.objInf); M.epr = M.par.epd / 2;
+  }
+  /** champs angulaires avec objet à distance finie : hauteur objet telle que le rayon principal RÉEL (visé au centre du
+      diaphragme) fasse l'angle demandé dans l'espace objet (convention CODE V ; la conversion paraxiale passe par la pupille d'entrée paraxiale) */
+  function realAngleFields(M) {
+    const bad = [], ctx = M.ctxs[M.pw];
+    M.sys.fields.forEach((f, i) => {
+      const tx = Math.tan((M.ufields[i].x || 0) * DEG), ty = Math.tan((M.ufields[i].y || 0) * DEG);
+      if (!tx && !ty) return;
+      const dir = g => { const a = chiefAim(M, ctx, g), st = startAt(M, ctx, g, a[0], a[1]); return Math.abs(st.d[2]) > 1e-12 ? [st.d[0] / st.d[2], st.d[1] / st.d[2]] : null; };
+      let g = { ...f }, ok = true;
+      for (let it = 0; it < 30; it++) {
+        const e0 = dir(g); if (!e0) { ok = false; break; }
+        const ex = e0[0] - tx, ey = e0[1] - ty; if (Math.hypot(ex, ey) < 1e-13) break;
+        const h = 1e-6 * Math.max(1, Math.hypot(g.x, g.y));
+        const py = dir({ ...g, y: g.y + h }), px = dir({ ...g, x: g.x + h }); if (!py || !px) { ok = false; break; }
+        const j11 = (px[0] - e0[0]) / h, j21 = (px[1] - e0[1]) / h, j12 = (py[0] - e0[0]) / h, j22 = (py[1] - e0[1]) / h, det = j11 * j22 - j12 * j21;
+        if (!(Math.abs(det) > 1e-30)) { ok = false; break; }
+        g = { ...g, x: g.x - (j22 * ex - j12 * ey) / det, y: g.y - (-j21 * ex + j11 * ey) / det };
+      }
+      if (ok && isFinite(g.x) && isFinite(g.y)) { f.x = g.x; f.y = g.y; } else bad.push(i + 1);
+    });
+    M.aimCache.clear();
+    if (bad.length) M.warnings.push(`Angle réel du rayon principal non atteint pour le(s) champ(s) ${bad.join(', ')} : conversion paraxiale utilisée`);
     M.par = paraxial(M.sys, M.nW[M.pw], M.stopIdx, M.objInf); M.epr = M.par.epd / 2;
   }
   /** facteurs de vignetage CODE V (VUY, VLY, VUX, VLX) → ellipse { cx, cy, hx, hy } dans la pupille d'entrée normalisée */
@@ -917,6 +956,7 @@ const OE = (() => {
       t0: objInf ? 0 : S[0].t, obs: Math.max(0, Math.min(0.95, +sys.aperture.obscuration || 0)), env: E, ftype, ufields };
     M.epr = par.epd / 2;
     if (ftype === 'rim') realImageFields(M);
+    else if (ftype === 'ang' && !objInf && sys.realAng !== false) realAngleFields(M);
     computeSD(M);
     M.warnings = [...new Set(warnings)];
     return M;
@@ -1139,7 +1179,7 @@ const OE = (() => {
   /** rayon réel pour un champ {x, y} et une pupille normalisée (px, py) */
   function ray(M, wi, f, px, py, opts) {
     if (typeof f === 'number') f = { x: 0, y: f };
-    const v = opts && opts.noVig ? null : vigMap(f);
+    const v = (opts && opts.noVig) || (px === 0 && py === 0) ? null : vigMap(f); // le rayon principal passe toujours au centre du diaphragme (CODE V)
     if (v) {
       if (opts && opts.vigClip) { if (((px - v.cx) / v.hx) ** 2 + ((py - v.cy) / v.hy) ** 2 > 1 + 1e-9) return { vig: 1, why: 'vigf' }; }
       else { px = v.cx + v.hx * px; py = v.cy + v.hy * py; }
@@ -3792,12 +3832,12 @@ const HELP = [
 
   { id: 'systeme', t: 'Ouverture, champs, longueurs d\'onde', h: `
 <p>Ces réglages sont aussi regroupés, avec le vignetage, l'environnement et les matériaux, dans la fenêtre <b>Données système</b> (voir cette rubrique).</p>
-<h4>Ouverture</h4><ul><li><b>Diamètre de la pupille d'entrée</b> (EPD), <b>F/# image</b>, <b>ouverture numérique objet</b> (objet à distance finie seulement), <b>ouverture numérique image</b> (CODE V NA) ou <b>demi-diamètre du diaphragme</b> (l'ouverture est fixée par le diaphragme, Zemax « Float by stop size »). Le F/# image suit la convention Zemax « Image Space F/# » : EPD = EFL / F#, y compris en conjugué fini (le F/# de travail réel est affiché dans les données paraxiales).</li>
+<h4>Ouverture</h4><ul><li><b>Diamètre de la pupille d'entrée</b> (EPD), <b>F/# image</b>, <b>ouverture numérique objet</b> (objet à distance finie seulement), <b>ouverture numérique image</b> (CODE V NA) ou <b>demi-diamètre du diaphragme</b> (l'ouverture est fixée par le diaphragme, Zemax « Float by stop size »). Le <b>F/# image</b> suit la convention Zemax « Image Space F/# » : EPD = EFL / F#, y compris en conjugué fini. Le <b>F/# de travail paraxial</b> est le FNO de CODE V : 1/(2 n′u′) du rayon marginal paraxial aux conjugués utilisés (les deux coïncident pour un objet à l'infini) ; c'est le type choisi à l'import d'un fichier CODE V.</li>
 <li><b>Obstruction centrale</b> : fraction du rayon de pupille masquée (télescopes à miroir secondaire).</li>
 <li><b>Visée des rayons</b> : <i>pupille paraxiale</i> (rayons visés sur la pupille d'entrée paraxiale) ; <i>rayon principal au diaphragme</i> (le rayon principal de chaque champ est itéré pour passer au centre du diaphragme et la pupille paraxiale est translatée d'autant : comportement par défaut de CODE V, activé à l'import d'un .seq) ; <i>réelle</i> (chaque rayon est itéré pour remplir exactement le diaphragme : grands champs, pupilles très aberrantes).</li></ul>
-<h4>Champs</h4><p>Quatre <b>types de champ</b>, comme dans CODE V : <b>angle objet</b> (YAN, en °, direction ∝ (tan X, tan Y, 1) ; en conjugué fini l'angle est mesuré depuis la pupille d'entrée), <b>hauteur objet</b> (YOB, mm, objet à distance finie), <b>hauteur image paraxiale</b> (YIM, mm) et <b>hauteur image réelle</b> (YRI, mm : le point de champ est ajusté pour que le rayon principal réel arrive à cette hauteur — idéal pour couvrir exactement un capteur malgré la distorsion). Changer le type dans la liste <b>convertit</b> les valeurs pour garder les mêmes points de champ. Sans type choisi : angles pour un objet à l'infini, hauteurs objet sinon. Le poids sert à l'optimisation et au tolérancement. Le bouton <b>Vignetage</b> ouvre l'onglet Champs des Données système (facteurs VUY, VLY, VUX, VLX, génération de champs). Le <b>carré de couleur</b> devant chaque champ ouvre un sélecteur : palette, couleur libre (« Autre ») ou code hexadécimal, aperçu avant / après ; la couleur n'est appliquée qu'avec <b>OK</b> (ou Entrée, ou double-clic sur une pastille) ; <b>Annuler</b> (ou Échap, ou clic à côté) l'abandonne, <b>Par défaut</b> revient à la couleur automatique. Elle est utilisée dans le layout, les spots, la FTM, le footprint… et enregistrée avec le système.</p>
+<h4>Champs</h4><p>Quatre <b>types de champ</b>, comme dans CODE V : <b>angle objet</b> (YAN, en °, direction ∝ (tan X, tan Y, 1) ; en conjugué fini c'est l'angle du rayon principal <b>réel</b> visé au centre du diaphragme : la hauteur objet équivalente est itérée, comme dans CODE V), <b>hauteur objet</b> (YOB, mm, objet à distance finie), <b>hauteur image paraxiale</b> (YIM, mm) et <b>hauteur image réelle</b> (YRI, mm : le point de champ est ajusté pour que le rayon principal réel arrive à cette hauteur — idéal pour couvrir exactement un capteur malgré la distorsion). Changer le type dans la liste <b>convertit</b> les valeurs pour garder les mêmes points de champ. Sans type choisi : angles pour un objet à l'infini, hauteurs objet sinon. Le poids sert à l'optimisation et au tolérancement. Le bouton <b>Vignetage</b> ouvre l'onglet Champs des Données système (facteurs VUY, VLY, VUX, VLX, génération de champs). Le <b>carré de couleur</b> devant chaque champ ouvre un sélecteur : palette, couleur libre (« Autre ») ou code hexadécimal, aperçu avant / après ; la couleur n'est appliquée qu'avec <b>OK</b> (ou Entrée, ou double-clic sur une pastille) ; <b>Annuler</b> (ou Échap, ou clic à côté) l'abandonne, <b>Par défaut</b> revient à la couleur automatique. Elle est utilisée dans le layout, les spots, la FTM, le footprint… et enregistrée avec le système.</p>
 <h4>Longueurs d'onde</h4><p>En µm, avec poids et longueur d'onde <b>primaire</b> (pupilles, fronts d'onde par défaut, solves). Préréglages F-d-C, visible, 632,8 nm, NIR. Par défaut chaque λ prend sa couleur spectrale ; cliquez sur son carré de couleur pour en choisir une autre, validée par <b>OK</b> (utile en infrarouge ou pour distinguer des λ proches).</p>
-<h4>Données paraxiales</h4><p>Focale effective, tirage, F/#, ouvertures numériques, positions et diamètres des pupilles, grandissement, invariant de Lagrange.</p>` },
+<h4>Données paraxiales</h4><p>Focale effective, tirage, F/# de travail (et F/# à l'infini EFL/EPD en conjugué fini), ouvertures numériques, positions et diamètres des pupilles, grandissement, invariant de Lagrange. La hauteur image et le grandissement sont donnés au <b>plan image paraxial</b>, comme le FIR de CODE V (« PARAXIAL IMAGE HT ») et l'opérande PIMH de Zemax, même si la surface image est défocalisée. Ces valeurs sont validées contre CODE V (voir <i>Validation</i>).</p>` },
 
   { id: 'donnees', t: 'Données système (CODE V)', h: `
 <p>Bouton <b>Système</b> de la barre du haut, <b>⚙ Données système</b> du panneau de gauche ou <b>Ctrl+Maj+D</b> : une fenêtre organisée comme le « System Data » de CODE V, avec un onglet par catégorie à gauche. Toutes les modifications s'annulent avec Ctrl+Z.</p>
@@ -3808,7 +3848,7 @@ const HELP = [
 <tr><td>Température et pression</td><td>Température du système (°C), pression (atm), température de la prescription, dilatation on/off, matériau du barillet (aluminium, inox, titane, invar, plastiques… ou CTE saisi), CTE de chaque entretoise ; effet sur la focale et la mise au point ; bouton « Analyse thermique dans un panneau ».</td></tr>
 <tr><td>Matériaux (dn/dT, CTE)</td><td>Pour chaque verre du système : coefficients de Schott D0, D1, D2, E0, E1, λTK, température T0, CTE et dn/dT absolu calculé. Cases vides = catalogue ; une valeur saisie remplace celle du catalogue (↺ pour revenir).</td></tr>
 <tr><td>Avancé</td><td>Visée des rayons (pupille paraxiale, rayon principal au diaphragme comme CODE V, ou réelle), apodisation gaussienne de la pupille (intensité relative au bord, CODE V PUI).</td></tr></table>
-<h4>Vignetage (convention CODE V)</h4><p>VUY et VLY sont les fractions du rayon de pupille coupées côtés +Y et −Y, VUX et VLX côtés +X et −X : la pupille utile va de −1 + VLY à 1 − VUY. Les coordonnées pupillaires relatives (spots, ray fans, OPD fans, optimisation) et les demi-diamètres automatiques suivent ce faisceau vignetté (le rayon principal passe au centre de l'ellipse) ; front d'onde, PSF, FTM et énergie encerclée découpent la pupille réelle par cette ellipse. Valeurs négatives : pupille agrandie. Import/export : VUY…VLX en CODE V, VDX/VDY/VCX/VCY en Zemax (VCY = (VUY + VLY)/2, VDY = (VLY − VUY)/2).</p>
+<h4>Vignetage (convention CODE V)</h4><p>VUY et VLY sont les fractions du rayon de pupille coupées côtés +Y et −Y, VUX et VLX côtés +X et −X : la pupille utile va de −1 + VLY à 1 − VUY. Les coordonnées pupillaires relatives (spots, ray fans, OPD fans, optimisation) et les demi-diamètres automatiques suivent ce faisceau vignetté (la pupille relative est l'ellipse, mais le rayon principal 0, 0 passe toujours au centre du diaphragme, comme le RSI de CODE V) ; front d'onde, PSF, FTM et énergie encerclée découpent la pupille réelle par cette ellipse. Valeurs négatives : pupille agrandie. Import/export : VUY…VLX en CODE V, VDX/VDY/VCX/VCY en Zemax (VCY = (VUY + VLY)/2, VDY = (VLY − VUY)/2).</p>
 <h4>Température, pression, dn/dT et dilatation</h4>
 <ul><li><b>Indices</b> : les catalogues donnent l'indice relatif à l'air à 20 °C et 1 atm. Focale calcule l'indice absolu, lui ajoute Δn_abs par la formule de Schott Δn = (n² − 1)/(2n) · [D0 ΔT + D1 ΔT² + D2 ΔT³ + (E0 ΔT + E1 ΔT²)/(λ² − λTK²)] (ΔT = T − T0), puis le ramène à l'air du système à T et P (indice de l'air d'Edlén) ; la longueur d'onde est ramenée à l'air du catalogue. Coefficients fournis pour ~970 verres Schott, Ohara, CDGM et Hoya (refractiveindex.info), lus dans les fichiers AGF importés (lignes TD et ED), valeurs approchées pour la silice et le CaF₂. Vérification : N-BK7 à 546 nm donne dn/dT absolu 1,65·10⁻⁶/K et relatif 2,97·10⁻⁶/K (catalogue Schott : 1,6 et 3,0).</li>
 <li><b>Vide</b> (P = 0) : l'indice relatif de chaque verre augmente d'environ n·2,7·10⁻⁴ — d'où la défocalisation des optiques spatiales réglées à l'air.</li>
@@ -3844,7 +3884,7 @@ const HELP = [
 <ul>
 <li>Saisie libre avec auto-complétion ; tirets et casse ignorés (<code>nbk7</code> = N-BK7).</li>
 <li>Homonymes : suffixe fabricant, ex. <code>F2_CDGM</code>. Les noms CODE V (<code>NBK7_SCHOTT</code>) sont reconnus.</li>
-<li>Verre fictif : <code>nd/νd</code> ou <code>nd/νd/ΔPgF</code> — dispersion n = A + B/λ² + C/λ⁴ ajustée sur nd, νd et la dispersion partielle Pg,F de la « ligne normale » (0,6438 − 0,001682 νd, + ΔPgF), comme le verre modèle d'OpticStudio : le bleu et le violet (g, 430 nm…) suivent les verres réels. Ou indice fixe. Un verre peut être rendu <b>variable</b> (bouton V de la colonne Verre) puis remplacé par le meilleur verre réel : voir <i>Optimisation</i>.</li>
+<li>Verre fictif : <code>nd/νd</code> ou <code>nd/νd/ΔPgF</code> (les codes CODE V <code>743972.448504</code> sont convertis) — dispersion « ligne normale » de CODE V : la forme normalisée (n(λ) − nd)/(nF − nC) varie linéairement avec νd, en coordonnée chromatique de Buchdahl à 3 termes ; nd et nF − nC sont exacts et les indices reproduisent ceux de CODE V à moins de 1 ppm entre 430 et 656 nm (validation). ΔPgF ajoute un écart de dispersion partielle g–F. Au-delà de 700 nm environ, l'extrapolation est moins sûre que pour un verre de catalogue. Ou indice fixe. Un verre peut être rendu <b>variable</b> (bouton V de la colonne Verre) puis remplacé par le meilleur verre réel : voir <i>Optimisation</i>.</li>
 <li><b>Liste</b> : nd, νd, <b>Pg,F</b> (dispersion partielle relative), <b>transmission interne τ₁₀</b> (10 mm d'épaisseur) à la longueur d'onde choisie (« τ à … µm », en orange sous 0,9), <b>prix relatif</b> à N-BK7, <b>densité</b>, <b>résistances chimiques</b> CR / FR / SR / AR / PR (climatique, taches, acides, alcalis, phosphates ; plus petit = meilleur), domaine de validité et statut. Filtres : préférentiels seulement, obsolètes, τ₁₀ minimale.</li>
 <li><b>Diagramme</b> interactif : nd/νd ou <b>Pg,F/νd</b> (pour choisir des verres à dispersion partielle anormale, apochromats), couleur par catalogue, transmission, prix, densité ou ΔPg,F. Survol : fiche du verre ; clic : sélection (puis Valider) ; molette : zoom (borné) ; glisser : déplacer ; double-clic : vue entière. Les verres utilisés par le système sont entourés en orange.</li>
 <li>Transmission, densité et résistances viennent de la base refractiveindex.info (catalogues des fabricants) ; le <b>prix relatif</b> n'y figure pas : il est lu dans les fichiers <b>AGF</b> des fabricants (ligne OD), comme la transmission (lignes IT) et la densité (ED).</li>
@@ -3972,7 +4012,7 @@ const HELP = [
 <tr><td>RGLA</td><td>Verre modèle « réaliste » : écart normalisé entre chaque verre modèle variable et le verre réel le plus proche (catalogues choisis) ; « ≤ 0 » avec un petit poids les garde près des verres existants.</td></tr></table></li>
 <li>Le tableau affiche en direct la <b>valeur</b> de chaque opérande (en orange si une contrainte ≥/≤ n'est pas respectée) et sa <b>part</b> de la fonction de mérite ; la dernière ligne donne celle du critère image.</li></ul>
 <h4>Verres variables et substitution</h4>
-<ul><li>Bouton <b>V</b> de la colonne <b>Verre</b> (ou clic droit › Verre variable) : le verre devient un <b>verre modèle</b> « nd/νd » (affiché en italique) dont l'indice nd et la constringence νd sont deux variables continues (bornes 1,35–2,2 et 15–100). La dispersion du modèle suit une loi de Cauchy ajustée sur F, d, C.</li>
+<ul><li>Bouton <b>V</b> de la colonne <b>Verre</b> (ou clic droit › Verre variable) : le verre devient un <b>verre modèle</b> « nd/νd » (affiché en italique) dont l'indice nd et la constringence νd sont deux variables continues (bornes 1,35–2,2 et 15–100). La dispersion du modèle est celle des verres fictifs de CODE V (voir <i>Verres</i>).</li>
 <li>Optimisez normalement, typiquement avec l'opérande <b>AXCL</b> (chromatisme axial) ; ajoutez <b>RGLA</b> (bouton « + Opérande RGLA ») pour éviter que les verres modèles partent dans une zone du diagramme nd/νd où aucun verre n'existe.</li>
 <li><b>Substituer par des verres réels</b> : pour chaque verre variable, Focale essaie les verres réels les plus proches dans le diagramme nd/νd (nombre de candidats réglable, catalogues cochés, préférentiels seulement en option, obsolètes exclus) ; à chaque essai les autres variables sont réoptimisées, et le verre qui donne la meilleure fonction de mérite est retenu. Plusieurs <b>passes</b> permettent de revoir les choix une fois les autres verres fixés. Le message liste les remplacements ; « Restaurer l'état initial » ou Ctrl+Z annulent.</li>
 <li>Après substitution, le verre reste marqué V (« réel, substituable ») : une nouvelle substitution peut encore le changer. Pour repartir d'un verre modèle continu, retirez puis remettez le V.</li>
@@ -4050,7 +4090,7 @@ La liste <b>Meilleures solutions</b> (12 solutions distinctes, avec leur mérite
 <tr><td>Export</td><td>Décentrements → paires de COORDBRK (DEC : un CB ; DAR : CB + retour en ordre inverse ; pliage BEN : CB + CB de même bascule). Verres fictifs → ___BLANK. Solves → épaisseurs fixes.</td></tr></table>
 <h4>CODE V (.seq)</h4>
 <table class="ht"><tr><th>Élément</th><th>Correspondance</th></tr>
-<tr><td>Système</td><td>TITLE, DIM / DDM (M, C, I → mm), EPD / FNO / NAO / NA (ON image), WL, REF, WTW, XAN/YAN, XOB/YOB, XIM/YIM, XRI/YRI (type de champ conservé), WTF, <b>VUY / VLY / VUX / VLX</b> (vignetage), <b>TEM / PRE</b> (température °C, pression en mmHg comme CODE V : 760 = 1 atm), PUI (apodisation gaussienne). Les listes acceptent aussi la forme indexée : <code>WTW W2 2</code>, <code>VUY F3 0.2</code>, <code>YAN F2 14</code>.</td></tr>
+<tr><td>Système</td><td>TITLE, DIM / DDM (M, C, I → mm), EPD / FNO (→ F/# de travail paraxial) / NAO / NA (ON image), WL, REF, WTW, XAN/YAN, XOB/YOB, XIM/YIM, XRI/YRI (type de champ conservé), WTF, <b>VUY / VLY / VUX / VLX</b> (vignetage), <b>TEM / PRE</b> (température °C, pression en mmHg comme CODE V : 760 = 1 atm), PUI (apodisation gaussienne). Les listes acceptent aussi la forme indexée : <code>WTW W2 2</code>, <code>VUY F3 0.2</code>, <code>YAN F2 14</code>.</td></tr>
 <tr><td>Surfaces</td><td>SO, S, STO, SI, RDM/RDN, RDY/CUY/THI/GLA/GL1, K, <b>A…J</b> (A4 à A20), CIR (CIR EDG ignoré : bord mécanique), REFL et RMD REFL, PIM, XDE…CDE, DAR, BEN (REV → DAR), GRT/GRO/GRS/GRX/GRY (réseau), <b>SLB</b> (étiquette → commentaire), SPS XYP + SCO (polynôme XY, à vérifier), CCY/THC/KC/AC…DC 0 (variables), GLC 0 (verre fictif variable), TCE.</td></tr>
 <tr><td>Qualificatifs</td><td>Les commandes qui désignent une surface explicitement sont appliquées à cette surface : <code>THI S7 4</code>, <code>CIR S2 10</code>, <code>SLB S4 'L2'</code>, <code>STO S3</code>, <code>CCY S1 0</code>…</td></tr>
 <tr><td>Ignorées sans remarque</td><td>UID, DER, DOR, GCH, GLB, CAT, INI, GO, CUM, THM, VIE, PLO, WRL, EVA… (identifiants, incréments de dérivée, préférences, affichage : sans effet sur l'optique).</td></tr>
@@ -4062,6 +4102,14 @@ La liste <b>Meilleures solutions</b> (12 solutions distinctes, avec leur mérite
 <p class="hint">Les fichiers <b>.len</b> de CODE V sont binaires (format propriétaire) : dans CODE V, tapez <code>WRL C:\chemin\nom.seq</code> pour écrire la séquence texte, puis importez le .seq.</p>
 <h4>Installation</h4><p>Depuis le site GitHub Pages, bouton « Installer » (Chrome, Edge) : l'application fonctionne hors ligne, se met à jour à chaque nouvelle version et peut ouvrir directement les fichiers .zmx, .seq, .json et .agf.</p>` },
 
+  { id: 'validation', t: 'Validation CODE V', h: `
+<p>Les conventions de Focale sont vérifiées contre des sorties réelles de CODE V 2024.03, reprises dans les tests automatiques (<code>node tests/engine.test.js</code>). Cas actuel : objectif « DigCamera » du tutoriel CODE V (6 dioptres, verres fictifs, objet à 750 mm, champs 0 / 11 / 19 / 26,5°, vignetage, image défocalisée).</p>
+<table><tr><th>Grandeur (CODE V)</th><th>CODE V</th><th>Focale</th></tr>
+<tr><td>Indices des verres fictifs 743972.448504 et 736020.283993 à 656 / 589 / 430 nm</td><td>6 décimales</td><td>écart &lt; 1 ppm</td></tr>
+<tr><td>FIR : EFL, BFL, FNO à l'infini, FNO aux conjugués, Ø et position des pupilles, IMG DIS, OAL, image paraxiale (THI, HT)</td><td>4 décimales</td><td>identiques</td></tr>
+<tr><td>Hauteurs objet des champs angulaires</td><td>−146,03323 / −258,69045 / −374,60028</td><td>écart &lt; 2·10⁻⁶ mm</td></tr>
+<tr><td>RSI du rayon principal : Y et Z sur chaque surface, TANY image (F2 à F4)</td><td>5 décimales</td><td>écart &lt; 6·10⁻⁶ mm</td></tr></table>
+<p>Conventions de CODE V reprises pour cela : FNO = F/# de travail paraxial aux conjugués utilisés ; angle de champ en conjugué fini = angle du rayon principal réel visé au centre du diaphragme ; rayon principal non déplacé par les facteurs de vignetage ; hauteur image paraxiale au plan image paraxial ; épaisseur de SI = défocalisation ; dispersion « ligne normale » des verres fictifs. Les comparaisons de spots, front d'onde et FTM suivront.</p>` },
   { id: 'raccourcis', t: 'Raccourcis clavier', h: `
 <table class="ht"><tr><th>Touches</th><th>Action</th></tr>
 <tr><td>F1</td><td>Aide</td></tr><tr><td>Ctrl+Z / Ctrl+Y</td><td>Annuler / rétablir</td></tr>
@@ -4149,7 +4197,7 @@ const IO = (() => {
     // code verre (CODE V / Zemax) : 517642, 517.642, 743972.448504 → nd = 1,743972, νd = 44,8504
     const code = U.match(/^(\d{3,6})\.(\d{2,6})$/) || U.match(/^(\d{3})(\d{3})$/);
     if (code) { const nd = 1 + (+code[1]) / Math.pow(10, code[1].length), vd = (+code[2]) / Math.pow(10, Math.max(0, code[2].length - 2));
-      if (vd > 5 && vd < 120) { if (code[2].length > 3 && !warnings.some(w => w.startsWith('Verres fictifs'))) warnings.push('Verres fictifs CODE V (code nd.νd) convertis en verres modèles nd/νd — dispersion proche mais pas identique à celle de CODE V'); return `${g10(nd)}/${g10(vd)}`; } }
+      if (vd > 5 && vd < 120) { if (code[2].length > 3 && !warnings.some(w => w.startsWith('Verres fictifs'))) warnings.push('Verres fictifs CODE V (code nd.νd) convertis en verres modèles nd/νd (modèle de dispersion « ligne normale » étalonné sur CODE V)'); return `${g10(nd)}/${g10(vd)}`; } }
     if (isFinite(nd) && nd > 1) { warnings.push(`${where} : verre « ${u} » introuvable, remplacé par le modèle nd/νd ${nd}/${vd || '—'}`); return vd > 0 ? `${g10(nd)}/${g10(vd)}` : String(g10(nd)); }
     warnings.push(`${where} : verre « ${u} » introuvable (importez son catalogue AGF)`);
     return u;
@@ -4275,7 +4323,7 @@ const IO = (() => {
         case 'DIM': scale = { M: 1, C: 10, I: 25.4 }[(a[0] || 'M').toUpperCase()] || 1; break;
         case 'DDM': ddm = { M: 1, C: 10, I: 25.4 }[(a[0] || 'M').toUpperCase()] || 1; break;
         case 'EPD': sys.aperture = { type: 'EPD', value: n(0), obscuration: 0 }; break;
-        case 'FNO': sys.aperture = { type: 'FNO', value: n(0), obscuration: 0 }; break;
+        case 'FNO': sys.aperture = { type: 'WFNO', value: n(0), obscuration: 0 }; break; // CODE V : F/# de travail paraxial aux conjugués utilisés
         case 'NAO': sys.aperture = { type: 'NA', value: n(0), obscuration: 0 }; break;
         case 'NA': sys.aperture = { type: 'NAI', value: n(0), obscuration: 0 }; break;
         case 'WL': wl = setList(wl, a); break;
@@ -4436,8 +4484,8 @@ const IO = (() => {
     body.push(`SI ${r(S[N].r)} 0`);
     L.push('RDM;LEN', `TITLE '${(s.title || 'Focale').replace(/'/g, ' ')}'`);
     const ap = s.aperture;
-    let apl = ap.type === 'FNO' ? `FNO ${ap.value}` : ap.type === 'NA' ? `NAO ${ap.value}` : ap.type === 'NAI' ? `NA ${ap.value}` : `EPD ${ap.value}`;
-    if (ap.type === 'STOP') { try { const M = E.prepare(s); apl = `EPD ${fmtN(M.par.epd)}`; } catch (e) { } W.push('Ouverture « demi-diamètre du diaphragme » exportée en EPD équivalent'); }
+    let apl = ap.type === 'WFNO' || (ap.type === 'FNO' && objInf) ? `FNO ${ap.value}` : ap.type === 'NA' ? `NAO ${ap.value}` : ap.type === 'NAI' ? `NA ${ap.value}` : `EPD ${ap.value}`;
+    if (ap.type === 'STOP' || (ap.type === 'FNO' && !objInf)) { try { const M = E.prepare(s); apl = `EPD ${fmtN(M.par.epd)}`; } catch (e) { } W.push(ap.type === 'STOP' ? 'Ouverture « demi-diamètre du diaphragme » exportée en EPD équivalent' : 'F/# image (EFL/EPD) en conjugué fini exporté en EPD équivalent (le FNO de CODE V est le F/# de travail)'); }
     L.push(apl, 'DIM M');
     L.push('WL ' + wls.map(l => (l * 1000).toFixed(4)).join(' '), `REF ${s.primary + 1}`, 'WTW ' + s.wavelengths.map(w => w.w ?? 1).join(' '));
     const ft = E.FTYPES[s.ftype] ? s.ftype : (objInf ? 'ang' : 'obj'), cv = E.FTYPES[ft].cv;
@@ -4451,7 +4499,7 @@ const IO = (() => {
     if (E.mcOn(s)) { // multi-configuration → positions de zoom CODE V
       const mc = E.mcSync(structuredClone(s)).mc, zl = [`ZOO ${mc.n}`];
       for (const op of mc.ops) {
-        const D = E.MCT[op.type], cv = op.type === 'APE' ? ({ EPD: 'EPD', FNO: 'FNO', NA: 'NAO', NAI: 'NA' })[ap.type] : op.type === 'FY' ? cv0(s, objInf) : op.type === 'FX' ? 'X' + cv0(s, objInf).slice(1) : op.type === 'WL' ? 'WL' : D.cv;
+        const D = E.MCT[op.type], cv = op.type === 'APE' ? ({ EPD: 'EPD', FNO: 'FNO', WFNO: 'FNO', NA: 'NAO', NAI: 'NA' })[ap.type] : op.type === 'FY' ? cv0(s, objInf) : op.type === 'FX' ? 'X' + cv0(s, objInf).slice(1) : op.type === 'WL' ? 'WL' : D.cv;
         if (!cv) { W.push(`Multi-configuration : paramètre « ${D.l} » non exporté vers CODE V`); continue; }
         const qual = D.s ? (op.i === 0 ? 'SO' : op.i === N ? 'SI' : 'S' + op.i) : D.f ? 'F' + (op.i + 1) : D.w ? 'W' + (op.i + 1) : '';
         const val = v => op.type === 'GLA' ? (gl(v) || 'AIR') : op.type === 'WL' ? (v * 1000).toFixed(4) : op.type === 'PRE' ? fmtN(v * 760) : op.type === 'RAD' ? r(v) : fmtN(v);
@@ -4617,7 +4665,7 @@ const IO = (() => {
     const ap = s.aperture;
     out.push('VERS 160527 2 1', 'MODE SEQ', `NAME ${(s.title || 'Focale').replace(/[\r\n]/g, ' ')}`, 'PFIL 0 0 0', 'LANG 0', 'UNIT MM X W X CM MR CPMM');
     let apz = ap.type === 'FNO' ? `FNUM ${fmtN(ap.value)} 0` : ap.type === 'NA' ? `OBNA ${fmtN(ap.value)} 0` : `ENPD ${fmtN(ap.value)}`;
-    if (ap.type === 'NAI' || ap.type === 'STOP') { try { apz = `ENPD ${fmtN(E.prepare(s).par.epd)}`; } catch (e) { } W.push('Ouverture (ON image / diaphragme) exportée en diamètre de pupille d\'entrée équivalent'); }
+    if (ap.type === 'NAI' || ap.type === 'STOP' || ap.type === 'WFNO') { try { apz = `ENPD ${fmtN(E.prepare(s).par.epd)}`; } catch (e) { } W.push('Ouverture (ON image / F/# de travail / diaphragme) exportée en diamètre de pupille d\'entrée équivalent'); }
     out.push(apz);
     const env = s.env || {};
     out.push(`ENVD ${fmtN(env.T ?? 20)} ${fmtN(env.P ?? 1)} 0`, 'GFAC 0 0', `GCAT ${[...new Set(['SCHOTT', ...cats])].join(' ')}`);
@@ -5296,7 +5344,7 @@ function lde(act) {
 /* ---------------- Panneau système ---------------- */
 const AIMOPTS = [['none', 'Pupille paraxiale'], ['chief', 'Rayon principal au diaphragme (CODE V)'], ['full', 'Réelle : tous les rayons (ray aiming)']];
 function setAim(v) { commit(s => { s.rayAiming = v === 'full'; if (v === 'chief') s.aimMode = 'chief'; else delete s.aimMode; }); }
-const APTYPES = [['EPD', 'Diamètre pupille d\'entrée (mm)'], ['FNO', 'F/# image (EFL / EPD)'], ['NA', 'Ouverture numérique objet'], ['NAI', 'Ouverture numérique image'], ['STOP', 'Demi-diamètre du diaphragme (mm)']];
+const APTYPES = [['EPD', 'Diamètre pupille d\'entrée (mm)'], ['FNO', 'F/# image (EFL / EPD)'], ['WFNO', 'F/# de travail paraxial (FNO de CODE V)'], ['NA', 'Ouverture numérique objet'], ['NAI', 'Ouverture numérique image'], ['STOP', 'Demi-diamètre du diaphragme (mm)']];
 /** change le type de champ ; convert : recalcule les valeurs pour garder les mêmes points de champ (CODE V « Convert Fields ») */
 function setFieldType(to, convert) {
   const s = App.sys, from = ftypeOf(s); if (to === from) return;
@@ -5345,6 +5393,7 @@ function renderSide() {
       <span>Distance image parax.</span><span>${fx(p.imgDist, 4)}</span>
       <span>F/# (EFL/EPD)</span><span>${fx(p.fno, 3)}</span>
       <span>F/# de travail</span><span>${fx(p.wfno, 3)}</span>
+      ${objInf ? '' : `<span>F/# à l'infini (EFL/EPD)</span><span>${fx(p.fno, 3)}</span>`}
       <span>ON image</span><span>${fx(p.imgSpaceNA, 4)}</span>
       ${objInf ? '' : `<span>ON objet</span><span>${fx(p.objNA, 4)}</span><span>Grandissement</span><span>${fx(p.mag, 4)}</span>`}
       <span>Diam. pupille entrée</span><span>${fx(p.epd, 3)}</span>
@@ -5356,7 +5405,7 @@ function renderSide() {
       <span>Longueur totale</span><span>${fx(p.ttl, 3)}</span>
       <span>Invariant de Lagrange</span><span>${fx(p.H, 5)}</span>
       <span>λ primaire</span><span>${fx(M.wls[M.pw] * 1000, 2)} nm</span></div>
-      <div class="hint" style="margin-top:6px">Positions relatives : PE / 1ʳᵉ surface, PS / plan image.</div>`);
+      <div class="hint" style="margin-top:6px">Positions relatives : PE / 1ʳᵉ surface, PS / plan image. Hauteur image et grandissement au plan image paraxial (comme CODE V).</div>`);
   }
   $('#side').innerHTML = h;
   if (keep) { const e = $('#side ' + keep); if (e) e.focus(); }
@@ -7047,7 +7096,7 @@ const SDTAB = {
       <div class="row" style="gap:6px"><button class="bt" data-sda="setvig" title="CODE V SET VIGNETTING : rayons limites qui passent juste les ouvertures fixées (🔒)">Calculer le vignetage (SET VIG)</button><button class="bt" data-sda="clrvig" ${vig ? '' : 'disabled'}>Effacer le vignetage</button>
         <span class="hint">${nFix ? `${nFix} ouverture(s) fixée(s) 🔒` : 'Aucune ouverture fixée : verrouillez des demi-diamètres (🔒) dans l\'éditeur'}</span></div>
       <div class="hint" style="margin-top:6px">Convention CODE V : la pupille non vignettée va de −1 + VLY à 1 − VUY en Y (de −1 + VLX à 1 − VUX en X). Les coordonnées pupillaires relatives (ray fans, spots, optimisation) et les demi-diamètres automatiques suivent ce faisceau vignetté ; les calculs de diffraction (front d'onde, PSF, FTM) découpent la pupille réelle par cette ellipse. Valeurs négatives : pupille agrandie.</div>
-      <div class="hint">Hauteur image paraxiale (YIM) : y = f·tan θ (objet à l'infini) ou grandissement × hauteur objet ; hauteur image réelle (YRI) : point d'impact du rayon principal réel, recherché par itération. Les angles en conjugué fini sont mesurés depuis la pupille d'entrée.</div>`;
+      <div class="hint">Hauteur image paraxiale (YIM) : y = f·tan θ (objet à l'infini) ou grandissement × hauteur objet ; hauteur image réelle (YRI) : point d'impact du rayon principal réel, recherché par itération. En conjugué fini, l'angle est celui du rayon principal réel (visé au centre du diaphragme), comme dans CODE V.</div>`;
     return h;
   },
   env() {
@@ -8237,7 +8286,7 @@ async function genReport(ov) {
     if (cf.sec.system) {
       await step('Données du système…'); h1('Données du système');
       const ap = sys.aperture;
-      kv([['Ouverture', `${({ EPD: 'Ø pupille d\'entrée', FNO: 'F/# image', NA: 'ON objet', NAI: 'ON image', STOP: 'demi-diamètre du diaphragme' })[ap.type]} = ${fmt(ap.value, 6)}`], ['Obstruction centrale', fmt(ap.obscuration || 0, 4)],
+      kv([['Ouverture', `${({ EPD: 'Ø pupille d\'entrée', FNO: 'F/# image', WFNO: 'F/# de travail paraxial', NA: 'ON objet', NAI: 'ON image', STOP: 'demi-diamètre du diaphragme' })[ap.type]} = ${fmt(ap.value, 6)}`], ['Obstruction centrale', fmt(ap.obscuration || 0, 4)],
         ['Objet', M.objInf ? 'à l\'infini' : `à ${fx(M.t0, 3)} mm`], ['Visée des rayons', ({ none: 'pupille paraxiale', chief: 'rayon principal au centre du diaphragme', full: 'réelle (tous les rayons)' })[OE.aimMode(sys)]],
         ['Champs', sys.fields.map((_, i) => fl(i)).join(' ; ')], ['Longueurs d\'onde (nm)', sys.wavelengths.map((w, i) => fmt(w.um * 1000, 5) + (i === sys.primary ? '*' : '')).join(' ; ')]]);
       h2('Données paraxiales');

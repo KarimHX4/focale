@@ -1,4 +1,4 @@
-/* Focale 1b1e4ce0 — module assistant facultatif */
+/* Focale a9280324 — module assistant facultatif */
 /* Focale — assistant en langage naturel (module FACULTATIF, chargé à la demande).
    Le logiciel fonctionne sans ce fichier. Moteurs : Ollama (local), WebLLM (dans le navigateur, WebGPU) ou règles (sans IA).
    Le modèle ne calcule rien : il traduit la demande en actions de Focale ; les calculs optiques restent ceux du moteur. */
@@ -36,7 +36,7 @@
     const s = S(), M = App.M, N = Ns(), objInf = !isFinite(s.surfaces[0].t), W = s.wavelengths, cen = OE.wlSel(s, 'central')[0];
     const L = [];
     L.push(`Titre : ${s.title || '(sans titre)'}`);
-    L.push(`Objet : ${objInf ? 'à l\'infini (champs en degrés)' : `à ${r2(s.surfaces[0].t)} mm (champs = hauteurs en mm)`}. Ouverture : ${s.aperture.type === 'FNO' ? `F/${r2(s.aperture.value)}` : s.aperture.type === 'NA' ? `ON objet ${r2(s.aperture.value)}` : `EPD ${r2(s.aperture.value)} mm`}${s.aperture.obscuration ? `, obstruction ${r2(s.aperture.obscuration)}` : ''}.`);
+    L.push(`Objet : ${objInf ? 'à l\'infini (champs en degrés)' : `à ${r2(s.surfaces[0].t)} mm (champs = hauteurs en mm)`}. Ouverture : ${s.aperture.type === 'FNO' ? `F/${r2(s.aperture.value)}` : s.aperture.type === 'WFNO' ? `F/# de travail ${r2(s.aperture.value)}` : s.aperture.type === 'NA' ? `ON objet ${r2(s.aperture.value)}` : `EPD ${r2(s.aperture.value)} mm`}${s.aperture.obscuration ? `, obstruction ${r2(s.aperture.obscuration)}` : ''}.`);
     const ft = OE.FTYPES[s.ftype] ? s.ftype : (objInf ? 'ang' : 'obj');
     L.push(`Champs (${OE.FTYPES[ft].l.toLowerCase()}) : ${s.fields.map((f, i) => `F${i + 1}=${f.x ? `(${r2(f.x)}, ${r2(f.y)})` : r2(f.y)}${ft === 'ang' ? '°' : ' mm'}`).join(', ')}.`);
     if (s.env && (+s.env.T !== 20 || +s.env.P !== 1)) L.push(`Environnement : ${s.env.T ?? 20} °C, ${s.env.P ?? 1} atm.`);

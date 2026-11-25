@@ -56,7 +56,7 @@ const IO = (() => {
     // code verre (CODE V / Zemax) : 517642, 517.642, 743972.448504 → nd = 1,743972, νd = 44,8504
     const code = U.match(/^(\d{3,6})\.(\d{2,6})$/) || U.match(/^(\d{3})(\d{3})$/);
     if (code) { const nd = 1 + (+code[1]) / Math.pow(10, code[1].length), vd = (+code[2]) / Math.pow(10, Math.max(0, code[2].length - 2));
-      if (vd > 5 && vd < 120) { if (code[2].length > 3 && !warnings.some(w => w.startsWith('Verres fictifs'))) warnings.push('Verres fictifs CODE V (code nd.νd) convertis en verres modèles nd/νd — dispersion proche mais pas identique à celle de CODE V'); return `${g10(nd)}/${g10(vd)}`; } }
+      if (vd > 5 && vd < 120) { if (code[2].length > 3 && !warnings.some(w => w.startsWith('Verres fictifs'))) warnings.push('Verres fictifs CODE V (code nd.νd) convertis en verres modèles nd/νd (modèle de dispersion « ligne normale » étalonné sur CODE V)'); return `${g10(nd)}/${g10(vd)}`; } }
     if (isFinite(nd) && nd > 1) { warnings.push(`${where} : verre « ${u} » introuvable, remplacé par le modèle nd/νd ${nd}/${vd || '—'}`); return vd > 0 ? `${g10(nd)}/${g10(vd)}` : String(g10(nd)); }
     warnings.push(`${where} : verre « ${u} » introuvable (importez son catalogue AGF)`);
     return u;
@@ -182,7 +182,7 @@ const IO = (() => {
         case 'DIM': scale = { M: 1, C: 10, I: 25.4 }[(a[0] || 'M').toUpperCase()] || 1; break;
         case 'DDM': ddm = { M: 1, C: 10, I: 25.4 }[(a[0] || 'M').toUpperCase()] || 1; break;
         case 'EPD': sys.aperture = { type: 'EPD', value: n(0), obscuration: 0 }; break;
-        case 'FNO': sys.aperture = { type: 'FNO', value: n(0), obscuration: 0 }; break;
+        case 'FNO': sys.aperture = { type: 'WFNO', value: n(0), obscuration: 0 }; break; // CODE V : F/# de travail paraxial aux conjugués utilisés
         case 'NAO': sys.aperture = { type: 'NA', value: n(0), obscuration: 0 }; break;
         case 'NA': sys.aperture = { type: 'NAI', value: n(0), obscuration: 0 }; break;
         case 'WL': wl = setList(wl, a); break;
@@ -343,8 +343,8 @@ const IO = (() => {
     body.push(`SI ${r(S[N].r)} 0`);
     L.push('RDM;LEN', `TITLE '${(s.title || 'Focale').replace(/'/g, ' ')}'`);
     const ap = s.aperture;
-    let apl = ap.type === 'FNO' ? `FNO ${ap.value}` : ap.type === 'NA' ? `NAO ${ap.value}` : ap.type === 'NAI' ? `NA ${ap.value}` : `EPD ${ap.value}`;
-    if (ap.type === 'STOP') { try { const M = E.prepare(s); apl = `EPD ${fmtN(M.par.epd)}`; } catch (e) { } W.push('Ouverture « demi-diamètre du diaphragme » exportée en EPD équivalent'); }
+    let apl = ap.type === 'WFNO' || (ap.type === 'FNO' && objInf) ? `FNO ${ap.value}` : ap.type === 'NA' ? `NAO ${ap.value}` : ap.type === 'NAI' ? `NA ${ap.value}` : `EPD ${ap.value}`;
+    if (ap.type === 'STOP' || (ap.type === 'FNO' && !objInf)) { try { const M = E.prepare(s); apl = `EPD ${fmtN(M.par.epd)}`; } catch (e) { } W.push(ap.type === 'STOP' ? 'Ouverture « demi-diamètre du diaphragme » exportée en EPD équivalent' : 'F/# image (EFL/EPD) en conjugué fini exporté en EPD équivalent (le FNO de CODE V est le F/# de travail)'); }
     L.push(apl, 'DIM M');
     L.push('WL ' + wls.map(l => (l * 1000).toFixed(4)).join(' '), `REF ${s.primary + 1}`, 'WTW ' + s.wavelengths.map(w => w.w ?? 1).join(' '));
     const ft = E.FTYPES[s.ftype] ? s.ftype : (objInf ? 'ang' : 'obj'), cv = E.FTYPES[ft].cv;
@@ -358,7 +358,7 @@ const IO = (() => {
     if (E.mcOn(s)) { // multi-configuration → positions de zoom CODE V
       const mc = E.mcSync(structuredClone(s)).mc, zl = [`ZOO ${mc.n}`];
       for (const op of mc.ops) {
-        const D = E.MCT[op.type], cv = op.type === 'APE' ? ({ EPD: 'EPD', FNO: 'FNO', NA: 'NAO', NAI: 'NA' })[ap.type] : op.type === 'FY' ? cv0(s, objInf) : op.type === 'FX' ? 'X' + cv0(s, objInf).slice(1) : op.type === 'WL' ? 'WL' : D.cv;
+        const D = E.MCT[op.type], cv = op.type === 'APE' ? ({ EPD: 'EPD', FNO: 'FNO', WFNO: 'FNO', NA: 'NAO', NAI: 'NA' })[ap.type] : op.type === 'FY' ? cv0(s, objInf) : op.type === 'FX' ? 'X' + cv0(s, objInf).slice(1) : op.type === 'WL' ? 'WL' : D.cv;
         if (!cv) { W.push(`Multi-configuration : paramètre « ${D.l} » non exporté vers CODE V`); continue; }
         const qual = D.s ? (op.i === 0 ? 'SO' : op.i === N ? 'SI' : 'S' + op.i) : D.f ? 'F' + (op.i + 1) : D.w ? 'W' + (op.i + 1) : '';
         const val = v => op.type === 'GLA' ? (gl(v) || 'AIR') : op.type === 'WL' ? (v * 1000).toFixed(4) : op.type === 'PRE' ? fmtN(v * 760) : op.type === 'RAD' ? r(v) : fmtN(v);
@@ -524,7 +524,7 @@ const IO = (() => {
     const ap = s.aperture;
     out.push('VERS 160527 2 1', 'MODE SEQ', `NAME ${(s.title || 'Focale').replace(/[\r\n]/g, ' ')}`, 'PFIL 0 0 0', 'LANG 0', 'UNIT MM X W X CM MR CPMM');
     let apz = ap.type === 'FNO' ? `FNUM ${fmtN(ap.value)} 0` : ap.type === 'NA' ? `OBNA ${fmtN(ap.value)} 0` : `ENPD ${fmtN(ap.value)}`;
-    if (ap.type === 'NAI' || ap.type === 'STOP') { try { apz = `ENPD ${fmtN(E.prepare(s).par.epd)}`; } catch (e) { } W.push('Ouverture (ON image / diaphragme) exportée en diamètre de pupille d\'entrée équivalent'); }
+    if (ap.type === 'NAI' || ap.type === 'STOP' || ap.type === 'WFNO') { try { apz = `ENPD ${fmtN(E.prepare(s).par.epd)}`; } catch (e) { } W.push('Ouverture (ON image / F/# de travail / diaphragme) exportée en diamètre de pupille d\'entrée équivalent'); }
     out.push(apz);
     const env = s.env || {};
     out.push(`ENVD ${fmtN(env.T ?? 20)} ${fmtN(env.P ?? 1)} 0`, 'GFAC 0 0', `GCAT ${[...new Set(['SCHOTT', ...cats])].join(' ')}`);

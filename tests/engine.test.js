@@ -179,7 +179,7 @@ const P = []; OE.ray(M, 1, 20, 0, 1, { pts: P }); near('Visée réelle sur diaph
 { const c = S['Triplet de Cooke f=50 F/5'](); c.aimMode = 'chief'; const M = OE.prepare(c), P = [];
   OE.ray(M, M.pw, M.sys.fields[2], 0, 0, { pts: P }); near('Visée CODE V : rayon principal au centre du diaphragme', Math.hypot(P[M.stopIdx - 1][3], P[M.stopIdx - 1][4]), 0, 1e-9);
   const n = l => OE.glassN('1.5168/64.17', l), g = OE.glassN('N-BK7', 0.4358343) - OE.glassN('N-BK7', 0.4861327), m = n(0.4358343) - n(0.4861327);
-  near('Verre modèle 517642 : ng − nF ≈ N-BK7 (ligne normale)', m * 1e4, g * 1e4, 0.5); near('Verre modèle : nd et νd exacts', OE.glassInfo('1.5168/64.17').vd, 64.17, 1e-9);
+  near('Verre modèle : nd et νd exacts', OE.glassInfo('1.5168/64.17').vd, 64.17, 1e-9);
   near('PRE CODE V en mmHg', IO.parseSeq('EPD 10\nWL 587.56\nYAN 0\nTEM 20\nPRE 380\nSO 0 1e20\nSTO 50 5 NBK7_SCHOTT\nS -50 90\nSI 0 0').sys.env.P, 0.5, 1e-12); }
 // Zernike Fringe jusqu'à Z37 : 16 premiers = zernBasis, ajustement exact d'un front d'onde synthétique, résidu
 {
@@ -246,6 +246,27 @@ const P = []; OE.ray(M, 1, 20, 0, 1, { pts: P }); near('Visée réelle sur diaph
     near('Opérande CTHK', OE.opValue(M, { type: 'CTHK', p: 3 }).val, Math.abs(M.S[3].t), 1e-12);
     c.merit = { image: 'SPOT', ops: [], fw: [0, 0, 1] }; const r1 = OE.residuals(c), c3 = structuredClone(c); c3.fields = [c.fields[2]]; delete c3.merit.fw;
     near('Poids de champ du critère : seul le champ 3 compte', OE.meritOf(r1.f), OE.meritOf(OE.residuals(c3).f), 1e-12); }
+  // Validation CODE V 2024.03 : objectif « DigCamera » (tutoriel CODE V), sorties FIR / REFRACTIVE INDICES / RSI fournies par l'utilisateur
+  { const seq = `FNO 3.5\nDIM M\nWL 656.0 589.0 430.0\nREF 2\nWTW 1 2 1\nYAN 0.0 11.0 19.0 26.5\nVUX 0 0.007419823242190038 0.02280626025389998 0\nVLX 0 0.007419823242190038 0.02280626025389998 0\nVUY 0 0.0007207686245109812 0.20273532916 0\nVLY 0 0.04668488625860001 0.111177974441 0\nSO 0.0 750.0
+S 1.822175677212961 1.085816541265434 743972.448504\nS -21.29932312571177 0.1000000000000001\nS -3.057770039270196 0.2 736020.283993\nS 1.441367391070061 0.1244741047468973\nSTO\nS 2.884653512995602 0.9708074408810998 743972.448504\nS -2.08834100754463 1.95119372571215\nSI 0.0 -0.02480582498015976\nGO\n`;
+    const sy = IO.parseSeq(seq).sys, M = OE.prepare(sy), p = M.par;
+    const cvN = { '1.743972/44.8504': [1.739051, 1.743851, 1.766389], '1.73602/28.3993': [1.728551, 1.735834, 1.772306] };
+    let dn = 0; for (const [g, v] of Object.entries(cvN)) [0.656, 0.589, 0.43].forEach((l, k) => { dn = Math.max(dn, Math.abs(OE.glassN(g, l) - v[k])); });
+    near('CODE V : indices des verres fictifs (656/589/430 nm), écart max', dn * 1e6, 0, 1);
+    near('CODE V FIR : EFL', p.efl, 3.1122, 5e-5); near('CODE V FIR : BFL', p.bfl, 1.9512, 5e-5); near('CODE V FIR : FNO à l\'infini', p.fno, 3.4842, 5e-5);
+    near('CODE V FIR : FNO aux conjugués utilisés (F/# de travail)', p.wfno, 3.5, 1e-9); near('CODE V FIR : Ø pupille d\'entrée', p.epd, 0.8932, 5e-5);
+    near('CODE V FIR : position pupille d\'entrée', p.zE, 1.2699, 5e-5); near('CODE V FIR : Ø pupille de sortie', p.xpD, 0.8202, 5e-5);
+    near('CODE V FIR : position pupille de sortie / image', p.xpZ + M.S[M.N - 1].t, -0.9066, 5e-5); near('CODE V FIR : distance image (IMG DIS)', M.S[M.N - 1].t, 1.9264, 5e-5);
+    near('CODE V FIR : image paraxiale THI', p.imgDist, 1.9641, 5e-5); near('CODE V FIR : hauteur image paraxiale', Math.abs(p.imgH), 1.5588, 5e-5);
+    near('CODE V FIR : OAL', p.ttl - M.S[M.N - 1].t, 2.4811, 5e-5);
+    const H = [-146.03323, -258.69045, -374.60028]; let dh = 0; H.forEach((h, k) => { dh = Math.max(dh, Math.abs(M.sys.fields[k + 1].y - h)); });
+    near('CODE V RSI : hauteurs objet des champs angulaires (rayon principal réel)', dh, 0, 6e-6);
+    const RSI = [[-0.24479, -0.06394, -0.03331, 0, 0.03706, 0.19071, 0.59989], [-0.42725, -0.11729, -0.05894, 0, 0.07034, 0.33411, 1.06247], [-0.61141, -0.18449, -0.08562, 0, 0.11756, 0.47985]];
+    const TAN = [0.21145, 0.37289, 0.53146]; let dy = 0, dt = 0;
+    const RZ = [[0.01652, -0.0001, -0.00018, 0, 0.00024, -0.00873], [0.0508, -0.00032, -0.00057, 0, 0.00086, -0.0269], [0.10564, -0.0008, -0.0012, 0, 0.0024, -0.05588]]; let dz = 0;
+    RSI.forEach((ys, k) => { const P = [], t = OE.ray(M, M.pw, M.sys.fields[k + 1], 0, 0, { pts: P }); ys.forEach((y, j) => { dy = Math.max(dy, Math.abs(P[j][4] - y)); }); RZ[k].forEach((z, j) => { dz = Math.max(dz, Math.abs(P[j][2] - M.zg[j + 1] - z)); }); dt = Math.max(dt, Math.abs(t.M / t.N - TAN[k])); });
+    near('CODE V RSI : Y du rayon principal sur chaque surface (F2–F4)', dy, 0, 6e-6); near('CODE V RSI : TANY dans l\'espace image', dt, 0, 6e-6); near('CODE V RSI : Z (flèche) du rayon principal sur chaque surface', dz, 0, 6e-6);
+    const b = IO.parseSeq(IO.toSeq(sy).text).sys; near('CODE V : aller-retour du FNO (F/# de travail)', b.aperture.type === 'WFNO' && b.aperture.value === 3.5 ? 1 : 0, 1, 0); }
   console.log(fail ? `${fail} échec(s)` : 'Tous les tests passent'); process.exit(fail ? 1 : 0);
 })();
 
