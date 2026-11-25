@@ -4,7 +4,15 @@ const HELP = [
   { id: 'demarrage', t: 'Démarrage rapide', h: `
 <p>Focale est un logiciel de <b>conception optique séquentielle</b> : la lumière traverse les surfaces dans l'ordre de l'éditeur de lentilles, de l'objet (surface 0) à l'image (dernière surface).</p>
 <ol>
-<li><b>Chargez un exemple</b> (menu <i>Exemples</i>) ou partez de <i>Fichier → Nouveau système</i>.</li>
+<li><b>Chargez un exemple</b> (menu <i>Exemples</i>) ou partez de <i>Fichier → Nouveau système</i> : un système <b>vide</b> (objet à l'infini, diaphragme plan, image), sans lentille ; ajoutez-les avec <b>+ Lentille</b>, <b>+ Avant</b> / <b>+ Après</b>. <i>Exemples → Système vide</i> fait de même.</li>
+<li><b>Exemples</b>, classés par famille, comme bases de départ (chaque exemple garde sa fonction de mérite, prête pour l'optimisation) :
+<ul><li><i>Lentilles simples</i> : plan-convexe, singulet de forme optimale, biconvexe 1:1, asphérique de focalisation laser (1064 nm), cylindrique, singulet hybride réfractif-diffractif (DOE).</li>
+<li><i>Doublets et lunettes</i> : doublet achromatique, objectif de lunette achromatique D=100 F/9, doublet apochromatique S-FPL53 / N-KZFS4 (g, F, d, C).</li>
+<li><i>Objectifs photographiques</i> : triplet de Cooke, Tessar, Double Gauss, Petzval, téléobjectif (rapport télé 0,7).</li>
+<li><i>Télescopes à miroirs</i> : Newton (droit et replié), Cassegrain, Ritchey-Chrétien, chambre de Schmidt (lame asphérique, surface focale courbe).</li>
+<li><i>Oculaires, microscopie, relais</i> : oculaire de Plössl et objectif de microscope 10× (tracés inversés, de la pupille vers le plan focal), relais 1:1, expanseur de faisceau de Galilée ×4.</li>
+<li><i>Composants spéciaux</i> : spectrographe à réseau, polariseur et lame λ/4.</li></ul>
+Les combinaisons ont été optimisées dans Focale (spot, front d'onde) : ce sont de bons points de départ, pas des formules de fabricant. Survolez un exemple pour voir son titre complet.</li>
 <li><b>Réglez le système</b> dans le panneau de gauche : ouverture, champs, longueurs d'onde.</li>
 <li><b>Saisissez les surfaces</b> dans l'éditeur : rayon, épaisseur, verre. Choisissez le <b>type d'élément</b> (dioptre, miroir, réseau, lentille idéale, polariseur, lame d'onde) dans la colonne <i>Élément</i>.</li>
 <li><b>Observez</b> le layout et les fenêtres d'analyse : tout se recalcule à chaque modification.</li>

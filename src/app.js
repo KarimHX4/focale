@@ -3076,7 +3076,9 @@ function init() {
   document.addEventListener('click', e => { const g = e.target.closest('[data-mcgo]'); if (g && !g.disabled) { const v = g.dataset.mcgo; mcGo(v === 'prev' || v === 'next' ? v : +v); } });
   document.addEventListener('change', e => { if (e.target.matches('[data-mcsel]')) mcGo(+e.target.value); });
   loadStoredAGF(); rebuildGlassList();
-  $('#mSamp').innerHTML = Object.keys(SAMPLES).map(k => `<button data-samp="${esc(k)}">${esc(k)}</button>`).join('');
+  { const cats = SAMPLES._cats || [['Exemples', Object.keys(SAMPLES)]], seen = new Set(cats.flatMap(c => c[1]));
+    const rest = Object.keys(SAMPLES).filter(k => !seen.has(k)); if (rest.length) cats.push(['Autres', rest]);
+    $('#mSamp').innerHTML = `<button data-act="new" title="Système vide : objet, diaphragme et image, sans lentille">Système vide</button>` + cats.map(([c, ks]) => `<div class="mcat">${esc(c)}</div>` + ks.filter(k => SAMPLES[k]).map(k => `<button data-samp="${esc(k)}" title="${esc(SAMPLES[k]().title || k)}">${esc(k)}</button>`).join('')).join(''); }
   load();
   if (!App.sys) App.sys = normalize(SAMPLES['Triplet de Cooke f=50 F/5']());
   App.showAsph = App.sys.surfaces.some(s => OE.ASPK.some(a => +s[a])); $('#showAsph').checked = App.showAsph;
@@ -3095,7 +3097,7 @@ function init() {
     const a = e.target.closest('[data-act]'); if (!a) return;
     switch (a.dataset.act) {
       case 'new': FS.handle = null; loadSystem({ title: 'Nouveau système', aperture: { type: 'EPD', value: 10, obscuration: 0 }, fields: [{ y: 0, w: 1 }, { y: 5, w: 1 }], wavelengths: [{ um: 0.4861327, w: 1 }, { um: 0.5875618, w: 1 }, { um: 0.6562725, w: 1 }], primary: 1, rayAiming: false, merit: { image: 'SPOT', ops: [] },
-        surfaces: [newSurf({ t: Infinity, comment: 'Objet' }), newSurf({ r: 50, t: 4, glass: 'N-BK7', stop: true }), newSurf({ r: -50, t: 45, tsolve: 'M' }), newSurf({ t: 0, comment: 'Image' })] }, 'Nouveau système'); break;
+        surfaces: [newSurf({ t: Infinity, comment: 'Objet' }), newSurf({ t: 10, stop: true, comment: 'Diaphragme' }), newSurf({ t: 0, comment: 'Image' })] }, 'Nouveau système vide : ajoutez des lentilles (+ Lentille) ou partez d\'un exemple'); break;
       case 'import': openImport(); break;
       case 'export': openExport(); break;
       case 'open': openFile(); break;

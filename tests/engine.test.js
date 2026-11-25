@@ -256,6 +256,10 @@ const P = []; OE.ray(M, 1, 20, 0, 1, { pts: P }); near('Visée réelle sur diaph
     near('Aller-retour Zemax : obstruction centrale', IO.parseZMX(z).sys.aperture.obscuration, c.aperture.obscuration, 1e-9);
     const c2 = structuredClone(c); c2.surfaces[1].sd = 101; c2.surfaces[1].sdFixed = true; const z2 = IO.toZMX(c2).text;
     near('Export Zemax : ouverture fixe + obstruction → CLAP annulaire', /CLAP 32 101 0/.test(z2) && IO.parseZMX(z2).sys.aperture.obscuration === 0.32 ? 1 : 0, 1, 0); }
+  { const cats = S._cats.flatMap(c => c[1]); let bad = 0; for (const k of Object.keys(S)) { const M = OE.prepare(S[k]()); if (!M.ok || !cats.includes(k)) bad++; }
+    near('Exemples : tous valides et classés dans une catégorie du menu', bad, 0, 0);
+    const D = OE.prepare(S['Double Gauss f=100 F/3']()); near('Exemple Double Gauss : spot RMS bord de champ < 20 µm', OE.spot(D, 2, 15).rms * 1e3 < 20 ? 1 : 0, 1, 0);
+    const R = OE.prepare(S['Ritchey-Chrétien F/8']()); near('Exemple Ritchey-Chrétien : limité par la diffraction (WFE RMS < 0,07 λ)', OE.wavefront(R, 2, 0, 48).rms < 0.14 && OE.wavefront(R, 0, 0, 48).rms < 0.07 ? 1 : 0, 1, 0); }
   // Validation CODE V 2024.03 : objectif « DigCamera » (tutoriel CODE V), sorties FIR / REFRACTIVE INDICES / RSI fournies par l'utilisateur
   { const seq = `FNO 3.5\nDIM M\nWL 656.0 589.0 430.0\nREF 2\nWTW 1 2 1\nYAN 0.0 11.0 19.0 26.5\nVUX 0 0.007419823242190038 0.02280626025389998 0\nVLX 0 0.007419823242190038 0.02280626025389998 0\nVUY 0 0.0007207686245109812 0.20273532916 0\nVLY 0 0.04668488625860001 0.111177974441 0\nSO 0.0 750.0
 S 1.822175677212961 1.085816541265434 743972.448504\nS -21.29932312571177 0.1000000000000001\nS -3.057770039270196 0.2 736020.283993\nS 1.441367391070061 0.1244741047468973\nSTO\nS 2.884653512995602 0.9708074408810998 743972.448504\nS -2.08834100754463 1.95119372571215\nSI 0.0 -0.02480582498015976\nGO\n`;
