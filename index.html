@@ -398,7 +398,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 <div class="toast" id="toast"></div>
 <input type="file" id="fileIn" accept=".json,.zmx,.seq,.txt,.agf" style="display:none">
 <div class="drop" id="drop">Déposez un fichier .zmx, .seq, .json ou .agf</div>
-<script>const FOCALE_VERSION = 'c5e61828';</script>
+<script>const FOCALE_VERSION = '64c8559d';</script>
 <script id="js-engine">
 'use strict';
 /* =====================================================================
@@ -4082,11 +4082,12 @@ La liste <b>Meilleures solutions</b> (12 solutions distinctes, avec leur mérite
 <li><b>Glisser-déposer</b> d'un fichier <b>.zmx</b>, <b>.seq</b>, .json ou .agf sur la fenêtre, ou <i>Fichier → Importer un système</i> : le format est reconnu automatiquement. Les .zmx enregistrés en UTF-16 (cas courant) sont décodés.</li>
 <li><i>Fichier → Exporter Zemax (.zmx)</i> et <i>Exporter CODE V (.seq)</i> enregistrent le fichier ; <i>Afficher / copier le texte</i> montre les trois formats.</li>
 <li><b>Enregistrer sous</b> : chaque enregistrement (système, export Zemax / CODE V, rapports et plans PDF, CSV de tolérancement, image d'un graphe) ouvre une fenêtre pour choisir l'emplacement et le nom. Dans Chrome et Edge (GitHub Pages, application installée, fichier local), c'est l'explorateur de fichiers du système : dossier et nom au choix, le champ « Type » indique le format avec son extension (ex. « Fichier CODE V (*.seq) »). Dans Firefox, Safari ou dans claude.ai, une fenêtre de Focale permet de modifier le nom (l'extension est conservée) ; le fichier va ensuite dans le dossier de téléchargement, sauf si le navigateur est réglé sur « Demander où enregistrer chaque fichier ». Échap ou Annuler abandonne l'enregistrement.</li>
-<li>Après un import ou un export, un <b>rapport</b> liste ce qui a été converti ou ignoré.</li></ul>
+<li>Après un import ou un export, un <b>rapport</b> liste ce qui a été converti ou ignoré.</li>
+<li><b>Obstruction centrale</b> : Focale la définit dans la pupille (fraction du rayon), CODE V et Zemax par une obstruction circulaire posée sur une surface. À l'export, elle devient une obstruction de rayon <i>obstruction × hauteur du rayon marginal paraxial</i> sur le <b>diaphragme</b> : <code>CIR OBS r</code> en CODE V, <code>OBSC</code> en Zemax (ou ouverture annulaire <code>CLAP r_min r_max</code> si le diaphragme a déjà un demi-diamètre fixé 🔒). À l'import, la plus grande obstruction circulaire trouvée (CIR OBS, OBSC, CLAP annulaire) est reconvertie en obstruction de pupille, exacte sur le diaphragme et approchée (rayon marginal paraxial) sur une autre surface. FTM, PSF, énergie encerclée… restent ainsi identiques après l'aller-retour.</li></ul>
 <h4>Zemax OpticStudio (.zmx, séquentiel)</h4>
 <table class="ht"><tr><th>Élément</th><th>Correspondance</th></tr>
 <tr><td>Système</td><td>NAME, UNIT (mm, cm, in, m → mm), ENPD / FNUM / OBNA / FLOA, FTYP (angle, hauteur objet, hauteur image paraxiale ou réelle, type conservé), XFLN/YFLN/FWGN, vignetage VDXN/VDYN/VCXN/VCYN, WAVM ou WAVL/WWGT, PWAV, ENVD (température, pression).</td></tr>
-<tr><td>Surfaces</td><td>STANDARD, EVENASPH (PARM 2…8 → A4…A16), TCE (CTE de l'entretoise), COORDBRK (décentrements et bascules), PARAXIAL (lentille idéale), DGRATING (réseau, traits/µm et ordre). CURV, DISZ, CONI, DIAM, CLAP (demi-diamètre fixe), STOP, COMM.</td></tr>
+<tr><td>Surfaces</td><td>STANDARD, EVENASPH (PARM 2…8 → A4…A16), TCE (CTE de l'entretoise), COORDBRK (décentrements et bascules), PARAXIAL (lentille idéale), DGRATING (réseau, traits/µm et ordre). CURV, DISZ, CONI, DIAM, CLAP (demi-diamètre fixe ; rayon min > 0 → obstruction centrale), OBSC (obstruction centrale), STOP, COMM.</td></tr>
 <tr><td>Verres</td><td>Noms de catalogue (Schott, Ohara, CDGM, Hoya, MISC), MIRROR, ___BLANK (modèle nd/νd). Un verre inconnu est remplacé par son modèle nd/νd (signalé).</td></tr>
 <tr><td>Surfaces spéciales</td><td>BICONIC (rayon et conique X), BICONICX et TOROIDAL (approchées), BINARY_2 (DOE : ordre PARM 1, nombre de termes XDAT 1, rayon de normalisation XDAT 2, coefficients XDAT 3…) — à vérifier après conversion.</td></tr>
 <tr><td>Multi-configuration</td><td>MNUM, MOFF (noms des configurations), THIC, CRVT, CONN, GLSS, SDIA, APER, YFIE/XFIE, WAVE, WLWT, TEMP, PRES ; à l'export, numéros de surface recalculés si des coordinate breaks sont créés.</td></tr>
@@ -4094,7 +4095,7 @@ La liste <b>Meilleures solutions</b> (12 solutions distinctes, avec leur mérite
 <h4>CODE V (.seq)</h4>
 <table class="ht"><tr><th>Élément</th><th>Correspondance</th></tr>
 <tr><td>Système</td><td>TITLE, DIM / DDM (M, C, I → mm), EPD / FNO (→ F/# de travail paraxial) / NAO / NA (ON image), WL, REF, WTW, XAN/YAN, XOB/YOB, XIM/YIM, XRI/YRI (type de champ conservé), WTF, <b>VUY / VLY / VUX / VLX</b> (vignetage), <b>TEM / PRE</b> (température °C, pression en mmHg comme CODE V : 760 = 1 atm), PUI (apodisation gaussienne). Les listes acceptent aussi la forme indexée : <code>WTW W2 2</code>, <code>VUY F3 0.2</code>, <code>YAN F2 14</code>.</td></tr>
-<tr><td>Surfaces</td><td>SO, S, STO, SI, RDM/RDN, RDY/CUY/THI/GLA/GL1, K, <b>A…J</b> (A4 à A20), CIR (CIR EDG ignoré : bord mécanique), REFL et RMD REFL, PIM, XDE…CDE, DAR, BEN (REV → DAR), GRT/GRO/GRS/GRX/GRY (réseau), <b>SLB</b> (étiquette → commentaire), SPS XYP + SCO (polynôme XY, à vérifier), CCY/THC/KC/AC…DC 0 (variables), GLC 0 (verre fictif variable), TCE.</td></tr>
+<tr><td>Surfaces</td><td>SO, S, STO, SI, RDM/RDN, RDY/CUY/THI/GLA/GL1, K, <b>A…J</b> (A4 à A20), CIR (CIR EDG ignoré : bord mécanique ; <b>CIR OBS</b> → obstruction centrale, voir ci-dessous), REFL et RMD REFL, PIM, XDE…CDE, DAR, BEN (REV → DAR), GRT/GRO/GRS/GRX/GRY (réseau), <b>SLB</b> (étiquette → commentaire), SPS XYP + SCO (polynôme XY, à vérifier), CCY/THC/KC/AC…DC 0 (variables), GLC 0 (verre fictif variable), TCE.</td></tr>
 <tr><td>Qualificatifs</td><td>Les commandes qui désignent une surface explicitement sont appliquées à cette surface : <code>THI S7 4</code>, <code>CIR S2 10</code>, <code>SLB S4 'L2'</code>, <code>STO S3</code>, <code>CCY S1 0</code>… À l'export, le diaphragme est écrit comme CODE V l'écrit lui-même : ligne <code>S rayon épaisseur verre</code> suivie du qualificatif <code>STO</code> (une ligne « STO rayon épaisseur » ne crée pas de surface dans CODE V 2024 : la surface serait perdue). À l'import, les deux formes sont acceptées.</td></tr>
 <tr><td>Ignorées sans remarque</td><td>UID, DER, DOR, GCH, GLB, CAT, INI, GO, CUM, THM, VIE, PLO, WRL, EVA… (identifiants, incréments de dérivée, préférences, affichage : sans effet sur l'optique).</td></tr>
 <tr><td>Défocalisation</td><td>L'épaisseur de la surface image (<code>SI 0 -0.025</code> ou <code>THI SI</code>) est la défocalisation de CODE V (réglée par exemple par la mise au point rapide) : elle est ajoutée à l'épaisseur avant l'image, avec une remarque.</td></tr>
@@ -4247,6 +4248,25 @@ const IO = (() => {
   };
   /** valeurs de multi-configuration exprimées en longueur (mise à l'échelle des unités) */
   const MC_LEN = new Set(['THI', 'RAD', 'SD', 'DX', 'DY']);
+  /** obstruction centrale (fraction du rayon de pupille) → obstruction circulaire sur le diaphragme : { j, r } (r = obs × hauteur marginale paraxiale) */
+  function obsOut(sys) {
+    const o = +sys.aperture.obscuration || 0; if (!(o > 0)) return null;
+    try { const M = E.prepare(sys); if (M.ok && M.par.stopR > 0) return { j: M.stopIdx, r: o * M.par.stopR }; } catch (e) { }
+    return null;
+  }
+  /** obstructions circulaires de surface (CODE V CIR OBS, Zemax OBSC / CLAP annulaire) → obstruction centrale de pupille */
+  function obsIn(sys, list, W, src) {
+    if (!list.length) return;
+    try {
+      sys.aperture.obscuration = 0; const M = E.prepare(sys); if (!M.ok) throw new Error('système invalide');
+      let best = 0, at = null;
+      for (const { s, r } of list) { const j = sys.surfaces.indexOf(s), h = j > 0 ? Math.abs(M.par.mar.y[j]) : 0; if (h > 0 && r / h > best) { best = r / h; at = { j, r }; } }
+      if (!(best > 0)) return;
+      sys.aperture.obscuration = Math.min(0.95, +best.toFixed(6));
+      W.push(`Obstruction circulaire de ${src} (S${at.j}, rayon ${fmtN(at.r)} mm) convertie en obstruction centrale de pupille ${fmtN(sys.aperture.obscuration)}${at.j === M.stopIdx ? '' : ' (surface hors diaphragme : rapport à la hauteur du rayon marginal paraxial, approché hors axe)'}`);
+      if (list.length > 1) W.push('Plusieurs obstructions de surface : seule la plus grande (relativement au faisceau) est gardée');
+    } catch (e) { W.push(`Obstruction de surface (${src}) non convertie : ${e.message}`); }
+  }
   function mcScale(sys, k) { if (!sys.mc) return; for (const op of sys.mc.ops) if (MC_LEN.has(op.type) || (op.type === 'APE' && ['EPD', 'STOP'].includes(sys.aperture.type))) op.v = op.v.map(v => typeof v === 'number' && isFinite(v) ? v * k : v); }
   /** construit sys.mc à partir d'entrées { type, i, k (position, base 0), v } ; cur = configuration dont les valeurs sont celles du système */
   function mcBuild(sys, ent, n, cur, W, src) {
@@ -4262,7 +4282,7 @@ const IO = (() => {
   const isItemQ = t => /^[WFZ]\d+$/i.test(t || '');
   function parseSeq(txt) {
     const W = [], sys = baseSys(), note = m => { if (!W.includes(m)) W.push(m); };
-    const zoo = { n: 0, ent: [] };
+    const zoo = { n: 0, ent: [] }, obsL = [];
     let wl = [], wtw = [], fy = [], fxs = [], wtf = [], vig = { vuy: [], vly: [], vux: [], vlx: [] }, ftype = 'ang', cur = null, rdn = false, scale = null, ddm = null, prv = null, pwl = [], spsT = null, rect = new Map();
     const stmts = String(txt).split(/\r?\n/).map(l => l.replace(/!.*$/, '')).join('\n').split(/[;\n]/);
     const setList = (arr, a) => { // « CMD v1 v2 … » ou « CMD Wk v » / « CMD Fk v »
@@ -4358,7 +4378,8 @@ const IO = (() => {
         case 'CIR': {
           if (!tgt) break; const w = (a[0] || '').toUpperCase();
           if (w === 'EDG') break; // ouverture mécanique (bord) : sans effet sur le tracé
-          if (w === 'HOL' || w === 'OBS') { note('Trous et obstructions de surface (CIR HOL / CIR OBS) ignorés'); break; }
+          if (w === 'OBS') { const v = +a[1]; if (v > 0) obsL.push({ s: tgt, r: v }); break; }
+          if (w === 'HOL') { note('Trous de surface (CIR HOL) ignorés'); break; }
           if (isFinite(n(0)) && n(0) > 0) { tgt.sd = n(0); tgt.sdFixed = true; } break;
         }
         case 'REX': case 'REY': { if (!tgt) break; note(SEQ_UNSUP[cmd]); const w = (a[0] || '').toUpperCase(); if (['EDG', 'HOL', 'OBS'].includes(w)) break; const r = rect.get(tgt) || {}; r[cmd] = n(0); rect.set(tgt, r); break; }
@@ -4424,6 +4445,7 @@ const IO = (() => {
     if (sc !== 1) { scaleSys(sys, sc, ftype); mcScale(sys, sc); W.push(`Unités converties en mm (×${sc})`); }
     sys.ftype = ftype;
     fixFields(sys, ftype, W);
+    obsIn(sys, obsL.map(o => ({ s: o.s, r: o.r * sc })), W, 'CODE V (CIR OBS)');
     if (sys.env && (sys.env.T != null || sys.env.P != null)) { if (Math.abs((sys.env.T ?? 20) - 20) < 1e-9 && Math.abs((sys.env.P ?? 1) - 1) < 1e-9) delete sys.env; else note(`Environnement importé : ${sys.env.T ?? 20} °C, ${+(sys.env.P ?? 1).toFixed(5)} atm (prescription à 20 °C)`); }
     if (!sys.rayAiming) { sys.aimMode = 'chief'; note('Visée : rayon principal itéré au centre du diaphragme, comme CODE V par défaut (Données système → Avancé)'); }
     return { sys, warnings: W };
@@ -4449,7 +4471,7 @@ const IO = (() => {
 
   const cv0 = (s, objInf) => E.FTYPES[E.FTYPES[s.ftype] ? s.ftype : (objInf ? 'ang' : 'obj')].cv;
   function toSeq(s) {
-    const W = [], S = s.surfaces, N = S.length - 1, L = [], TS = solvedT(s);
+    const W = [], S = s.surfaces, N = S.length - 1, L = [], TS = solvedT(s), ob = obsOut(s);
     const objInf = !isFinite(S[0].t) || Math.abs(S[0].t) > 1e10;
     const wls = s.wavelengths.map(w => w.um);
     const priv = new Map();
@@ -4469,7 +4491,8 @@ const IO = (() => {
     body.push(`SO ${r(objInf ? 0 : S[0].r)} ${objInf ? '1e+18' : r(S[0].t)}${S[0].glass && !E.isAir(S[0].glass) ? ' ' + gl(S[0].glass) : ''}`);
     for (let i = 1; i < N; i++) {
       const x = S[i]; body.push(`S ${r(x.r)} ${r(x.tsolve === 'M' ? TS[i] : x.t)} ${gl(x.glass)}`.trim());
-      if (x.stop) body.push('  STO'); // qualificatif de la surface courante, comme les .seq écrits par CODE V (« STO r t » n'y crée pas de surface)
+      if (x.stop) body.push('  STO');
+      if (ob && ob.j === i) body.push(`  CIR OBS ${fmtN(ob.r)}`); // obstruction centrale de pupille → obstruction circulaire sur le diaphragme // qualificatif de la surface courante, comme les .seq écrits par CODE V (« STO r t » n'y crée pas de surface)
       if (x.tsolve === 'M' && i !== N - 1) W.push(`S${i} : solve de mise au point exporté comme épaisseur fixe`);
       if (x.comment) body.push(`  SLB "${String(x.comment).replace(/"/g, "'")}"`);
       const asp = E.ASPK.some(a => x[a]);
@@ -4499,7 +4522,7 @@ const IO = (() => {
     if (s.env && ((+s.env.T ?? 20) !== 20 || (+s.env.P ?? 1) !== 1)) { L.push(`TEM ${fmtN(s.env.T ?? 20)}`, `PRE ${fmtN((s.env.P ?? 1) * 760)}`); if (s.env.Tref != null && +s.env.Tref !== 20) W.push('Température de référence de la prescription ≠ 20 °C : non exportée'); }
     if (s.apod && s.apod.type === 'gauss') L.push(`PUI ${fmtN(s.apod.I ?? 0.135)}`);
     if (priv.size) { L.push('PRV', 'PWL ' + wls.map(l => (l * 1000).toFixed(4)).join(' ')); for (const [nm, ns] of priv) L.push(`'${nm}' ${ns.map(v => v.toFixed(6)).join(' ')}`); L.push('END'); W.push(`${priv.size} verre(s) fictif(s) ou importé(s) exporté(s) en verres privés PRV`); }
-    if ((ap.obscuration || 0) > 0) W.push('Obstruction centrale non exportée');
+    if (ob) W.push(`Obstruction centrale ${fmtN(ap.obscuration)} exportée en CIR OBS ${fmtN(ob.r)} mm sur le diaphragme (S${ob.j})`); else if ((ap.obscuration || 0) > 0) W.push('Obstruction centrale non exportée (système invalide)');
     if (E.mcOn(s)) { // multi-configuration → positions de zoom CODE V
       const mc = E.mcSync(structuredClone(s)).mc, zl = [`ZOO ${mc.n}`];
       for (const op of mc.ops) {
@@ -4539,13 +4562,14 @@ const IO = (() => {
           case 'DISZ': cur.disz = /^INF/i.test(t[1]) ? Infinity : num(t[1]); continue;
           case 'GLAS': cur.glas = t[1]; cur.gnd = num(t[4]); cur.gvd = num(t[5]); continue;
           case 'DIAM': cur.diam = num(t[1]); continue;
-          case 'CLAP': cur.clap = num(t[2]); continue;
+          case 'CLAP': cur.clap = num(t[2]); if (num(t[1]) > 0) cur.obsc = num(t[1]); continue; // CLAP min max : anneau → obstruction de rayon min
+          case 'OBSC': if (num(t[2]) > 0 && !(num(t[1]) > 0)) { cur.obsc = num(t[2]); continue; } if (!W.some(w => w.includes('OBSC'))) W.push('Obstruction OBSC annulaire (rayon min > 0) ignorée'); continue;
           case 'CONI': cur.coni = num(t[1]); continue;
           case 'PARM': cur.parm[+t[1]] = num(t[2]); continue;
           case 'XDAT': cur.xdat[+t[1]] = num(t[2]); continue;
           case 'STOP': cur.stop = true; continue;
           case 'COMM': cur.comm = tl.slice(4).trim().replace(/^"|"$/g, ''); continue;
-          case 'OBSC': case 'FLAP': case 'SQAP': case 'ELAP': case 'SQOB': case 'ELOB': if (!W.some(w => w.includes(cmd))) W.push(`Ouverture ${cmd} ignorée (seules les ouvertures circulaires CLAP sont lues)`); continue;
+          case 'FLAP': case 'SQAP': case 'ELAP': case 'SQOB': case 'ELOB': if (!W.some(w => w.includes(cmd))) W.push(`Ouverture ${cmd} ignorée (seules les ouvertures circulaires CLAP et les obstructions OBSC sont lues)`); continue;
         }
         if (cmd === 'TCE') { const v = num(t[1]); if (v) cur.tce = v; continue; }
         if (/^(HIDE|MIRR|SLAB|POPS|MAZH|PZUP|LANG|FLWR|COAT|TOL|VDSZ|VCRV|VPAR|PPAR|CONF|BLNK|MNUM|MOFF|EDGE)$/.test(cmd)) continue;
@@ -4573,7 +4597,7 @@ const IO = (() => {
     }
     if (raw.length < 3) throw new Error('Fichier .zmx : aucune surface trouvée');
     // surfaces
-    const types = new Set();
+    const types = new Set(), zobs = [];
     raw.forEach((r, i) => {
       const s = S0({ t: r.disz ?? 0, comment: r.comm || '' });
       if (i === 0) { s.t = r.disz ?? Infinity; if (!s.comment) s.comment = 'Objet'; }
@@ -4584,6 +4608,7 @@ const IO = (() => {
       if (r.tce) s.tce = r.tce;
       if (r.diam > 0) s.sd = r.diam;
       if (r.clap > 0) { s.sd = r.clap; s.sdFixed = true; }
+      if (r.obsc > 0) zobs.push({ s, r: r.obsc });
       if (r.glas) s.glass = r.glas.toUpperCase() === '___BLANK' ? (r.gvd > 0 ? `${g10(r.gnd)}/${g10(r.gvd)}` : String(g10(r.gnd))) : mapGlass(r.glas, r.gnd, r.gvd, W, `S${i}`);
       switch (r.type) {
         case 'STANDARD': break;
@@ -4621,6 +4646,7 @@ const IO = (() => {
     const ft = ['ang', 'obj', 'pim', 'rim'][ftype] || 'ang'; if (ftype > 3) W.push('Type de champ Zemax non pris en charge : valeurs prises comme des angles');
     if (unit !== 1) { scaleSys(sys, unit, ft); W.push(`Unités converties en mm (×${unit})`); }
     sys.ftype = ft; fixFields(sys, ft, W);
+    obsIn(sys, zobs.map(o => ({ s: o.s, r: o.r * unit })), W, 'Zemax (OBSC / CLAP annulaire)');
     if (floa) { // ouverture « flottante » : diamètre fixé par le diaphragme
       const st = sys.surfaces.find(s => s.stop);
       if (st && st.sd > 0) { try { sys.aperture = { type: 'EPD', value: 2 * st.sd, obscuration: 0 }; const M = E.prepare(sys); if (M.ok && M.par.stopR > 0) sys.aperture.value = 2 * st.sd * (st.sd / M.par.stopR); } catch (e) { } W.push('Ouverture « Float by stop size » convertie en diamètre de pupille d\'entrée'); }
@@ -4645,11 +4671,11 @@ const IO = (() => {
       if (o.kind === 'cat') { cats.add(o.cat); if (o.user) W.push(`Verre ${o.name} : catalogue ${o.cat} à installer dans OpticStudio`); return `GLAS ${o.name} 0 0 ${fmtN(o.nd)} ${fmtN(o.vd)} 0 0 0 0 0 0`; }
       return `GLAS ___BLANK 1 0 ${fmtN(o.nd)} ${fmtN(o.vd)} 0 0 0 0 0 0`;
     };
-    const zmap = [], ztmap = [];
+    const zmap = [], ztmap = [], ob = obsOut(s);
     S.forEach((x, i) => {
       const t = i === N ? 0 : TS[i], dec = i > 0 && i < N && isDec(x);
       zmap[i] = zs.length + (dec ? 1 : 0); ztmap[i] = zs.length + (dec ? (x.dmode === 'DEC' ? 1 : 2) : 0);
-      const surf = { type: 'STANDARD', curv: isFinite(x.r) && x.r ? 1 / x.r : 0, disz: t, glas: glasLine(x.glass), sd: x.sd, fixed: x.sdFixed, coni: x.k, parm: {}, stop: x.stop, comm: x.comment || '' };
+      const surf = { type: 'STANDARD', curv: isFinite(x.r) && x.r ? 1 / x.r : 0, disz: t, glas: glasLine(x.glass), sd: x.sd, fixed: x.sdFixed, coni: x.k, parm: {}, stop: x.stop, comm: x.comment || '', obs: ob && ob.j === i ? ob.r : 0 };
       if (E.ASPK.some(a => x[a])) { surf.type = 'EVENASPH'; surf.parm = { 1: 0, 2: x.a4 || 0, 3: x.a6 || 0, 4: x.a8 || 0, 5: x.a10 || 0, 6: x.a12 || 0, 7: x.a14 || 0, 8: x.a16 || 0 }; if (x.a18 || x.a20) W.push(`S${i} : coefficients A18, A20 non exportés (EVENASPH s'arrête à r¹⁶)`); }
       if (x.tce != null && x.tce !== '') surf.tce = +x.tce;
       if (x.type === 'TOR') { if (surf.type === 'EVENASPH') W.push(`S${i} : asphères d'une surface torique non exportées (BICONIC)`); surf.type = 'BICONIC'; surf.parm = { 1: isFinite(+x.rx) && +x.rx ? +x.rx : 0, 2: +x.kx || 0 }; }
@@ -4695,7 +4721,8 @@ const IO = (() => {
       if (z.glas) out.push('  ' + z.glas);
       if (z.coni) out.push(`  CONI ${fmtN(z.coni)}`);
       if (z.type !== 'COORDBRK') out.push(`  DIAM ${fmtN(z.sd || 0)} ${z.fixed ? 1 : 0} 0 0 1 ""`);
-      if (z.fixed && z.sd > 0) out.push(`  CLAP 0 ${fmtN(z.sd)} 0`);
+      if (z.fixed && z.sd > 0) out.push(`  CLAP ${fmtN(z.obs || 0)} ${fmtN(z.sd)} 0`); // anneau si obstruction
+      else if (z.obs > 0) out.push(`  OBSC 0 ${fmtN(z.obs)} 0`);
       if (z.tce) out.push(`  TCE ${fmtN(z.tce)}`);
     });
     if (E.mcOn(s)) { // éditeur multi-configuration OpticStudio
@@ -4710,7 +4737,7 @@ const IO = (() => {
       W.push(`${mc.n} configurations exportées dans l'éditeur multi-configuration Zemax (MNUM / ${mc.ops.length} opérande(s))`);
     }
     if (S.some(x => x.tsolve === 'M')) W.push('Solve de mise au point exporté comme épaisseur fixe');
-    if ((ap.obscuration || 0) > 0) W.push('Obstruction centrale non exportée');
+    if (ob) W.push(`Obstruction centrale ${fmtN(ap.obscuration)} exportée en obstruction circulaire de rayon ${fmtN(ob.r)} mm sur le diaphragme (S${ob.j})`); else if ((ap.obscuration || 0) > 0) W.push('Obstruction centrale non exportée (système invalide)');
     if (s.rayAiming) W.push('Visée réelle des rayons : à réactiver dans OpticStudio (System Explorer → Ray Aiming)');
     return { text: out.join('\r\n') + '\r\n', warnings: W };
   }

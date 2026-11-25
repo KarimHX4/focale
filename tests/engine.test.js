@@ -249,6 +249,13 @@ const P = []; OE.ray(M, 1, 20, 0, 1, { pts: P }); near('Visée réelle sur diaph
   { const t = IO.toSeq(S['Triplet de Cooke f=50 F/5']()).text, L = t.split('\n');
     near('Export CODE V : diaphragme écrit en qualificatif « STO » (pas de ligne « STO r t »)', L.some(l => /^STO\s+\S/.test(l)) ? 0 : 1, 1, 0);
     near('Export CODE V : une ligne S par surface (Cooke : 6)', L.filter(l => /^S\s/.test(l)).length, 6, 0); }
+  { const c = S['Télescope Cassegrain F/7.5'](), q = IO.toSeq(c).text, z = IO.toZMX(c).text;
+    near('Export CODE V : obstruction centrale → CIR OBS sur le diaphragme', /\n\s*CIR OBS 32\b/.test(q) ? 1 : 0, 1, 0);
+    near('Aller-retour CODE V : obstruction centrale', IO.parseSeq(q).sys.aperture.obscuration, c.aperture.obscuration, 1e-9);
+    near('Export Zemax : obstruction centrale → OBSC', /OBSC 0 32 0/.test(z) ? 1 : 0, 1, 0);
+    near('Aller-retour Zemax : obstruction centrale', IO.parseZMX(z).sys.aperture.obscuration, c.aperture.obscuration, 1e-9);
+    const c2 = structuredClone(c); c2.surfaces[1].sd = 101; c2.surfaces[1].sdFixed = true; const z2 = IO.toZMX(c2).text;
+    near('Export Zemax : ouverture fixe + obstruction → CLAP annulaire', /CLAP 32 101 0/.test(z2) && IO.parseZMX(z2).sys.aperture.obscuration === 0.32 ? 1 : 0, 1, 0); }
   // Validation CODE V 2024.03 : objectif « DigCamera » (tutoriel CODE V), sorties FIR / REFRACTIVE INDICES / RSI fournies par l'utilisateur
   { const seq = `FNO 3.5\nDIM M\nWL 656.0 589.0 430.0\nREF 2\nWTW 1 2 1\nYAN 0.0 11.0 19.0 26.5\nVUX 0 0.007419823242190038 0.02280626025389998 0\nVLX 0 0.007419823242190038 0.02280626025389998 0\nVUY 0 0.0007207686245109812 0.20273532916 0\nVLY 0 0.04668488625860001 0.111177974441 0\nSO 0.0 750.0
 S 1.822175677212961 1.085816541265434 743972.448504\nS -21.29932312571177 0.1000000000000001\nS -3.057770039270196 0.2 736020.283993\nS 1.441367391070061 0.1244741047468973\nSTO\nS 2.884653512995602 0.9708074408810998 743972.448504\nS -2.08834100754463 1.95119372571215\nSI 0.0 -0.02480582498015976\nGO\n`;
