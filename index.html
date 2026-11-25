@@ -260,6 +260,7 @@ table.ht{border-collapse:collapse;width:100%;font-size:12.5px}table.ht td,table.
 .oL,.oR{display:flex;flex-direction:column;min-height:0;min-width:0}
 .oL{overflow:auto;padding-right:4px}
 .akst{font-size:11.5px;padding:2px 8px;border-radius:10px;background:var(--panel2);color:var(--mut)}.akst.ok{background:rgba(22,163,74,.15);color:#16a34a;font-weight:600}.akst.ko{background:rgba(220,38,38,.14);color:#dc2626;font-weight:600}
+.svov{position:fixed;inset:0;z-index:400;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center}.svbox{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.4);padding:16px 18px;width:min(460px,92vw)}.svbox h3{margin:0 0 10px;font-size:15px}.svbox label{font-size:12px;opacity:.8;display:block;margin-bottom:4px}
 .pvw{position:fixed;inset:0;z-index:300;background:rgba(15,23,42,.72);display:none;flex-direction:column}.pvw.open{display:flex}.pvh{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line)}.pvb{flex:1;overflow:auto;padding:18px 0;display:flex;flex-direction:column;align-items:center;gap:16px}.pvp{position:relative;background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.35);flex:none}.pvp canvas{display:block}.pvn{position:absolute;right:8px;bottom:6px;font-size:11px;color:#6b7686;background:rgba(255,255,255,.85);padding:1px 6px;border-radius:8px}
 .gtip{position:absolute;pointer-events:none;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:11.5px;box-shadow:var(--shadow);z-index:5;max-width:230px}
 .hlist{flex:1;overflow:auto;border:1px solid var(--line);border-radius:8px;min-height:120px}.hrow{display:flex;align-items:center;gap:8px;padding:4px 8px;border-bottom:1px solid var(--line);font-size:12px;cursor:pointer}.hrow:hover{background:var(--panel2)}.hrow.cur{background:var(--sel);font-weight:600}.hrow.fut{opacity:.5}.hrow .hn{width:28px;color:var(--mut);font-family:var(--mono)}.hrow .ht{width:62px;color:var(--mut);font-family:var(--mono)}.hrow .hl{flex:1;min-width:0}
@@ -396,7 +397,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 <div class="toast" id="toast"></div>
 <input type="file" id="fileIn" accept=".json,.zmx,.seq,.txt,.agf" style="display:none">
 <div class="drop" id="drop">Déposez un fichier .zmx, .seq, .json ou .agf</div>
-<script>const FOCALE_VERSION = 'dec0f174';</script>
+<script>const FOCALE_VERSION = '007f9a71';</script>
 <script id="js-engine">
 'use strict';
 /* =====================================================================
@@ -3975,7 +3976,7 @@ const HELP = [
 
   { id: 'rapport', t: 'Rapports PDF', h: `
 <p>Menu <b>Rapport ▾</b> de la barre d'outils (ou menu <i>Fichier</i>) : <b>Rapport de conception</b>, <b>Rapport de tolérancement</b> (voir <i>Tolérancement</i>) et <b>Plans de fabrication ISO 10110</b> (voir la rubrique dédiée). Pour le rapport de conception, composez le rapport puis cliquez sur <b>Aperçu du rapport</b>.</p>
-<p><b>Aperçu</b> : tous les documents PDF (rapport, rapport de tolérancement, plans ISO 10110) s'ouvrent d'abord dans une visionneuse plein écran, page par page, rendue par Focale elle-même (elle fonctionne aussi dans claude.ai). Zoom −/+ et « Ajuster » (largeur de la fenêtre), défilement, numéro de page. <b>⤓ Télécharger le PDF</b> enregistre le fichier ; ✕ ou Échap ferme l'aperçu pour modifier les réglages et régénérer. Dans claude.ai, Claude demande une confirmation avant le téléchargement.</p>
+<p><b>Aperçu</b> : tous les documents PDF (rapport, rapport de tolérancement, plans ISO 10110) s'ouvrent d'abord dans une visionneuse plein écran, page par page, rendue par Focale elle-même (elle fonctionne aussi dans claude.ai). Zoom −/+ et « Ajuster » (largeur de la fenêtre), défilement, numéro de page. <b>⤓ Télécharger le PDF</b> ouvre la fenêtre d'enregistrement (dossier et nom modifiables, voir <i>Fichiers</i>) ; ✕ ou Échap ferme l'aperçu pour modifier les réglages et régénérer. Dans claude.ai, Claude demande une confirmation avant le téléchargement.</p>
 <ul><li><b>Titre, auteur, notes</b> : repris en page de garde (avec date, version de Focale et chiffres clés) et dans les pieds de page.</li>
 <li><b>Sections</b> : données du système et paraxiales, prescription (avec asphères et décentrements), multi-configuration (paramètres, synthèse et layout de chaque configuration), layout 2D, performances par champ (spot, front d'onde, Strehl, vignetage), coefficients de Seidel, détecteur, source / fibre, tableau des tolérances de fabrication, tolérancement (résultats déjà calculés : sensibilités, RSS, Monte-Carlo avec histogramme). Voir aussi <i>Rapport de tolérancement</i> (Tolérancement) et <i>Plans de fabrication ISO 10110</i>.</li>
 <li><b>Analyses</b> : cochez celles à inclure ; « un graphique par champ » les répète pour chaque champ. « Fenêtres d'analyse ouvertes » reprend exactement vos fenêtres avec leurs réglages.</li>
@@ -4078,7 +4079,8 @@ La liste <b>Meilleures solutions</b> (12 solutions distinctes, avec leur mérite
   { id: 'fichiers', t: 'Fichiers, Zemax et CODE V', h: `
 <ul><li><b>Ctrl+O</b> ouvrir, <b>Ctrl+S</b> enregistrer (.json, format natif complet), <i>Enregistrer sous</i></li>
 <li><b>Glisser-déposer</b> d'un fichier <b>.zmx</b>, <b>.seq</b>, .json ou .agf sur la fenêtre, ou <i>Fichier → Importer un système</i> : le format est reconnu automatiquement. Les .zmx enregistrés en UTF-16 (cas courant) sont décodés.</li>
-<li><i>Fichier → Exporter Zemax (.zmx)</i> et <i>Exporter CODE V (.seq)</i> téléchargent le fichier ; <i>Afficher / copier le texte</i> montre les trois formats.</li>
+<li><i>Fichier → Exporter Zemax (.zmx)</i> et <i>Exporter CODE V (.seq)</i> enregistrent le fichier ; <i>Afficher / copier le texte</i> montre les trois formats.</li>
+<li><b>Enregistrer sous</b> : chaque enregistrement (système, export Zemax / CODE V, rapports et plans PDF, CSV de tolérancement, image d'un graphe) ouvre une fenêtre pour choisir l'emplacement et le nom. Dans Chrome et Edge (GitHub Pages, application installée, fichier local), c'est l'explorateur de fichiers du système : dossier et nom au choix. Dans Firefox, Safari ou dans claude.ai, une fenêtre de Focale permet de modifier le nom (l'extension est conservée) ; le fichier va ensuite dans le dossier de téléchargement, sauf si le navigateur est réglé sur « Demander où enregistrer chaque fichier ». Échap ou Annuler abandonne l'enregistrement.</li>
 <li>Après un import ou un export, un <b>rapport</b> liste ce qui a été converti ou ignoré.</li></ul>
 <h4>Zemax OpticStudio (.zmx, séquentiel)</h4>
 <table class="ht"><tr><th>Élément</th><th>Correspondance</th></tr>
@@ -7484,8 +7486,7 @@ function pvDraw(k) {
 }
 function pvClose() { const el = $('#pvw'); if (el) el.classList.remove('open'); if (PV.obs) PV.obs.disconnect(); }
 async function pvDownload() {
-  if (!PV.bytes) return; const ok = await download(PV.name, new Blob([PV.bytes], { type: 'application/pdf' }));
-  if (ok !== false) toast(TOP ? `${PV.name} téléchargé` : `${PV.name} : confirmez le téléchargement dans la fenêtre de Claude (si rien n'apparaît, ouvrez Focale depuis GitHub Pages ou l'application installée)`, 6000);
+  if (!PV.bytes) return; await download(PV.name, new Blob([PV.bytes], { type: 'application/pdf' }));
 }
 /* ---------------- Multi-configuration (zoom) ---------------- */
 const mcName = (s, k) => (s.mc && s.mc.names && s.mc.names[k]) || `Config ${k + 1}`;
@@ -7910,7 +7911,7 @@ function importText(t, name = '') {
 }
 function exportAs(kind, dl = true) {
   const r = kind === 'zmx' ? IO.toZMX(App.sys) : IO.toSeq(App.sys), ext = kind === 'zmx' ? '.zmx' : '.seq';
-  if (dl) { download(fileBase() + ext, r.text, 'text/plain'); toast(`Export ${kind === 'zmx' ? 'Zemax' : 'CODE V'} téléchargé`); }
+  if (dl) download(fileBase() + ext, r.text, 'text/plain');
   if (r.warnings.length) ioReport(`Export ${kind === 'zmx' ? 'Zemax (.zmx)' : 'CODE V (.seq)'}`, r.warnings, dl ? '' : '');
   return r.text;
 }
@@ -7963,19 +7964,50 @@ function dlCap() {
   return DLCAP.p;
 }
 const DL_OK = /\.(gif|png|jpe?g|webp|mp4|webm|txt|json|md|docx|pptx|epub|csv|html|svg|pdf|xlsx|zip)$/i;
+const MIME = { pdf: 'application/pdf', json: 'application/json', csv: 'text/csv', png: 'image/png', svg: 'image/svg+xml', html: 'text/html', txt: 'text/plain', seq: 'text/plain', zmx: 'text/plain', agf: 'text/plain', len: 'text/plain' };
+const DLDESC = { pdf: 'Document PDF', json: 'Système Focale', csv: 'Tableau CSV', png: 'Image PNG', seq: 'Fichier CODE V', zmx: 'Fichier Zemax', svg: 'Image SVG', txt: 'Texte' };
+const extOf = n => ((/\.([a-z0-9]+)$/i.exec(n) || [])[1] || '').toLowerCase();
+/** fenêtre « Enregistrer sous » interne (navigateurs sans sélecteur natif, ou Focale ouvert dans claude.ai) : nom modifiable, extension conservée */
+function askSaveName(name) {
+  return new Promise(res => {
+    const ext = extOf(name), base = ext ? name.slice(0, -ext.length - 1) : name;
+    const ov = document.createElement('div'); ov.className = 'svov';
+    ov.innerHTML = `<div class="svbox" role="dialog" aria-label="Enregistrer sous"><h3>Enregistrer sous</h3>
+      <label>Nom du fichier</label><div class="row" style="gap:4px;align-items:center"><input class="in" id="svName" style="flex:1" spellcheck="false" value="${esc(base)}">${ext ? `<span class="hint">.${esc(ext)}</span>` : ''}</div>
+      <div class="hint" style="margin-top:8px">${TOP ? 'Ce navigateur ne permet pas de choisir le dossier depuis la page : le fichier va dans le dossier de téléchargement. Pour choisir l\'emplacement à chaque fois, activez « Demander où enregistrer chaque fichier » dans les réglages de téléchargement du navigateur (Chrome / Edge ouvrent directement l\'explorateur).' : 'Dans claude.ai, le fichier passe par la fenêtre de téléchargement de Claude puis par votre navigateur. Pour choisir le dossier, activez « Demander où enregistrer chaque fichier » dans les réglages du navigateur, ou ouvrez Focale depuis GitHub Pages / l\'application installée (l\'explorateur de fichiers s\'ouvre alors directement).'}</div>
+      <div class="row" style="justify-content:flex-end;gap:6px;margin-top:12px"><button class="tb" data-sv="0">Annuler</button><button class="tb pri" data-sv="1">Enregistrer</button></div></div>`;
+    document.body.appendChild(ov);
+    const inp = ov.querySelector('#svName'); inp.focus(); inp.select();
+    const done = ok => { const v = inp.value.trim().replace(/[\\/:*?"<>|]+/g, '_'); ov.remove(); document.removeEventListener('keydown', key, true); res(ok && v ? (ext && !v.toLowerCase().endsWith('.' + ext) ? `${v}.${ext}` : v) : null); };
+    const key = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); } else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(true); } };
+    document.addEventListener('keydown', key, true);
+    ov.addEventListener('mousedown', e => { if (e.target === ov) done(false); });
+    ov.querySelectorAll('[data-sv]').forEach(b => b.onclick = () => done(b.dataset.sv === '1'));
+  });
+}
+/** enregistre un fichier : sélecteur natif (dossier + nom) si disponible, sinon fenêtre « Enregistrer sous » puis téléchargement.
+    Renvoie le nom enregistré, ou false si l'utilisateur annule. */
 async function download(name, text, type = 'application/json') {
-  const b = text instanceof Blob ? text : new Blob([text], { type });
+  const ext = extOf(name), b = text instanceof Blob ? text : new Blob([text], { type: MIME[ext] || type });
+  if (TOP && window.showSaveFilePicker) {
+    try {
+      const mime = MIME[ext] && MIME[ext] !== 'text/plain' ? MIME[ext] : 'text/plain';
+      const h = await showSaveFilePicker({ suggestedName: name, types: ext ? [{ description: DLDESC[ext] || ext.toUpperCase(), accept: { [mime]: ['.' + ext] } }] : undefined });
+      const w = await h.createWritable(); await w.write(b); await w.close(); toast('Enregistré : ' + h.name); return h.name;
+    } catch (e) { if (e && e.name === 'AbortError') { toast('Enregistrement annulé'); return false; } /* sinon (sécurité, activation perdue…) : fenêtre interne */ }
+  }
+  const fn0 = await askSaveName(name); if (!fn0) { toast('Enregistrement annulé'); return false; }
   const ns = TOP ? null : await dlCap();
   if (ns) {
     // extensions hors liste (.zmx, .seq, .agf…) : enregistrées en .txt (à renommer)
-    const fn = DL_OK.test(name) ? name : name + '.txt';
-    try { await ns.save({ filename: fn, data: b }); if (fn !== name) toast(`Enregistré sous ${fn} : retirez « .txt » pour retrouver ${name}`, 5000); return true; }
+    const fn = DL_OK.test(fn0) ? fn0 : fn0 + '.txt';
+    try { await ns.save({ filename: fn, data: b }); toast(fn !== fn0 ? `Enregistré sous ${fn} : retirez « .txt » pour retrouver ${fn0}` : `${fn} : confirmez dans la fenêtre de Claude`, 5000); return fn; }
     catch (e) { const c = e && e.code; if (c === 'declined') { toast('Téléchargement annulé'); return false; } if (c === 'rate_limited') { toast('Une demande de téléchargement est déjà ouverte'); return false; } }
   }
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(b); a.download = name; document.body.appendChild(a); a.click();
+  a.href = URL.createObjectURL(b); a.download = fn0; document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
-  return true;
+  toast(`${fn0} téléchargé`); return fn0;
 }
 async function openFile() {
   if (window.showOpenFilePicker && TOP) {
@@ -7993,7 +8025,7 @@ async function saveFile(as) {
       const w = await FS.handle.createWritable(); await w.write(txt); await w.close(); toast('Enregistré : ' + FS.handle.name); return;
     } catch (e) { if (e.name === 'AbortError') return; }
   }
-  download(fileBase() + '.json', txt); toast('Fichier ' + fileBase() + '.json téléchargé', 3000);
+  await download(fileBase() + '.json', txt);
 }
 function importFile(name, t) { importText(t, name); }
 /** lit un fichier (UTF-8, UTF-16…) puis l'importe */

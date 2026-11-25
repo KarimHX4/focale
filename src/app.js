@@ -2483,8 +2483,7 @@ function pvDraw(k) {
 }
 function pvClose() { const el = $('#pvw'); if (el) el.classList.remove('open'); if (PV.obs) PV.obs.disconnect(); }
 async function pvDownload() {
-  if (!PV.bytes) return; const ok = await download(PV.name, new Blob([PV.bytes], { type: 'application/pdf' }));
-  if (ok !== false) toast(TOP ? `${PV.name} téléchargé` : `${PV.name} : confirmez le téléchargement dans la fenêtre de Claude (si rien n'apparaît, ouvrez Focale depuis GitHub Pages ou l'application installée)`, 6000);
+  if (!PV.bytes) return; await download(PV.name, new Blob([PV.bytes], { type: 'application/pdf' }));
 }
 /* ---------------- Multi-configuration (zoom) ---------------- */
 const mcName = (s, k) => (s.mc && s.mc.names && s.mc.names[k]) || `Config ${k + 1}`;
@@ -2909,7 +2908,7 @@ function importText(t, name = '') {
 }
 function exportAs(kind, dl = true) {
   const r = kind === 'zmx' ? IO.toZMX(App.sys) : IO.toSeq(App.sys), ext = kind === 'zmx' ? '.zmx' : '.seq';
-  if (dl) { download(fileBase() + ext, r.text, 'text/plain'); toast(`Export ${kind === 'zmx' ? 'Zemax' : 'CODE V'} téléchargé`); }
+  if (dl) download(fileBase() + ext, r.text, 'text/plain');
   if (r.warnings.length) ioReport(`Export ${kind === 'zmx' ? 'Zemax (.zmx)' : 'CODE V (.seq)'}`, r.warnings, dl ? '' : '');
   return r.text;
 }
@@ -2962,19 +2961,50 @@ function dlCap() {
   return DLCAP.p;
 }
 const DL_OK = /\.(gif|png|jpe?g|webp|mp4|webm|txt|json|md|docx|pptx|epub|csv|html|svg|pdf|xlsx|zip)$/i;
+const MIME = { pdf: 'application/pdf', json: 'application/json', csv: 'text/csv', png: 'image/png', svg: 'image/svg+xml', html: 'text/html', txt: 'text/plain', seq: 'text/plain', zmx: 'text/plain', agf: 'text/plain', len: 'text/plain' };
+const DLDESC = { pdf: 'Document PDF', json: 'Système Focale', csv: 'Tableau CSV', png: 'Image PNG', seq: 'Fichier CODE V', zmx: 'Fichier Zemax', svg: 'Image SVG', txt: 'Texte' };
+const extOf = n => ((/\.([a-z0-9]+)$/i.exec(n) || [])[1] || '').toLowerCase();
+/** fenêtre « Enregistrer sous » interne (navigateurs sans sélecteur natif, ou Focale ouvert dans claude.ai) : nom modifiable, extension conservée */
+function askSaveName(name) {
+  return new Promise(res => {
+    const ext = extOf(name), base = ext ? name.slice(0, -ext.length - 1) : name;
+    const ov = document.createElement('div'); ov.className = 'svov';
+    ov.innerHTML = `<div class="svbox" role="dialog" aria-label="Enregistrer sous"><h3>Enregistrer sous</h3>
+      <label>Nom du fichier</label><div class="row" style="gap:4px;align-items:center"><input class="in" id="svName" style="flex:1" spellcheck="false" value="${esc(base)}">${ext ? `<span class="hint">.${esc(ext)}</span>` : ''}</div>
+      <div class="hint" style="margin-top:8px">${TOP ? 'Ce navigateur ne permet pas de choisir le dossier depuis la page : le fichier va dans le dossier de téléchargement. Pour choisir l\'emplacement à chaque fois, activez « Demander où enregistrer chaque fichier » dans les réglages de téléchargement du navigateur (Chrome / Edge ouvrent directement l\'explorateur).' : 'Dans claude.ai, le fichier passe par la fenêtre de téléchargement de Claude puis par votre navigateur. Pour choisir le dossier, activez « Demander où enregistrer chaque fichier » dans les réglages du navigateur, ou ouvrez Focale depuis GitHub Pages / l\'application installée (l\'explorateur de fichiers s\'ouvre alors directement).'}</div>
+      <div class="row" style="justify-content:flex-end;gap:6px;margin-top:12px"><button class="tb" data-sv="0">Annuler</button><button class="tb pri" data-sv="1">Enregistrer</button></div></div>`;
+    document.body.appendChild(ov);
+    const inp = ov.querySelector('#svName'); inp.focus(); inp.select();
+    const done = ok => { const v = inp.value.trim().replace(/[\\/:*?"<>|]+/g, '_'); ov.remove(); document.removeEventListener('keydown', key, true); res(ok && v ? (ext && !v.toLowerCase().endsWith('.' + ext) ? `${v}.${ext}` : v) : null); };
+    const key = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); } else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(true); } };
+    document.addEventListener('keydown', key, true);
+    ov.addEventListener('mousedown', e => { if (e.target === ov) done(false); });
+    ov.querySelectorAll('[data-sv]').forEach(b => b.onclick = () => done(b.dataset.sv === '1'));
+  });
+}
+/** enregistre un fichier : sélecteur natif (dossier + nom) si disponible, sinon fenêtre « Enregistrer sous » puis téléchargement.
+    Renvoie le nom enregistré, ou false si l'utilisateur annule. */
 async function download(name, text, type = 'application/json') {
-  const b = text instanceof Blob ? text : new Blob([text], { type });
+  const ext = extOf(name), b = text instanceof Blob ? text : new Blob([text], { type: MIME[ext] || type });
+  if (TOP && window.showSaveFilePicker) {
+    try {
+      const mime = MIME[ext] && MIME[ext] !== 'text/plain' ? MIME[ext] : 'text/plain';
+      const h = await showSaveFilePicker({ suggestedName: name, types: ext ? [{ description: DLDESC[ext] || ext.toUpperCase(), accept: { [mime]: ['.' + ext] } }] : undefined });
+      const w = await h.createWritable(); await w.write(b); await w.close(); toast('Enregistré : ' + h.name); return h.name;
+    } catch (e) { if (e && e.name === 'AbortError') { toast('Enregistrement annulé'); return false; } /* sinon (sécurité, activation perdue…) : fenêtre interne */ }
+  }
+  const fn0 = await askSaveName(name); if (!fn0) { toast('Enregistrement annulé'); return false; }
   const ns = TOP ? null : await dlCap();
   if (ns) {
     // extensions hors liste (.zmx, .seq, .agf…) : enregistrées en .txt (à renommer)
-    const fn = DL_OK.test(name) ? name : name + '.txt';
-    try { await ns.save({ filename: fn, data: b }); if (fn !== name) toast(`Enregistré sous ${fn} : retirez « .txt » pour retrouver ${name}`, 5000); return true; }
+    const fn = DL_OK.test(fn0) ? fn0 : fn0 + '.txt';
+    try { await ns.save({ filename: fn, data: b }); toast(fn !== fn0 ? `Enregistré sous ${fn} : retirez « .txt » pour retrouver ${fn0}` : `${fn} : confirmez dans la fenêtre de Claude`, 5000); return fn; }
     catch (e) { const c = e && e.code; if (c === 'declined') { toast('Téléchargement annulé'); return false; } if (c === 'rate_limited') { toast('Une demande de téléchargement est déjà ouverte'); return false; } }
   }
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(b); a.download = name; document.body.appendChild(a); a.click();
+  a.href = URL.createObjectURL(b); a.download = fn0; document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
-  return true;
+  toast(`${fn0} téléchargé`); return fn0;
 }
 async function openFile() {
   if (window.showOpenFilePicker && TOP) {
@@ -2992,7 +3022,7 @@ async function saveFile(as) {
       const w = await FS.handle.createWritable(); await w.write(txt); await w.close(); toast('Enregistré : ' + FS.handle.name); return;
     } catch (e) { if (e.name === 'AbortError') return; }
   }
-  download(fileBase() + '.json', txt); toast('Fichier ' + fileBase() + '.json téléchargé', 3000);
+  await download(fileBase() + '.json', txt);
 }
 function importFile(name, t) { importText(t, name); }
 /** lit un fichier (UTF-8, UTF-16…) puis l'importe */
