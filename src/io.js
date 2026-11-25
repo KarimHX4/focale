@@ -202,6 +202,7 @@ const IO = (() => {
           if (!sys.surfaces.length) sys.surfaces.push(S0({ t: Infinity, comment: 'Objet' }));
           let rv = n(0); if (rdn) rv = rv ? 1 / rv : 0;
           const s = S0({ r: !rv ? Infinity : rv, t: cmd === 'SI' ? 0 : (isFinite(n(1)) ? n(1) : 0), stop: cmd === 'STO' });
+          if (cmd === 'SI' && isFinite(n(1)) && n(1)) s._defoc = n(1); // épaisseur de SI = défocalisation de l'image (CODE V)
           if (cmd === 'STO') sys.surfaces.forEach(x => x.stop = false);
           if (cmd !== 'SI' && a[2]) s.glass = mapGlass(a[2], NaN, NaN, W, `S${sys.surfaces.length}`);
           if (cmd === 'SI') s.comment = 'Image';
@@ -217,7 +218,7 @@ const IO = (() => {
           if (isFinite(n(0)) && n(0) > 0) { tgt.sd = n(0); tgt.sdFixed = true; } break;
         }
         case 'REX': case 'REY': { if (!tgt) break; note(SEQ_UNSUP[cmd]); const w = (a[0] || '').toUpperCase(); if (['EDG', 'HOL', 'OBS'].includes(w)) break; const r = rect.get(tgt) || {}; r[cmd] = n(0); rect.set(tgt, r); break; }
-        case 'THI': if (tgt) tgt.t = n(0); break;
+        case 'THI': if (tgt) { if (tgt.comment === 'Image' && tgt === sys.surfaces[sys.surfaces.length - 1] && cmd === 'THI' && /^SI$/i.test(st.trim().split(/\s+/)[1] || '')) tgt._defoc = n(0); else tgt.t = n(0); } break;
         case 'RDY': if (tgt) tgt.r = n(0) ? n(0) : Infinity; break;
         case 'CUY': if (tgt) tgt.r = n(0) ? 1 / n(0) : Infinity; break;
         case 'GLA': case 'GL1': if (tgt) tgt.glass = mapGlass(q ? q[0] : a[0], NaN, NaN, W, `S${sys.surfaces.indexOf(tgt)}`); break;
@@ -270,6 +271,11 @@ const IO = (() => {
     if (Object.values(vig).some(v => v.some(x => x))) note('Facteurs de vignetage (VUY, VLY, VUX, VLX) importés');
     if (!sys.surfaces.some(s => s.stop)) { sys.surfaces[1].stop = true; W.push('Pas de diaphragme (STO) : surface 1 utilisée'); }
     if (zoo.ent.length) { zoo.ent.forEach(e => { if (e.sf) e.i = sys.surfaces.indexOf(e.sf); }); mcBuild(sys, zoo.ent.filter(e => e.i >= 0), Math.max(2, zoo.n), 0, W, 'ZOO CODE V'); }
+    { // défocalisation de l'image (THI SI) : reportée sur l'épaisseur avant l'image
+      const im = sys.surfaces[sys.surfaces.length - 1];
+      if (im && im._defoc && sys.surfaces.length > 2) { const pv = sys.surfaces[sys.surfaces.length - 2]; pv.t += im._defoc; if (pv.tsolve) pv.tsolve = ''; W.push(`Défocalisation de l'image (épaisseur de SI = ${im._defoc}) ajoutée à l'épaisseur avant l'image (${fmtN(pv.t - im._defoc)} → ${fmtN(pv.t)})`); }
+      if (im) { delete im._defoc; im.t = 0; }
+    }
     const sc = scale ?? ddm ?? 1;
     if (sc !== 1) { scaleSys(sys, sc, ftype); mcScale(sys, sc); W.push(`Unités converties en mm (×${sc})`); }
     sys.ftype = ftype;

@@ -222,6 +222,8 @@ const P = []; OE.ray(M, 1, 20, 0, 1, { pts: P }); near('Visée réelle sur diaph
   near('Monte-Carlo : tirages imposés ≡ tirage direct', OE.tolTrialD(B, items, 'WFE', true, D).c, a1.c, 1e-12);
   const J = require('../src/jobs.js'); global.OE = OE; const jm = await J.mtf({ sys: t, o: { N: 32 } });
   near('Tâche « mtf » ≡ OE.mtf', jm.res[1].T[40], OE.mtf(M, 1, { fmax: jm.fmax, N: 32 }).T[40], 1e-12);
+  { const q = IO.parseSeq('LEN\nEPD 10\nYAN 0\nWL 587.6\nSO 0 1e10\nS 50 5 N-BK7\nSTO\nS -50 45\nSI 0 -0.25\nGO\n').sys;
+    near('Import CODE V : épaisseur de SI = défocalisation reportée avant l\'image', q.surfaces[q.surfaces.length - 2].t, 44.75, 1e-12); near('Import CODE V : image à épaisseur nulle', q.surfaces[q.surfaces.length - 1].t, 0, 0); }
   // surfaces toriques, diffractives, images fantômes, propriétés des verres, opérandes
   { const b = S['Lentille plan-convexe f=100'](), M0 = OE.prepare(b);
     const t = structuredClone(b); Object.assign(t.surfaces[1], { type: 'TOR', rx: b.surfaces[1].r, kx: 0 }); const Mt = OE.prepare(t);

@@ -396,7 +396,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 <div class="toast" id="toast"></div>
 <input type="file" id="fileIn" accept=".json,.zmx,.seq,.txt,.agf" style="display:none">
 <div class="drop" id="drop">Déposez un fichier .zmx, .seq, .json ou .agf</div>
-<script>const FOCALE_VERSION = '49319b79';</script>
+<script>const FOCALE_VERSION = '1b1e4ce0';</script>
 <script id="js-engine">
 'use strict';
 /* =====================================================================
@@ -4054,6 +4054,7 @@ La liste <b>Meilleures solutions</b> (12 solutions distinctes, avec leur mérite
 <tr><td>Surfaces</td><td>SO, S, STO, SI, RDM/RDN, RDY/CUY/THI/GLA/GL1, K, <b>A…J</b> (A4 à A20), CIR (CIR EDG ignoré : bord mécanique), REFL et RMD REFL, PIM, XDE…CDE, DAR, BEN (REV → DAR), GRT/GRO/GRS/GRX/GRY (réseau), <b>SLB</b> (étiquette → commentaire), SPS XYP + SCO (polynôme XY, à vérifier), CCY/THC/KC/AC…DC 0 (variables), GLC 0 (verre fictif variable), TCE.</td></tr>
 <tr><td>Qualificatifs</td><td>Les commandes qui désignent une surface explicitement sont appliquées à cette surface : <code>THI S7 4</code>, <code>CIR S2 10</code>, <code>SLB S4 'L2'</code>, <code>STO S3</code>, <code>CCY S1 0</code>…</td></tr>
 <tr><td>Ignorées sans remarque</td><td>UID, DER, DOR, GCH, GLB, CAT, INI, GO, CUM, THM, VIE, PLO, WRL, EVA… (identifiants, incréments de dérivée, préférences, affichage : sans effet sur l'optique).</td></tr>
+<tr><td>Défocalisation</td><td>L'épaisseur de la surface image (<code>SI 0 -0.025</code> ou <code>THI SI</code>) est la défocalisation de CODE V (réglée par exemple par la mise au point rapide) : elle est ajoutée à l'épaisseur avant l'image, avec une remarque.</td></tr>
 <tr><td>Zoom</td><td><b>ZOO</b> : nombre de positions (<code>ZOO 3</code>), paramètres zoomés (<code>ZOO THI S6 10 20 30</code>, <code>ZOO YAN F2 10 15 20</code>, <code>ZOO WL W1 486 550 656</code>…) et qualificatif de position (<code>THI S6 Z2 20</code>) → multi-configuration (épaisseur, rayon, conique, verre, demi-diamètre, décentrements, ouverture, champs, longueurs d'onde et poids, température, pression).</td></tr>
 <tr><td>Signalées (non modélisées)</td><td>PIK (reprises), PUY/PUX/PUC/PCY (solves : valeur courante gardée), CUX/RDX/CYL/XTO/YTO (toriques : profil Y), DIF/HOE/HCO… (surfaces diffractives : phase ignorée), RET, RED, REX/REY (rectangle → cercle circonscrit), ADX/ADY, CIR HOL/OBS, GL2, TEM Sk (température par surface), SPS ODD/ZRN/ZFR/QBF/QCN (base conique seule), mode afocal.</td></tr>
 <tr><td>Verres</td><td>NOM_CATALOGUE (NBK7_SCHOTT, SBSL7_OHARA…), codes 6 chiffres, <b>verres fictifs CODE V</b> <code>743972.448504</code> (→ modèle nd/νd 1,743972 / 44,8504), forme <code>1.62:36.4</code>, <b>verres privés PRV</b> (PWL + indices → loi de Cauchy). À l'export, verres modèles → code de verre fictif CODE V, verres importés → verres privés PRV.</td></tr></table>
@@ -4294,6 +4295,7 @@ const IO = (() => {
           if (!sys.surfaces.length) sys.surfaces.push(S0({ t: Infinity, comment: 'Objet' }));
           let rv = n(0); if (rdn) rv = rv ? 1 / rv : 0;
           const s = S0({ r: !rv ? Infinity : rv, t: cmd === 'SI' ? 0 : (isFinite(n(1)) ? n(1) : 0), stop: cmd === 'STO' });
+          if (cmd === 'SI' && isFinite(n(1)) && n(1)) s._defoc = n(1); // épaisseur de SI = défocalisation de l'image (CODE V)
           if (cmd === 'STO') sys.surfaces.forEach(x => x.stop = false);
           if (cmd !== 'SI' && a[2]) s.glass = mapGlass(a[2], NaN, NaN, W, `S${sys.surfaces.length}`);
           if (cmd === 'SI') s.comment = 'Image';
@@ -4309,7 +4311,7 @@ const IO = (() => {
           if (isFinite(n(0)) && n(0) > 0) { tgt.sd = n(0); tgt.sdFixed = true; } break;
         }
         case 'REX': case 'REY': { if (!tgt) break; note(SEQ_UNSUP[cmd]); const w = (a[0] || '').toUpperCase(); if (['EDG', 'HOL', 'OBS'].includes(w)) break; const r = rect.get(tgt) || {}; r[cmd] = n(0); rect.set(tgt, r); break; }
-        case 'THI': if (tgt) tgt.t = n(0); break;
+        case 'THI': if (tgt) { if (tgt.comment === 'Image' && tgt === sys.surfaces[sys.surfaces.length - 1] && cmd === 'THI' && /^SI$/i.test(st.trim().split(/\s+/)[1] || '')) tgt._defoc = n(0); else tgt.t = n(0); } break;
         case 'RDY': if (tgt) tgt.r = n(0) ? n(0) : Infinity; break;
         case 'CUY': if (tgt) tgt.r = n(0) ? 1 / n(0) : Infinity; break;
         case 'GLA': case 'GL1': if (tgt) tgt.glass = mapGlass(q ? q[0] : a[0], NaN, NaN, W, `S${sys.surfaces.indexOf(tgt)}`); break;
@@ -4362,6 +4364,11 @@ const IO = (() => {
     if (Object.values(vig).some(v => v.some(x => x))) note('Facteurs de vignetage (VUY, VLY, VUX, VLX) importés');
     if (!sys.surfaces.some(s => s.stop)) { sys.surfaces[1].stop = true; W.push('Pas de diaphragme (STO) : surface 1 utilisée'); }
     if (zoo.ent.length) { zoo.ent.forEach(e => { if (e.sf) e.i = sys.surfaces.indexOf(e.sf); }); mcBuild(sys, zoo.ent.filter(e => e.i >= 0), Math.max(2, zoo.n), 0, W, 'ZOO CODE V'); }
+    { // défocalisation de l'image (THI SI) : reportée sur l'épaisseur avant l'image
+      const im = sys.surfaces[sys.surfaces.length - 1];
+      if (im && im._defoc && sys.surfaces.length > 2) { const pv = sys.surfaces[sys.surfaces.length - 2]; pv.t += im._defoc; if (pv.tsolve) pv.tsolve = ''; W.push(`Défocalisation de l'image (épaisseur de SI = ${im._defoc}) ajoutée à l'épaisseur avant l'image (${fmtN(pv.t - im._defoc)} → ${fmtN(pv.t)})`); }
+      if (im) { delete im._defoc; im.t = 0; }
+    }
     const sc = scale ?? ddm ?? 1;
     if (sc !== 1) { scaleSys(sys, sc, ftype); mcScale(sys, sc); W.push(`Unités converties en mm (×${sc})`); }
     sys.ftype = ftype;
