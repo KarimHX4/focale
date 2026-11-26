@@ -70,6 +70,12 @@ function load() {
     document.documentElement.dataset.theme = u && u.th === 'light' ? '' : 'dark';
   } catch (e) { App.sys = null; }
 }
+/** bornes des paramètres source / détecteur : [min, max, entier, min exclu] ; une valeur hors bornes est ramenée dans l'intervalle (fichiers anciens ou édités à la main) */
+const SRCLIM = { core: [0.5, 5000], clad: [1, 6000], na: [0.001, 1], mfd: [0.5, 100], lc0: [150, 25000], dl: [0, 5000], len: [0, 1e6], att: [0, 1e5], bw: [0, 1e6], d: [0.001, 1e7], w: [0.001, 1e7], h: [0.001, 1e7], pw: [0, 1e9], rcore: [0.5, 5000], rna: [0.001, 1], rmfd: [0.5, 100] };
+const DETLIM = { p: [0.1, 1000], nx: [1, 1e5, 1], ny: [1, 1e5, 1], ff: [1, 100], bits: [1, 24, 1], fw: [1, 1e9], rn: [0, 1e5], lvl: [0.1, 100], qe: [0.1, 100], texp: [1e-6, 1e7], dark: [0, 1e9] };
+function limit(o, L) { for (const [k, [a, b, int]] of Object.entries(L)) { if (o[k] == null || o[k] === '') { o[k] = o[k] === '' ? null : o[k]; continue; } let v = +o[k]; if (!isFinite(v)) { o[k] = null; continue; } v = Math.min(b, Math.max(a, v)); o[k] = int ? Math.round(v) : v; } return o; }
+function srcSane(o) { if (!SRCT.some(q => q[0] === o.type)) o.type = 'none'; if (!['si', 'gi', 'sm'].includes(o.fib)) o.fib = 'si'; if (!['none', 'sm', 'si', 'gi'].includes(o.rcv)) o.rcv = 'none'; o.fresnel = !!o.fresnel; return limit(o, SRCLIM); }
+function detSane(o) { const n = limit(o, DETLIM); for (const k of ['p', 'nx', 'ny', 'ff', 'bits', 'fw', 'rn', 'lvl', 'qe', 'texp', 'dark']) if (n[k] == null) n[k] = { p: 3.45, nx: 2448, ny: 2048, ff: 100, bits: 12, fw: 10000, rn: 3, lvl: 70, qe: 70, texp: 10, dark: 1 }[k]; n.on = !!n.on; n.noise = !!n.noise; return n; }
 function normalize(s) {
   s.aperture = { type: 'EPD', value: 10, obscuration: 0, ...(s.aperture || {}) };
   s.fields = ((s.fields && s.fields.length) ? s.fields : [{ y: 0, w: 1 }]).map(f => { const o = { x: +f.x || 0, y: +f.y || 0, w: f.w ?? 1, ...(f.col ? { col: f.col } : {}) }; for (const k of ['vuy', 'vly', 'vux', 'vlx']) if (+f[k]) o[k] = +f[k]; return o; });
@@ -77,8 +83,8 @@ function normalize(s) {
   s.wavelengths = (s.wavelengths && s.wavelengths.length) ? s.wavelengths : [{ um: 0.5875618, w: 1 }];
   s.primary = Math.min(Math.max(0, s.primary | 0), s.wavelengths.length - 1);
   s.merit = s.merit || { image: 'SPOT', ops: [], v: 2 }; s.merit.ops = s.merit.ops || []; OE.meritUpgrade(s);
-  s.src = { type: 'none', fib: 'si', core: 50, clad: 125, na: 0.22, mfd: null, lc0: null, dl: null, len: null, att: null, bw: null, d: 10, w: 20, h: 200, ...(s.src || {}) };
-  s.det = { on: false, p: 3.45, nx: 2448, ny: 2048, ff: 100, bits: 12, fw: 10000, rn: 3, lvl: 70, noise: false, ...(s.det || {}) };
+  s.src = srcSane({ type: 'none', fib: 'si', core: 50, clad: 125, na: 0.22, mfd: null, lc0: null, dl: null, len: null, att: null, bw: null, d: 10, w: 20, h: 200, pw: null, fresnel: false, rcv: 'none', rcore: 50, rna: 0.22, rmfd: 10.4, ...(s.src || {}) });
+  s.det = detSane({ on: false, p: 3.45, nx: 2448, ny: 2048, ff: 100, bits: 12, fw: 10000, rn: 3, lvl: 70, qe: 70, texp: 10, dark: 1, noise: false, ...(s.det || {}) });
   s.surfaces = s.surfaces.map(x => newSurf(x));
   if (s.userGlass) { OE.addGlasses(Object.values(s.userGlass).map(g => ({ ...g, user: true })), false); delete s.userGlass; rebuildGlassList(); }
   return s;
@@ -619,32 +625,63 @@ const FIBPRE = {
 const SRCT = [['none', 'Points de champ (aucune source)'], ['fiber', 'Fibre optique'], ['disk', 'Disque uniforme'], ['gauss', 'Tache gaussienne'], ['rect', 'Fente / rectangle'], ['point', 'Point source']];
 const src = () => App.sys.src || { type: 'none' };
 function srcCard() {
-  const S = src(), M = App.M, inf = M && M.ok && M.objInf, u = inf ? '″' : 'µm';
-  const inp = (k, l, un, ph = '') => `<div><div class="hint">${l}${un ? ' <span style="opacity:.7">' + un + '</span>' : ''}</div><input class="in" style="width:100%" data-f="src" data-k="${k}" value="${S[k] == null ? '' : fmt(S[k], 6)}" placeholder="${ph}"></div>`;
+  const S = src(), M = App.M, ok = M && M.ok, inf = ok && M.objInf, u = inf ? '″' : 'µm';
+  const inp = (k, l, un, ph = '', t = '') => `<div title="${t}"><div class="hint">${l}${un ? ' <span style="opacity:.7">' + un + '</span>' : ''}</div><input class="in" style="width:100%" data-f="src" data-k="${k}" value="${S[k] == null ? '' : fmt(S[k], 6)}" placeholder="${ph}"></div>`;
+  const grid = x => `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px">${x}</div>`, sub = t => `<div class="hint" style="margin:6px 0 2px;font-weight:600;color:var(--fg)">${t}</div>`;
+  const warn = [], spec = inp('lc0', 'λ centrale', 'nm', 'système', 'Vide : longueurs d\'onde du système') + inp('dl', 'Largeur Δλ', 'nm', '0', 'Largeur à mi-hauteur ; > 0 : spectre gaussien sur 5 λ');
   let h = `<div class="row"><select class="in" style="flex:1" data-f="src" data-k="type">${SRCT.map(([k, l]) => `<option value="${k}" ${S.type === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`;
+  const l = (S.lc0 > 0 ? S.lc0 / 1000 : ok ? M.wls[M.pw] : 0.55);
   if (S.type === 'fiber') {
-    if (inf) h += '<div class="hint" style="color:var(--warn)">Une fibre se place à distance finie : donnez une épaisseur finie à la surface objet (distance fibre → 1ʳᵉ surface).</div>';
+    if (inf) warn.push('Une fibre se place à distance finie : donnez une épaisseur finie à la surface objet (distance fibre → 1ʳᵉ surface).');
     h += `<div class="row"><select class="in" style="flex:1" data-f="src" data-k="fib"><option value="si" ${S.fib === 'si' ? 'selected' : ''}>Multimode à saut d'indice</option><option value="gi" ${S.fib === 'gi' ? 'selected' : ''}>Multimode à gradient d'indice</option><option value="sm" ${S.fib === 'sm' ? 'selected' : ''}>Monomode</option></select></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px">${inp('core', 'Ø cœur', 'µm')}${inp('clad', 'Ø gaine', 'µm')}${inp('na', 'ON', '')}${S.fib === 'sm' ? inp('mfd', 'MFD', 'µm', 'calculé') : ''}${inp('lc0', 'λ centrale', 'nm', 'système')}${inp('dl', 'Largeur Δλ', 'nm', '0')}</div>
-      <div class="hint" style="margin:6px 0 2px;font-weight:600;color:var(--fg)">Lien fibré (optionnel)</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px">${inp('len', 'Longueur', 'm', '—')}${inp('att', 'Atténuation', 'dB/km', '—')}${inp('bw', 'Bande passante modale', 'MHz·km', '—')}</div>
+      ${grid(inp('core', 'Ø cœur', 'µm') + inp('clad', 'Ø gaine', 'µm') + inp('na', 'ON', '', '', 'Ouverture numérique √(n₁² − n₂²), ≤ 1') + (S.fib === 'sm' ? inp('mfd', 'MFD', 'µm', 'calculé', 'Diamètre de mode à 1/e² (fiche technique) ; vide : formule de Marcuse') : '') + spec)}
+      ${sub('Lien fibré (optionnel)')}${grid(inp('len', 'Longueur', 'm', '—') + inp('att', 'Atténuation', 'dB/km', '—') + inp('bw', 'Bande passante modale', 'MHz·km', '—'))}
       <div class="chips">${Object.entries(FIBPRE).map(([k, v]) => `<button class="chip" data-a="fibpre" data-v="${k}">${v[0]}</button>`).join('')}</div>`;
-    const l = (S.lc0 > 0 ? S.lc0 / 1000 : M && M.ok ? M.wls[M.pw] : 0.55), fi = OE.fiberInfo(S, l);
+    const fi = OE.fiberInfo(S, l);
+    if (+S.core >= +S.clad) warn.push('Ø cœur ≥ Ø gaine : vérifiez les diamètres.');
+    if (S.fib === 'sm' && !fi.single) warn.push(`V = ${fx(fi.V, 2)} > 2,405 : la fibre est multimode à ${fmt(l * 1000, 5)} nm (coupure ${fx(fi.lc * 1000, 0)} nm).`);
+    if (S.fib === 'sm' && fi.V < 1.2) warn.push(`V = ${fx(fi.V, 2)} < 1,2 : mode très peu guidé, la formule de Marcuse perd en précision — saisissez le MFD de la fiche technique.`);
+    if (S.fib !== 'sm' && fi.single) warn.push(`V = ${fx(fi.V, 2)} < 2,405 : la fibre est monomode à cette λ — choisissez « Monomode » pour un calcul en mode gaussien.`);
+    if (S.fib === 'sm' && +S.mfd > 0 && Math.abs(+S.mfd - OE.fiberInfo({ ...S, mfd: null }, l).mfd) > 0.35 * +S.mfd && fi.V > 1.2) warn.push('MFD imposé très différent de celui déduit du cœur et de l\'ON : vérifiez les données.');
     const rows = [['à λ', `${fmt(l * 1000, 5)} nm`], ['Fréquence normalisée V', fx(fi.V, 3)], ['Longueur d\'onde de coupure', `${fx(fi.lc * 1000, 0)} nm`], ['Régime', fi.single ? 'monomode' : `multimode (~${fi.modes} modes)`]];
-    if (S.fib === 'sm' || fi.single) rows.push(['Diamètre de mode', `${fx(fi.mfd, 2)} µm${S.fib === 'sm' && +S.mfd > 0 ? ' (imposé)' : ' (Marcuse)'}`]);
-    if (S.fib === 'sm' && !fi.single) rows.push(['Attention', 'V > 2,405 : multimode à cette λ']);
+    if (S.fib === 'sm' || fi.single) { rows.push(['Diamètre de mode', `${fx(fi.mfd, 2)} µm${S.fib === 'sm' && +S.mfd > 0 ? ' (imposé)' : ' (Marcuse)'}`]); rows.push(['Divergence θ₀ (1/e²)', `${fx(l / (Math.PI * fi.mfd / 2) * 1000, 1)} mrad`]); }
     rows.push(['Étendue', `${fx(fi.etendue * 1e-6, 6)} mm²·sr`]);
-    if (M && M.ok && !inf) rows.push(['ON objet du système', fx(M.par.objNA, 4)]);
+    if (ok && !inf) { rows.push(['ON objet du système', fx(M.par.objNA, 4)]); if (S.fib !== 'sm' && +S.na > M.par.objNA * 1.001) warn.push(`ON de la fibre (${fmt(S.na, 3)}) > ON objet du système (${fx(M.par.objNA, 3)}) : une partie du flux est perdue (voir l'analyse « Source étendue »).`); }
     if (S.len > 0 && S.att > 0) rows.push(['Transmission de la fibre', `${fx(100 * Math.pow(10, -S.att * S.len / 1e4), 2)} % (${fx(S.att * S.len / 1000, 3)} dB)`]);
     if (S.len > 0 && S.bw > 0) rows.push(['Bande passante du lien', `≈ ${fx(S.bw / (S.len / 1000), 0)} MHz`]);
     h += `<div class="kv" style="margin-top:6px">${rows.map(([a, b]) => `<span>${a}</span><span>${b}</span>`).join('')}</div>`;
-  } else if (S.type === 'disk') h += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px">${inp('d', 'Diamètre', u)}${inf ? '' : inp('na', 'ON d\'émission', '', '∞')}${inp('lc0', 'λ centrale', 'nm', 'système')}${inp('dl', 'Δλ', 'nm', '0')}</div>`;
-  else if (S.type === 'gauss') h += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px">${inp('d', 'Ø à 1/e²', u)}${inp('lc0', 'λ centrale', 'nm', 'système')}${inp('dl', 'Δλ', 'nm', '0')}</div>`;
-  else if (S.type === 'rect') h += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px">${inp('w', 'Largeur', u)}${inp('h', 'Hauteur', u)}${inp('lc0', 'λ centrale', 'nm', 'système')}${inp('dl', 'Δλ', 'nm', '0')}</div>`;
-  else if (S.type === 'point') h += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px">${inp('lc0', 'λ centrale', 'nm', 'système')}${inp('dl', 'Δλ', 'nm', '0')}</div>`;
+  } else if (S.type === 'disk') h += grid(inp('d', 'Diamètre', u) + (inf ? '' : inp('na', 'ON d\'émission', '', 'lambertien', 'Vide : émetteur lambertien (ON 1)')) + spec);
+  else if (S.type === 'gauss') h += grid(inp('d', 'Ø à 1/e²', u) + spec);
+  else if (S.type === 'rect') h += grid(inp('w', 'Largeur', u) + inp('h', 'Hauteur', u) + spec);
+  else if (S.type === 'point') h += grid(spec);
   else h += '<div class="hint">Choisissez une source réelle (fibre, fente…) pour l\'analyse « Source étendue ».</div>';
-  if (S.type !== 'none') h += '<div class="hint" style="margin-top:4px">λ centrale vide : longueurs d\'onde du système. Δλ > 0 : spectre gaussien échantillonné sur 5 λ. Résultats dans l\'analyse « Source étendue ».</div>';
+  if (S.type !== 'none') {
+    if (S.lc0 > 0 && S.dl > 0 && S.dl > S.lc0 * 0.5) warn.push('Δλ supérieur à la moitié de λ centrale : spectre très large, vérifiez les valeurs.');
+    if (S.lc0 > 0 && ok && M.sys.wavelengths.length && !M.sys.wavelengths.some(w => Math.abs(w.um * 1000 - S.lc0) < Math.max(5, S.dl || 0))) warn.push(`λ centrale ${fmt(S.lc0, 5)} nm éloignée des longueurs d'onde du système : l'analyse de la source utilise son propre spectre, les autres analyses celles du système.`);
+    h += sub('Bilan de puissance') + grid(inp('pw', 'Puissance émise', 'mW', '—', 'Puissance optique sortant de la source') + `<div><div class="hint">Pertes de Fresnel</div><label class="hint" style="display:flex;gap:4px;align-items:center;height:24px"><input type="checkbox" data-f="src" data-k="fresnel" ${S.fresnel ? 'checked' : ''}>dioptres nus</label></div>`);
+    h += sub('Fibre réceptrice au plan image') + `<div class="row"><select class="in" style="flex:1" data-f="src" data-k="rcv"><option value="none" ${S.rcv === 'none' ? 'selected' : ''}>Aucune</option><option value="sm" ${S.rcv === 'sm' ? 'selected' : ''}>Monomode (recouvrement de modes)</option><option value="si" ${S.rcv === 'si' ? 'selected' : ''}>Multimode saut d'indice</option><option value="gi" ${S.rcv === 'gi' ? 'selected' : ''}>Multimode gradient d'indice</option></select></div>`;
+    if (S.rcv === 'sm') h += grid(inp('rmfd', 'MFD reçu', 'µm', '', 'Diamètre de mode à 1/e² de la fibre réceptrice'));
+    else if (S.rcv !== 'none') h += grid(inp('rcore', 'Ø cœur', 'µm') + inp('rna', 'ON', ''));
+    if (S.rcv === 'sm' && S.type !== 'point' && !(S.type === 'gauss' || (S.type === 'fiber' && S.fib === 'sm'))) warn.push('Fibre réceptrice monomode avec une source étendue incohérente : le couplage est calculé pour le point central de la source (borne supérieure).');
+  }
+  if (warn.length) h += warn.map(t => `<div class="hint" style="color:var(--warn);margin-top:4px">⚠ ${t}</div>`).join('');
+  if (S.type !== 'none') h += '<div class="hint" style="margin-top:4px">Résultats (image, couplage par tracé de rayons réels, bilan de puissance) dans l\'analyse « Source étendue ».</div>';
   return card('src', 'Source / fibre', h);
+}
+const fmtPow = mW => mW >= 1 ? fx(mW, 4) + ' mW' : mW >= 1e-3 ? fx(mW * 1e3, 4) + ' µW' : mW >= 1e-6 ? fx(mW * 1e6, 4) + ' nW' : fx(mW * 1e9, 4) + ' pW';
+/** bilan de couplage de la source (mis en cache par système + champ) : couplage par rayons réels, transmissions, fibre réceptrice */
+function srcPower(M, fi, S, o) {
+  const key = toJSON(App.sys) + '|' + fi + '|' + M.wls.join(','); App._srcP = App._srcP || new Map(); if (App._srcP.has(key)) return App._srcP.get(key);
+  const f = M.sys.fields[fi] || { x: 0, y: 0 }, o2 = { ...o }; if (o2.type === 'disk' && !(+o2.na > 0)) o2.na = 1;
+  const mm = S.rcv === 'si' || S.rcv === 'gi', c = OE.srcCoupling(M, f, o2, mm ? { rcv: { core: S.rcore, na: S.rna, gi: S.rcv === 'gi' } } : {});
+  let tau = 0, fres = 0; const W = M.sys.wavelengths.map(w => w.w ?? 1), Wt = W.reduce((a, b) => a + b, 0) || 1;
+  M.wls.forEach((_, wi) => { const t = OE.sysTransmission(M, wi, S.fresnel); tau += W[wi] / Wt * t.tau; fres += W[wi] / Wt * t.fres; });
+  const fib = S.type === 'fiber' && S.len > 0 && S.att > 0 ? Math.pow(10, -S.att * S.len / 1e4) : 1;
+  let rcv = null, rcvNote = '';
+  if (c && mm) rcv = c.eta > 0 ? c.rcv / c.eta : 0, rcvNote = 'centrée sur l\'image du centre';
+  if (c && S.rcv === 'sm' && S.rmfd > 0) { const coh = S.type === 'gauss' || S.type === 'point' || (S.type === 'fiber' && S.fib === 'sm'), q = OE.smCoupling(M, f, coh ? o2 : { type: 'point' }, S.rmfd); if (q) { const g = S.type === 'gauss' || (S.type === 'fiber' && S.fib === 'sm'); rcv = g ? (c.eta > 0 ? Math.min(1, q.eta / c.eta) : 0) : q.eta; rcvNote = coh ? 'recouvrement de modes' : 'point central (borne sup.)'; } }
+  const res = { c, tau, fres, fresnel: S.fresnel, fib, tot: c ? c.eta * tau * fres * fib : 0, rcv, rcvNote };
+  if (App._srcP.size > 20) App._srcP.clear(); App._srcP.set(key, res); return res;
 }
 /** système dont les longueurs d'onde sont celles du spectre de la source */
 function srcModel() {
@@ -655,21 +692,37 @@ function srcModel() {
   else { sys.wavelengths = [{ um: c, w: 1 }]; sys.primary = 0; }
   const M = OE.prepare(sys); App._srcM = { key, M }; return M;
 }
-const DETPRE = { imx250: ['CMOS 3,45 µm 2448×2048', 3.45, 2448, 2048, 10000, 3, 12], scmos: ['sCMOS 6,5 µm 2048×2048', 6.5, 2048, 2048, 30000, 1.6, 16], ccd: ['CCD 13 µm 1024×1024', 13, 1024, 1024, 100000, 5, 16], ingaas: ['InGaAs 15 µm 640×512', 15, 640, 512, 1000000, 100, 14], phone: ['Smartphone 1 µm 4000×3000', 1, 4000, 3000, 6000, 2, 10] };
+/** préréglages : [libellé, pas µm, nx, ny, puits e⁻, bruit de lecture e⁻, bits, QE % (pic), courant d'obscurité e⁻/s/px] — valeurs typiques de fiches techniques */
+const DETPRE = { imx250: ['CMOS 3,45 µm 2448×2048', 3.45, 2448, 2048, 10000, 3, 12, 65, 2], scmos: ['sCMOS 6,5 µm 2048×2048', 6.5, 2048, 2048, 30000, 1.6, 16, 82, 0.5], ccd: ['CCD refroidi 13 µm 1024×1024', 13, 1024, 1024, 100000, 5, 16, 90, 0.001], ingaas: ['InGaAs 15 µm 640×512', 15, 640, 512, 1000000, 100, 14, 80, 10000], phone: ['Smartphone 1 µm 4000×3000', 1, 4000, 3000, 6000, 2, 10, 60, 5] };
 const det = () => App.sys.det || {};
+/** grandeurs dérivées du détecteur : dynamique, quantification, RSB au niveau de signal choisi */
+function detStats(d) {
+  const S = d.fw * d.lvl / 100, dk = (d.dark || 0) * (d.texp || 0) * 1e-3, lsb = d.fw / Math.pow(2, d.bits), q = lsb / Math.sqrt(12);
+  const N = Math.sqrt(S + dk + d.rn * d.rn + q * q), floor = Math.sqrt(d.rn * d.rn + dk + q * q);
+  return { S, dk, lsb, q, snr: S / N, dr: 20 * Math.log10(d.fw / Math.max(floor, 1e-9)), floor };
+}
+/** hauteur image réelle maximale (rayons principaux, λ primaire), en mm */
+function realImgH(M) { let m = 0; for (const f of M.sys.fields) { const r = OE.ray(M, M.pw, f, 0, 0); if (!r.vig) m = Math.max(m, Math.hypot(r.x, r.y)); } return m; }
 function detCard() {
   const d = det(), M = App.M;
   if (!d.on) return card('det', 'Détecteur', `<div class="row"><label>Ajouter un détecteur au plan image</label><input type="checkbox" data-f="det" data-k="on"></div><div class="hint">Pour comparer PSF, spot, footprint et image simulée à la taille des pixels.</div>`);
-  const inp = (k, l, u) => `<div><div class="hint">${l}${u ? ' <span style="opacity:.7">' + u + '</span>' : ''}</div><input class="in" style="width:100%" data-f="det" data-k="${k}" value="${fmt(d[k], 6)}"></div>`;
-  let info = '';
+  const inp = (k, l, u, t = '') => `<div title="${t}"><div class="hint">${l}${u ? ' <span style="opacity:.7">' + u + '</span>' : ''}</div><input class="in" style="width:100%" data-f="det" data-k="${k}" value="${fmt(d[k], 6)}"></div>`;
+  const st = detStats(d), warn = [], W = d.nx * d.p * 1e-3, H = d.ny * d.p * 1e-3;
+  let info = `<div class="kv" style="margin-top:6px"><span>Capteur</span><span>${fx(W, 2)} × ${fx(H, 2)} mm (Ø ${fx(Math.hypot(W, H), 2)})</span><span>Dynamique</span><span>${fx(st.dr, 1)} dB (${fx(d.fw / st.floor, 0)} : 1)</span><span>LSB</span><span>${fx(st.lsb, 3)} e⁻ (bruit de quantif. ${fx(st.q, 2)} e⁻)</span><span>RSB à ${fmt(d.lvl, 3)} % du puits</span><span>${fx(st.snr, 1)} (${fx(20 * Math.log10(st.snr), 1)} dB)</span>${st.dk > 0 ? `<span>Obscurité / pose</span><span>${fx(st.dk, 3)} e⁻</span>` : ''}`;
+  if (st.lsb > 2 * Math.max(d.rn, 0.5)) warn.push(`LSB (${fx(st.lsb, 2)} e⁻) > 2 × bruit de lecture : la numérisation limite la dynamique — davantage de bits ou un gain plus élevé.`);
+  if (st.dk > d.fw * 0.1) warn.push('Le courant d\'obscurité remplit plus de 10 % du puits pendant la pose : réduisez la pose ou refroidissez le capteur.');
   if (M && M.ok) {
-    const pmm = d.p * 1e-3, lF = M.ctxs[M.pw].lmm * M.par.wfno;
-    info = `<div class="kv" style="margin-top:6px"><span>Capteur</span><span>${fx(d.nx * d.p * 1e-3, 2)} × ${fx(d.ny * d.p * 1e-3, 2)} mm</span><span>Nyquist</span><span>${fx(1 / (2 * pmm), 1)} cy/mm</span><span>Coupure optique</span><span>${fx(1 / lF, 1)} cy/mm</span><span>Q = λF/p</span><span>${fx(lF / pmm, 2)}</span><span>Ø Airy</span><span>${fx(2.44 * lF / pmm, 2)} px</span></div>`;
+    const pmm = d.p * 1e-3, lF = M.ctxs[M.pw].lmm * M.par.wfno, Q = lF / pmm, ih = realImgH(M);
+    info += `<span>Nyquist</span><span>${fx(1 / (2 * pmm), 1)} cy/mm</span><span>Coupure optique</span><span>${fx(1 / lF, 1)} cy/mm</span><span>Q = λF/p</span><span>${fx(Q, 2)}${Q < 1 ? ' (sous-échantillonné)' : Q >= 2 ? ' (≥ Nyquist)' : ''}</span><span>Ø Airy</span><span>${fx(2.44 * lF / pmm, 2)} px</span><span>FTM pixel à Nyquist</span><span>${fx(OE.detMTF(1 / (2 * pmm), pmm, d.ff / 100), 3)}</span>`;
+    if (ih > 0) { info += `<span>Image réelle (½ diag.)</span><span>${fx(ih, 3)} mm / capteur ${fx(Math.hypot(W, H) / 2, 3)} mm</span>`;
+      if (ih > Math.hypot(W, H) / 2 * 1.001) warn.push(`Le champ image (${fx(ih, 3)} mm) dépasse la demi-diagonale du capteur : les champs extrêmes tombent hors du détecteur.`);
+      else if (ih < Math.min(W, H) / 2 * 0.5) warn.push('Le champ image couvre moins de la moitié du petit côté du capteur.'); }
   }
+  info += '</div>';
   return card('det', 'Détecteur', `<div class="row"><label>Détecteur actif</label><input type="checkbox" data-f="det" data-k="on" checked></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px">${inp('p', 'Pas', 'µm')}${inp('nx', 'Pixels X', '')}${inp('ny', 'Pixels Y', '')}${inp('ff', 'Remplissage', '%')}${inp('bits', 'Bits', '')}${inp('fw', 'Puits', 'e⁻')}${inp('rn', 'Bruit lecture', 'e⁻')}${inp('lvl', 'Signal', '% puits')}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px">${inp('p', 'Pas', 'µm')}${inp('nx', 'Pixels X', '')}${inp('ny', 'Pixels Y', '')}${inp('ff', 'Remplissage', '%', 'Taux de remplissage surfacique : zone active carrée centrée de côté p·√ff')}${inp('bits', 'Bits', '')}${inp('fw', 'Puits', 'e⁻')}${inp('rn', 'Bruit lecture', 'e⁻ rms')}${inp('lvl', 'Signal', '% puits', 'Niveau du blanc pour la simulation d\'image et le RSB')}${inp('qe', 'Rendement quantique', '%')}${inp('texp', 'Pose', 'ms')}${inp('dark', 'Obscurité', 'e⁻/s/px')}</div>
     <div class="row"><label>Bruit dans la simulation d'image</label><input type="checkbox" data-f="det" data-k="noise" ${d.noise ? 'checked' : ''}></div>
-    <div class="chips">${Object.entries(DETPRE).map(([k, v]) => `<button class="chip" data-a="detpre" data-v="${k}">${v[0]}</button>`).join('')}</div>${info}`);
+    <div class="chips">${Object.entries(DETPRE).map(([k, v]) => `<button class="chip" data-a="detpre" data-v="${k}">${v[0]}</button>`).join('')}</div>${info}${warn.map(t => `<div class="hint" style="color:var(--warn);margin-top:4px">⚠ ${t}</div>`).join('')}`);
 }
 function inspector() {
   const s = App.sys, j = App.sel, x = s.surfaces[j]; if (!x) return '';
@@ -720,7 +773,7 @@ function setupSide() {
       case 'sdfld': openSysData('fld'); break;
       case 'fold45': commit(s => { const x = s.surfaces[App.sel]; x.glass = 'MIRROR'; x.r = Infinity; x.tx = 45; x.ty = 0; x.tz = 0; x.dx = x.dy = x.dz = 0; x.dmode = 'BEN'; }); toast('Miroir de renvoi à 45° : pensez au signe de l\'épaisseur suivante'); break;
       case 'fibpre': { const q = FIBPRE[b.dataset.v]; commit(s => Object.assign(s.src, { type: 'fiber', lc0: null, dl: null, len: null }, q[1])); toast('Fibre : ' + q[0]); break; }
-      case 'detpre': { const q = DETPRE[b.dataset.v]; commit(s => Object.assign(s.det, { on: true, p: q[1], nx: q[2], ny: q[3], fw: q[4], rn: q[5], bits: q[6] })); toast(q[0]); break; }
+      case 'detpre': { const q = DETPRE[b.dataset.v]; commit(s => Object.assign(s.det, { on: true, p: q[1], nx: q[2], ny: q[3], fw: q[4], rn: q[5], bits: q[6], qe: q[7], dark: q[8], ff: 100 })); toast(q[0]); break; }
       case 'ret4': commit(s => s.surfaces[App.sel].ret = 0.25); break;
       case 'ret2': commit(s => s.surfaces[App.sel].ret = 0.5); break;
       case 'galign': {
@@ -760,9 +813,16 @@ function setupSide() {
       case 'dmode': commit(s => s.surfaces[App.sel].dmode = t.value); break;
       case 'stype': commit(s => { const x = s.surfaces[App.sel]; x.type = t.value; if (t.value === 'TOR' && x.rx === undefined) { x.rx = Infinity; x.kx = 0; } if (t.value === 'ZERN' && !x.zr) x.zr = Math.max(1, App.M && App.M.ok ? +App.M.S[App.sel].sd.toPrecision(3) : 10); }); break;
       case 'dec': if ((v = num()) != null) commit(s => s.surfaces[App.sel][t.dataset.k] = v); break;
-      case 'src': { const k = t.dataset.k; if (k === 'type' || k === 'fib') { commit(s => { s.src[k] = t.value; if (k === 'fib' && t.value === 'sm' && s.src.core > 12) Object.assign(s.src, { core: 8.2, na: 0.14 }); }); break; }
-        if (t.value.trim() === '') { commit(s => s.src[k] = null); break; } if ((v = num(x => x > 0)) != null) commit(s => s.src[k] = v); break; }
-      case 'det': { const k = t.dataset.k; if (k === 'on' || k === 'noise') { commit(s => s.det[k] = t.checked); break; } if ((v = num(x => x > 0)) != null) commit(s => s.det[k] = ['nx', 'ny', 'bits'].includes(k) ? Math.round(v) : v); break; }
+      case 'src': { const k = t.dataset.k; if (k === 'type' || k === 'fib' || k === 'rcv') { commit(s => { s.src[k] = t.value; if (k === 'fib' && t.value === 'sm' && s.src.core > 12) Object.assign(s.src, { core: 8.2, na: 0.14 }); if (k === 'fib' && t.value !== 'sm' && s.src.core < 20) Object.assign(s.src, { core: 50, na: t.value === 'gi' ? 0.2 : 0.22 }); }); break; }
+        if (k === 'fresnel') { commit(s => s.src.fresnel = t.checked); break; }
+        const L = SRCLIM[k]; if (t.value.trim() === '') { if (['core', 'd', 'w', 'h', 'rcore', 'rna', 'rmfd'].includes(k) || (k === 'na' && App.sys.src.type === 'fiber')) { toast('Valeur requise'); renderSide(); break; } commit(s => s.src[k] = null); break; }
+        if ((v = num(x => L && x >= L[0] && x <= L[1] && (L[0] > 0 || ['dl', 'len', 'att', 'bw', 'pw'].includes(k) || x > 0))) != null) commit(s => s.src[k] = v);
+        else if (L) toast(`${k === 'na' || k === 'rna' ? 'ON' : 'Valeur'} hors limites : ${fmt(L[0], 4)} … ${fmt(L[1], 6)}`);
+        break; }
+      case 'det': { const k = t.dataset.k; if (k === 'on' || k === 'noise') { commit(s => s.det[k] = t.checked); break; }
+        const L = DETLIM[k]; if ((v = num(x => L && x >= L[0] && x <= L[1])) != null) commit(s => s.det[k] = L[2] ? Math.round(v) : v);
+        else if (L) toast(`Valeur hors limites : ${fmt(L[0], 4)} … ${fmt(L[1], 6)}${L[2] ? ' (entier)' : ''}`);
+        break; }
       case 'tor': { const k = t.dataset.k; v = k === 'rx' ? parseNum(t.value, true) : parseNum(t.value, false); if (!(isFinite(v) || (k === 'rx' && Math.abs(v) === Infinity))) { toast('Valeur invalide'); renderSide(); break; } commit(s => s.surfaces[App.sel][k] = v); break; }
       case 'doe': { v = t.value.trim() === '' ? 0 : parseNum(t.value, false); if (!isFinite(v)) { toast('Valeur invalide'); renderSide(); break; } const k = +t.dataset.k; commit(s => { const x = s.surfaces[App.sel]; x.da = Array.isArray(x.da) ? x.da : []; while (x.da.length <= k) x.da.push(0); x.da[k] = v; }); break; }
       case 'vdoe': commit(s => { s.surfaces[App.sel].vdoe = +t.value || 0; }); break;
@@ -1461,8 +1521,8 @@ const R = {
     c.strokeStyle = 'rgba(255,255,255,.45)'; c.setLineDash([3, 3]); c.beginPath(); c.arc(A.X(0), A.Y(0), A.X(ra) - A.X(0), 0, 2 * Math.PI); c.stroke(); c.setLineDash([]);
     cbar(c, w - 58, 30, 12, Math.max(40, h - 70), p.log ? -6 : 0, p.log ? 0 : mx, 'inferno', p.log ? 'log₁₀' : 'Strehl');
     if (det().on) {
-      const pu = det().p, bp = OE.binPSF(ps.I, ps.P, ps.dx, pu * 1e-3, 'centre', 3);
-      if (p.pix) { const L = lut('inferno'); const nb = Math.ceil(ext / pu) * 2 + 1, b2 = OE.binPSF(ps.I, ps.P, ps.dx, pu * 1e-3, 'centre', nb); const m2 = Math.max(...b2.G);
+      const pu = det().p, bp = OE.binPSF(ps.I, ps.P, ps.dx, pu * 1e-3, 'centre', 3, det().ff / 100);
+      if (p.pix) { const L = lut('inferno'); const nb = Math.ceil(ext / pu) * 2 + 1, b2 = OE.binPSF(ps.I, ps.P, ps.dx, pu * 1e-3, 'centre', nb, det().ff / 100); const m2 = Math.max(...b2.G);
         clip(c, A.P); for (let iy = 0; iy < nb; iy++) for (let ix = 0; ix < nb; ix++) { const v = b2.G[iy * nb + ix] / m2, k = Math.round(Math.max(0, Math.min(1, v)) * 255); c.fillStyle = `rgb(${L[k * 3]},${L[k * 3 + 1]},${L[k * 3 + 2]})`; const x0 = A.X((ix - (nb >> 1) - 0.5) * pu), y0 = A.Y((iy - (nb >> 1) + 0.5) * pu); c.fillRect(x0, y0, A.X(pu) - A.X(0) + 0.5, A.Y(0) - A.Y(pu) + 0.5); } c.restore(); }
       pixGrid(c, A, pu, 'rgba(255,255,255,.35)');
       text(c, `pixel ${pu} µm · énergie pixel central ${fx(bp.G[4] * 100, 1)} % · 3×3 ${fx(bp.G.reduce((a, b) => a + b, 0) * 100, 1)} %`, A.P.x + 4, A.P.y + A.P.h - 14, { col: '#fff', size: 10.5 });
@@ -1643,7 +1703,7 @@ const R = {
   detector(p, M, c, w, h) {
     const d = det();
     if (!d.on) { wrapText(c, 'Activez un détecteur dans le panneau de gauche (carte « Détecteur »).', 14, 14, w - 28, { col: TH.mut }); return; }
-    const wi = p.wi ?? M.pw, ps = OE.psf(M, p.fi || 0, wi, 64, 256), pm = d.p * 1e-3, nb = 7, b = OE.binPSF(ps.I, ps.P, ps.dx, pm, p.phase || 'centre', nb);
+    const wi = p.wi ?? M.pw, ps = OE.psf(M, p.fi || 0, wi, 64, 256), pm = d.p * 1e-3, nb = 7, b = OE.binPSF(ps.I, ps.P, ps.dx, pm, p.phase || 'centre', nb, d.ff / 100);
     const sz = Math.min(w * 0.52, h - 40), cell = sz / nb, x0 = 12, y0 = 28, L = lut('vir'), mx = Math.max(...b.G);
     text(c, `PSF intégrée sur les pixels (${d.p} µm) — champ ${fLabel(M, p.fi || 0)}, ${fmt(M.wls[wi] * 1000, 5)} nm`, x0, 8, { b: true });
     for (let iy = 0; iy < nb; iy++) for (let ix = 0; ix < nb; ix++) {
@@ -1656,7 +1716,8 @@ const R = {
     const lF = M.ctxs[wi].lmm * M.par.wfno, sp = OE.spot(M, p.fi || 0, 21);
     const rows = [['Pixel central', fx(G[c0 * nb + c0] * 100, 2) + ' %'], ['Meilleur carré 2×2', fx(q2 * 100, 2) + ' %'], ['Carré 3×3', fx(sum(1) * 100, 2) + ' %'], ['Carré 5×5', fx(sum(2) * 100, 2) + ' %'],
       ['Strehl', fx(ps.strehl, 3)], ['Q = λF / p', fx(lF / pm, 2) + (lF / pm >= 2 ? ' ✓ Nyquist' : ' < 2')], ['Ø Airy', fx(2.44 * lF / pm, 2) + ' px'], ['Spot RMS', fx(sp.rms / pm, 2) + ' px'],
-      ['Nyquist détecteur', fx(1 / (2 * pm), 1) + ' cy/mm'], ['Coupure optique', fx(1 / lF, 1) + ' cy/mm']];
+      ['Nyquist détecteur', fx(1 / (2 * pm), 1) + ' cy/mm'], ['Coupure optique', fx(1 / lF, 1) + ' cy/mm'], ['FTM pixel à Nyquist', fx(OE.detMTF(1 / (2 * pm), pm, d.ff / 100), 3) + (d.ff < 100 ? ` (remplissage ${fmt(d.ff, 3)} %)` : '')],
+      ...(d.ff < 100 ? [['Perte par remplissage', fx((1 - b.G.reduce((a, v) => a + v, 0) / Math.max(1e-12, OE.binPSF(ps.I, ps.P, ps.dx, pm, p.phase || 'centre', nb, 1).G.reduce((a, v) => a + v, 0))) * 100, 1) + ' % (7×7 px)']] : [])];
     const tx = x0 + sz + 18; kvList(c, tx, y0, w - tx - 10, rows, h - y0 - 8);
     text(c, 'valeurs en % de l\'énergie', x0, y0 + sz + 6, { col: TH.mut, size: 10 });
   },
@@ -1672,7 +1733,7 @@ const R = {
     const wl = Math.min(w * 0.5, h - 10);
     const A = axes(c, { x: 0, y: 0, w: wl, h: h - 4 }, [cxu - ext, cxu + ext], [cyu - ext, cyu + ext], { equal: true, xl: 'µm (plan image)', title: `Image de la source — champ ${fLabel(M, p.fi || 0)}`, ml: 44, zero: false });
     A.xr0 = -half - pu / 2; A.xr1 = half - pu / 2; A.yr0 = -half - pu / 2; A.yr1 = half - pu / 2;
-    clip(c, A.P); heat(c, A, r.img, Q, Q, 0, r.peak, 'inferno', true);
+    clip(c, A.P); { const L0 = lut('inferno'); c.fillStyle = `rgb(${L0[0]},${L0[1]},${L0[2]})`; c.fillRect(A.P.x, A.P.y, A.P.w, A.P.h); } heat(c, A, r.img, Q, Q, 0, r.peak, 'inferno', true);
     // contour géométrique de la source
     c.strokeStyle = 'rgba(255,255,255,.7)'; c.setLineDash([4, 3]); c.lineWidth = 1.2; c.beginPath();
     const J = r.J, pt = (u, v) => [A.X(J[0] * u * 1e3 + J[1] * v * 1e3), A.Y(J[2] * u * 1e3 + J[3] * v * 1e3)];
@@ -1681,21 +1742,35 @@ const R = {
     c.stroke(); c.setLineDash([]); c.restore();
     const d = det(); let inPix = null;
     if (d.on) {
-      const b = OE.binImage(r.img, Q, r.pq, d.p * 1e-3, r.cx, r.cy, 1, 'centre'); inPix = b.G[0];
-      if (p.pix) { const nb = Math.ceil(2 * ext / d.p) + 3, bb = OE.binImage(r.img, Q, r.pq, d.p * 1e-3, r.cx, r.cy, nb, 'centre'), m2 = Math.max(...bb.G), L = lut('inferno'); clip(c, A.P);
+      const b = OE.binImage(r.img, Q, r.pq, d.p * 1e-3, r.cx, r.cy, 1, 'centre', d.ff / 100); inPix = b.G[0];
+      if (p.pix) { const nb = Math.ceil(2 * ext / d.p) + 3, bb = OE.binImage(r.img, Q, r.pq, d.p * 1e-3, r.cx, r.cy, nb, 'centre', d.ff / 100), m2 = Math.max(...bb.G), L = lut('inferno'); clip(c, A.P);
         for (let iy = 0; iy < nb; iy++) for (let ix = 0; ix < nb; ix++) { const k = Math.round(bb.G[iy * nb + ix] / m2 * 255); c.fillStyle = `rgb(${L[k * 3]},${L[k * 3 + 1]},${L[k * 3 + 2]})`; const x0 = A.X(cxu + (ix - (nb >> 1) - 0.5) * d.p), y0 = A.Y(cyu + (iy - (nb >> 1) + 0.5) * d.p); c.fillRect(x0, y0, A.X(d.p) - A.X(0) + 0.5, A.Y(0) - A.Y(d.p) + 0.5); } c.restore(); }
       const A2 = { ...A, xr: [cxu - ext - cxu, cxu + ext - cxu], yr: A.yr, X: v => A.X(v + cxu), Y: v => A.Y(v + cyu) }; A2.xr = [-ext, ext]; A2.yr = [-ext, ext]; pixGrid(c, A2, d.p, 'rgba(255,255,255,.3)');
     }
     // profils + métriques
-    const B = axes(c, { x: wl + 6, y: 0, w: w - wl - 6, h: h * 0.36 }, [-ext, ext], [0, 1.05], { xl: 'µm', title: 'Profils X (plein) / Y (tirets)', ml: 34 });
+    const B = axes(c, { x: wl + 6, y: 0, w: w - wl - 6, h: h * 0.29 }, [-ext, ext], [0, 1.05], { xl: 'µm', title: 'Profils X (plein) / Y (tirets)', ml: 34 });
     const xs = Array.from({ length: Q }, (_, k) => (k - Q / 2) * pu), mxx = Math.max(...r.px), mxy = Math.max(...r.py);
     pline(c, B, xs.map(v => v - cxu), Array.from(r.px, v => v / mxx), TH.acc, 1.8); pline(c, B, xs.map(v => v - cyu), Array.from(r.py, v => v / mxy), '#ea580c', 1.6, [5, 3]);
-    const mag = Math.sqrt(Math.abs(r.J[0] * r.J[3] - r.J[1] * r.J[2])) * 1e3;
+    const mag = Math.sqrt(Math.abs(r.J[0] * r.J[3] - r.J[1] * r.J[2])) * 1e3, cp = inf ? null : srcPower(M, p.fi || 0, S, o);
+    const pct = v => fx(v * 100, v < 0.01 ? 3 : 1) + ' %';
     const lines = [['Spectre', M.wls.length > 1 ? `${fmt(Math.min(...M.wls) * 1000, 5)} – ${fmt(Math.max(...M.wls) * 1000, 5)} nm` : `${fmt(M.wls[0] * 1000, 5)} nm`], ['Grandissement local', inf ? `${fx(mag, 4)} µm/″` : `× ${fx(mag, 4)}`], ['Taille géométrique', st === 'point' ? '—' : st === 'rect' ? `${fx(odraw.w * mag, 2)} × ${fx(odraw.h * mag, 2)} µm` : `Ø ${fx(odraw.d * mag, 2)} µm${st === 'gauss' ? ' (1/e²)' : ''}`],
-      ['FWHM X / Y', `${fx(r.fwhmX * 1e3, 2)} / ${fx(r.fwhmY * 1e3, 2)} µm`], ['Ø 50 / 80 / 95 % énergie', `${fx(r.d50 * 1e3, 2)} / ${fx(r.d80 * 1e3, 2)} / ${fx(r.d95 * 1e3, 2)} µm`],
-      ['Couplage dans le système', inf ? '—' : `${fx(r.coupling * 100, 1)} %${o.na > r.NAs && st !== 'gauss' ? ` (ON ${o.na} > ${fx(r.NAs, 3)})` : ''}`],
-      ...(S.type === 'fiber' && S.len > 0 && S.att > 0 ? [['Transmission totale', `${fx(100 * r.coupling * Math.pow(10, -S.att * S.len / 1e4), 2)} % (fibre × couplage)`]] : []), ...(inPix != null ? [['Énergie dans 1 pixel', `${fx(inPix * 100, 1)} % (${d.p} µm)`], ['Taille image', `${fx(r.d80 * 1e3 / d.p, 2)} px (Ø80)`]] : [])];
-    kvList(c, wl + 12, h * 0.39, w - wl - 20, lines, h * 0.61 - 6);
+      ['FWHM X / Y', `${fx(r.fwhmX * 1e3, 2)} / ${fx(r.fwhmY * 1e3, 2)} µm`], ['Ø 50 / 80 / 95 % énergie', `${fx(r.d50 * 1e3, 2)} / ${fx(r.d80 * 1e3, 2)} / ${fx(r.d95 * 1e3, 2)} µm`]];
+    const dB = v => fx(-10 * Math.log10(Math.max(v, 1e-12)), 2) + ' dB', big = v => v >= 1e6 ? v.toExponential(2).replace('e+', '·10^') : fx(v, 4);
+    if (cp && cp.c) {
+      lines.push(['Couplage (rayons réels)', pct(cp.c.eta)], ['  dont ON objet · vignetage', `${pct(cp.c.pupil)} · ${pct(cp.c.vig)}`]);
+      lines.push(['Transmission optique', pct(cp.tau * cp.fres)]); if (cp.fresnel) lines.push(['  verres · Fresnel', `${pct(cp.tau)} · ${pct(cp.fres)}`]);
+      if (cp.fib < 1) lines.push(['Transmission de la fibre', pct(cp.fib)]);
+      lines.push(['Transmission totale', `${pct(cp.tot)} (${dB(cp.tot)})`]);
+      if (cp.rcv != null) lines.push([S.rcv === 'sm' ? 'Couplage fibre monomode' : 'Couplage fibre réceptrice', `${pct(cp.rcv)} (${dB(cp.rcv)})`]);
+      if (S.pw > 0) { lines.push(['Puissance à l\'image', fmtPow(S.pw * cp.tot)]); if (cp.rcv != null) lines.push(['Puissance dans la fibre', fmtPow(S.pw * cp.tot * cp.rcv)]); }
+    } else if (!inf) lines.push(['Couplage', 'rayon principal vignetté']);
+    if (inPix != null) {
+      lines.push(['Énergie dans 1 pixel', pct(inPix)], ['Taille image (Ø80)', `${fx(r.d80 * 1e3 / d.p, 2)} px`]);
+      if (S.pw > 0 && cp && cp.c) { const P = S.pw * 1e-3 * cp.tot * inPix, lam = M.wls[M.pw] * 1e-6, e = P * lam / (6.62607015e-34 * 299792458) * (d.qe / 100) * d.texp * 1e-3;
+        lines.push(['Pixel le plus éclairé', `${big(e)} e⁻${e > d.fw ? ' ⚠ saturé' : ' (' + fx(e / d.fw * 100, 3) + ' %)'}`]); }
+    }
+    if (cp && cp.rcvNote && cp.rcv != null) lines.push(['Fibre réceptrice', cp.rcvNote]);
+    kvList(c, wl + 12, h * 0.31, w - wl - 20, lines, h * 0.69 - 6);
   },
   presc(p, M) {
     const S = M.S, par = M.par;
@@ -1796,8 +1871,9 @@ function simPane(p, M, c, w, h) {
     const S = r.S, off = document.createElement('canvas'); off.width = off.height = S; const oc = off.getContext('2d'), im = oc.createImageData(S, S);
     const W2 = onDet ? dd.nx * dd.p * 5e-4 : Infinity, H2 = onDet ? dd.ny * dd.p * 5e-4 : Infinity;
     if (onDet && dd.noise && !r.noisy) { // bruit de photons + lecture + quantification
-      const g = () => { let u = 0; for (let k = 0; k < 6; k++) u += Math.random(); return (u - 3) * Math.SQRT2; }, Nmax = dd.fw * dd.lvl / 100, lv = Math.pow(2, dd.bits) - 1;
-      r.noisy = r.ch.map(a => Float32Array.from(a, v => { const N = Math.max(0, v) * Nmax; let e = N + Math.sqrt(N) * g() + dd.rn * g(); e = Math.max(0, Math.min(dd.fw, e)); return Math.round(e / dd.fw * lv) / lv * dd.fw / Nmax; }));
+      const g = () => { let u = 0; for (let k = 0; k < 6; k++) u += Math.random(); return (u - 3) * Math.SQRT2; }, Nmax = dd.fw * dd.lvl / 100, lv = Math.pow(2, dd.bits) - 1, dk = (dd.dark || 0) * (dd.texp || 0) * 1e-3;
+      // signal + obscurité (bruit de grenaille), lecture, saturation du puits, quantification, puis soustraction du niveau d'obscurité moyen (image de noir)
+      r.noisy = r.ch.map(a => Float32Array.from(a, v => { const N = Math.max(0, v) * Nmax; let e = N + dk + Math.sqrt(N + dk) * g() + dd.rn * g(); e = Math.max(0, Math.min(dd.fw, e)); return Math.max(0, Math.round(e / dd.fw * lv) / lv * dd.fw - dk) / Nmax; }));
     }
     const chs = onDet && dd.noise && r.noisy ? r.noisy : r.ch;
     for (let q = 0; q < S * S; q++) {

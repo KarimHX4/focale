@@ -266,8 +266,9 @@ async function genReport(ov) {
       const pm = d.p * 1e-3, lF = M.ctxs[M.pw].lmm * p.wfno;
       kv([['Pas des pixels', `${d.p} µm`], ['Format', `${d.nx} × ${d.ny} px`], ['Taille du capteur', `${fx(d.nx * pm, 2)} × ${fx(d.ny * pm, 2)} mm`], ['Facteur de remplissage', `${d.ff} %`],
         ['Nyquist', `${fx(1 / (2 * pm), 1)} cy/mm`], ['Coupure optique', `${fx(1 / lF, 1)} cy/mm`], ['Q = λF/p', fx(lF / pm, 2)], ['Ø Airy', `${fx(2.44 * lF / pm, 2)} px`],
-        ['Puits / bruit de lecture', `${d.fw} e⁻ / ${d.rn} e⁻`], ['Numérisation', `${d.bits} bits`]]);
-      const rows = sys.fields.map((_, i) => { const ps = OE.psf(M, i, M.pw, 64, 256), b = OE.binPSF(ps.I, ps.P, ps.dx, pm, 'centre', 3), sp = OE.spot(M, i, 21); return [fl(i), fx(b.G[4] * 100, 1) + ' %', fx(b.G.reduce((a, v) => a + v, 0) * 100, 1) + ' %', fx(sp.rms / pm, 2) + ' px', fx(ps.strehl, 3)]; });
+        ['Puits / bruit de lecture', `${d.fw} e⁻ / ${d.rn} e⁻`], ['Numérisation', `${d.bits} bits (LSB ${fx(detStats(d).lsb, 3)} e⁻)`], ['Dynamique', `${fx(detStats(d).dr, 1)} dB`],
+        ['Rendement quantique / pose / obscurité', `${d.qe} % / ${d.texp} ms / ${d.dark} e⁻/s/px`], ['RSB à ' + d.lvl + ' % du puits', fx(detStats(d).snr, 1)], ['FTM pixel à Nyquist', fx(OE.detMTF(1 / (2 * pm), pm, (d.ff || 100) / 100), 3)]]);
+      const rows = sys.fields.map((_, i) => { const ps = OE.psf(M, i, M.pw, 64, 256), b = OE.binPSF(ps.I, ps.P, ps.dx, pm, 'centre', 3, (d.ff || 100) / 100), sp = OE.spot(M, i, 21); return [fl(i), fx(b.G[4] * 100, 1) + ' %', fx(b.G.reduce((a, v) => a + v, 0) * 100, 1) + ' %', fx(sp.rms / pm, 2) + ' px', fx(ps.strehl, 3)]; });
       const w5 = CW / 5; table(['Champ', 'Énergie pixel central', 'Énergie 3×3', 'Spot RMS', 'Strehl'].map((t, k) => ({ t, w: w5, a: k ? 'right' : 'left', mono: k > 0 })), rows);
     }
     const S = src();

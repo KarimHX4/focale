@@ -1408,18 +1408,22 @@ const OE = (() => {
 
   /* ---------------- Détecteur ---------------- */
   /** intègre une PSF (grille P×P, pas dx mm, centrée en P/2) sur des pixels de pas p (mm) ; phase 'centre' ou 'coin' */
-  function binPSF(I, P, dx, p, phase = 'centre', nb = 9) {
-    const h = P >> 1, off = phase === 'coin' ? 0 : 0.5, G = new Float64Array(nb * nb), c = nb >> 1; let tot = 0;
+  /** fraction d'un échantillon (centre u ∈ [0, 1[ dans le pixel, demi-largeur hw en pixels) recouvrant la zone active [½ − half, ½ + half] */
+  const ffW = (u, hw, half) => Math.max(0, Math.min(u + hw, 0.5 + half) - Math.max(u - hw, 0.5 - half)) / (2 * hw);
+  /** ff : taux de remplissage (0–1) : seule la zone active carrée centrée de côté p·√ff collecte la lumière (recouvrement exact échantillon / zone active) */
+  function binPSF(I, P, dx, p, phase = 'centre', nb = 9, ff = 1) {
+    const h = P >> 1, off = phase === 'coin' ? 0 : 0.5, G = new Float64Array(nb * nb), c = nb >> 1, half = Math.sqrt(Math.min(1, Math.max(1e-4, ff))) / 2, hw = Math.min(0.5, dx / p / 2); let tot = 0;
     for (let y = 0; y < P; y++) for (let x = 0; x < P; x++) {
       const v = I[y * P + x]; if (!v) continue; tot += v;
-      const ix = Math.floor((x - h) * dx / p + off) + c, iy = Math.floor((y - h) * dx / p + off) + c;
-      if (ix >= 0 && iy >= 0 && ix < nb && iy < nb) G[iy * nb + ix] += v;
+      const ux = (x - h) * dx / p + off, uy = (y - h) * dx / p + off, fx0 = Math.floor(ux), fy0 = Math.floor(uy), ix = fx0 + c, iy = fy0 + c;
+      const wf = half < 0.5 ? ffW(ux - fx0, hw, half) * ffW(uy - fy0, hw, half) : 1; if (!wf) continue;
+      if (ix >= 0 && iy >= 0 && ix < nb && iy < nb) G[iy * nb + ix] += v * wf;
     }
     for (let k = 0; k < G.length; k++) G[k] /= tot || 1;
     return { G, nb };
   }
-  /** FTM d'un pixel (ouverture rectangulaire de largeur ff·p) */
-  const detMTF = (f, p, ff = 1) => { const a = Math.PI * f * p * ff; return a < 1e-9 ? 1 : Math.abs(Math.sin(a) / a); };
+  /** FTM d'un pixel : zone active carrée de côté p·√ff (ff = taux de remplissage surfacique, 0–1), |sinc(π f p √ff)| */
+  const detMTF = (f, p, ff = 1) => { const a = Math.PI * f * p * Math.sqrt(Math.min(1, Math.max(1e-4, ff))); return a < 1e-9 ? 1 : Math.abs(Math.sin(a) / a); };
 
   /* ---------------- Fibres optiques ---------------- */
   /** grandeurs d'une fibre à la longueur d'onde l (µm) : V, coupure, MFD (Marcuse), nombre de modes, régime */
@@ -1431,6 +1435,119 @@ const OE = (() => {
     return { V, lc, mfd, modes: V < 2.405 ? 1 : Math.round(modes), single: V < 2.405, etendue: Math.PI * a * a * Math.PI * na * na };
   }
 
+  /* ---------------- Couplage source → système → récepteur (tracé de rayons réels) ---------------- */
+  /**
+   * Description physique d'une source pour le couplage. o : { type: 'fiber'|'disk'|'gauss'|'rect'|'point', fib 'si'|'gi'|'sm', core (µm), na, mfd (µm), d (µm), w, h (µm) }.
+   * Renvoie { pts: [[dx, dy (mm), poids, ON locale]], I(s², naLoc, l) intensité par élément d²s (sinus directeurs), tot(naLoc, l) = ∫ I d²s, coherent, mfd(l) }.
+   * Luminance : fibre à saut d'indice / disque = uniforme dans le cône d'ON ; gradient d'indice = ON locale NA·√(1 − r²/a²) et
+   * densité de puissance ∝ 1 − r²/a² ; monomode / tache gaussienne = mode gaussien, divergence θ0 = λ/(π w0).
+   */
+  function srcModelDesc(o, NAdef, opts) {
+    const t = o.type === 'fiber' ? (o.fib || 'si') : o.type || 'point', na = +o.na > 0 ? Math.min(1, +o.na) : NAdef, pts = [];
+    if (t === 'sm' || t === 'gauss') {
+      const mfd = l => t === 'sm' ? (+o.mfd > 0 ? +o.mfd : fiberInfo(o, l).mfd) : (+o.d || 10);
+      return { kind: t, coherent: true, pts: [[0, 0, 1, 0]], mfd, I: (s2, _, l) => { const th = l / (Math.PI * mfd(l) / 2); return Math.exp(-2 * s2 / (th * th)); }, tot: (_, l) => { const th = l / (Math.PI * mfd(l) / 2); return Math.PI * th * th / 2; } };
+    }
+    if (t === 'point') return { kind: t, pts: [[0, 0, 1, na]], I: (s2, nl, l, ws) => cone(s2, na, ws), tot: () => Math.PI * na * na };
+    if (t === 'rect') { const w = (+o.w || 0) * 1e-3, h = (+o.h || 0) * 1e-3; for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) pts.push([i * w / 3, j * h / 3, 1 / 9, 0]);
+      return { kind: t, pts, I: (s2, nl, l, ws) => cone(s2, na, ws), tot: () => Math.PI * na * na }; }
+    const a = (t === 'si' || t === 'gi' ? +o.core : +o.d) / 2 * 1e-3 || 0, gi = t === 'gi';
+    // quadrature du disque : anneaux d'aires égales (milieu en u = r²/a²), 4·(i+1) points chacun, décalés d'un anneau à l'autre ;
+    // poids ∝ aire × densité de puissance (1 − u pour le gradient d'indice), ON locale NA·√(1 − u) (gradient) ou NA (saut d'indice)
+    const NR = opts && opts.rings || 4;
+    if (a <= 0) pts.push([0, 0, 1, na]);
+    else { let sw = 0; for (let i = 0; i < NR; i++) { const u = (i + 0.5) / NR, r = a * Math.sqrt(u), nk = 4 * (i + 1), w = gi ? 1 - u : 1; sw += w;
+      for (let k = 0; k < nk; k++) { const q = 2 * Math.PI * (k + 0.5 * (i % 2)) / nk; pts.push([r * Math.cos(q), r * Math.sin(q), w / nk, gi ? na * Math.sqrt(1 - u) : na]); } }
+      for (const q of pts) q[2] /= sw; }
+    return { kind: t, pts, I: (s2, nl, l, ws) => cone(s2, nl, ws), tot: nl => Math.PI * nl * nl };
+  }
+  /** indicatrice du cône |s| ≤ NA lissée sur une cellule de largeur ws (fraction couverte au 1ᵉʳ ordre : bord rectiligne) — supprime le crénelage */
+  function cone(s2, na, ws) { const r = Math.sqrt(s2); if (!(ws > 0)) return r <= na ? 1 : 0; return Math.max(0, Math.min(1, 0.5 + (na - r) / ws)); }
+  /** sinus directeurs (x, y) du rayon lancé vers la pupille (px, py) depuis le point objet f */
+  function launchSin(M, ctx, f, px, py) { const a = (px === 0 && py === 0) ? chiefAim(M, ctx, f) : aimRay(M, ctx, f, px, py), s = startAt(M, ctx, f, a[0], a[1]); return [s.d[0], s.d[1]]; }
+  /**
+   * Pavage de la pupille d'entrée en n × n cellules : pour chaque cellule (fraction couverte f ∈ ]0, 1], obstruction exclue), le rayon central tracé
+   * sans facteurs de vignetage, ses sinus directeurs de départ, et l'aire de la cellule dans l'espace des sinus objet (dS, polygone des 4 coins —
+   * la jacobienne pupille ↔ direction est ainsi exacte au 2ᵉ ordre, y compris avec la visée réelle) ; out : aussi l'aire dans l'espace des sinus image (dO).
+   */
+  function pupilCells(M, wi, f, n, out) {
+    const ctx = M.ctxs[wi], dp = 2 / n, obs = M.obs || 0, C = [], inf = M.objInf;
+    const cs = new Array((n + 1) * (n + 1)), co = out ? new Array((n + 1) * (n + 1)) : null;
+    const corner = (i, j) => { const k = j * (n + 1) + i; if (cs[k] === undefined) { const px = -1 + i * dp, py = -1 + j * dp; cs[k] = inf ? null : launchSin(M, ctx, f, px, py); if (out) { const r = ray(M, wi, f, px, py, { noVig: true }); co[k] = r.vig ? null : [r.L, r.M]; } } return k; };
+    const area = q => q.some(v => !v) ? NaN : Math.abs((q[0][0] - q[2][0]) * (q[1][1] - q[3][1]) - (q[1][0] - q[3][0]) * (q[0][1] - q[2][1])) / 2;
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      let fr = 0; for (let a = 0; a < 4; a++) for (let b = 0; b < 4; b++) { const x = -1 + (i + (a + 0.5) / 4) * dp, y = -1 + (j + (b + 0.5) / 4) * dp, r = Math.hypot(x, y); if (r <= 1 && r >= obs) fr++; }
+      if (!fr) continue; fr /= 16;
+      const px = -1 + (i + 0.5) * dp, py = -1 + (j + 0.5) * dp, K = [corner(i, j), corner(i + 1, j), corner(i + 1, j + 1), corner(i, j + 1)];
+      const r = ray(M, wi, f, px, py, { noVig: true });
+      const s = inf ? [0, 0] : launchSin(M, ctx, f, px, py), dS = inf ? dp * dp * M.epr * M.epr : area(K.map(k => cs[k]));
+      C.push({ px, py, fr, s, dS, r, dO: out ? area(K.map(k => co[k])) : NaN });
+    }
+    return C;
+  }
+  /**
+   * Couplage d'une source (objet à distance finie) dans le système, par rayons réels : pour chaque point de quadrature de la source et chaque cellule
+   * de la pupille d'entrée, l'énergie est I(direction) × aire de la cellule dans l'espace des sinus ; elle est comptée si le rayon atteint l'image
+   * sans être arrêté (diaphragmes, ouvertures fixes). η = puissance à l'image / puissance émise ; « pupille » = part dirigée vers la pupille d'entrée
+   * (troncature par l'ON objet), « vig » = part de celle-ci non arrêtée en chemin.
+   * rcv (optionnel) : fibre réceptrice multimode { core (µm), na, gi } centrée sur l'image du centre de la source (λ primaire), axe = rayon principal.
+   */
+  function srcCoupling(M, f0, o, opts = {}) {
+    if (M.objInf) return null;
+    const n = opts.n || 24, desc = srcModelDesc(o, 1, opts), W = M.sys.wavelengths.map(w => w.w ?? 1), Wt = W.reduce((a, b) => a + b, 0) || 1, rcv = opts.rcv;
+    const c0 = ray(M, M.pw, f0, 0, 0, { noVig: true }); if (c0.vig) return null;
+    let eta = 0, etaPupil = 0, etaR = 0; const per = [];
+    M.wls.forEach((l, wi) => {
+      let acc = 0, accP = 0, accR = 0, tot = 0;
+      for (const [dx, dy, wp, nl] of desc.pts) {
+        const f = { x: (f0.x || 0) + dx, y: (f0.y || 0) + dy }, T = desc.tot(nl, l); tot += wp; if (!(T > 0)) continue;
+        let sa = 0, sp = 0, sr = 0;
+        for (const c of pupilCells(M, wi, f, n, !!rcv)) {
+          if (!isFinite(c.dS)) continue; const I = desc.I(c.s[0] * c.s[0] + c.s[1] * c.s[1], nl, l, Math.sqrt(c.dS)); if (!(I > 0)) continue;
+          const e = I * c.dS * c.fr; sp += e; if (c.r.vig) continue; sa += e;
+          if (rcv) { const r = c.r, rr = Math.hypot(r.x - c0.x, r.y - c0.y), ar = rcv.core / 2e3; if (rr <= ar) { const cosA = r.L * c0.L + r.M * c0.M + r.N * c0.N, sA = Math.sqrt(Math.max(0, 1 - cosA * cosA)), nar = rcv.gi ? rcv.na * Math.sqrt(Math.max(0, 1 - (rr / ar) ** 2)) : rcv.na; sr += e * cone(sA * sA, nar, isFinite(c.dO) ? Math.sqrt(c.dO) : 0); } }
+        }
+        acc += wp * Math.min(1, sa / T); accP += wp * Math.min(1, sp / T); accR += wp * Math.min(1, sr / T);
+      }
+      const e = tot ? acc / tot : 0, ep = tot ? accP / tot : 0, er = tot ? accR / tot : 0;
+      per.push({ l, eta: e, pupil: ep, rcv: er }); eta += W[wi] / Wt * e; etaPupil += W[wi] / Wt * ep; etaR += W[wi] / Wt * er;
+    });
+    return { eta, pupil: etaPupil, vig: etaPupil > 0 ? eta / etaPupil : 0, rcv: rcv ? etaR : null, per, kind: desc.kind, NAs: M.par.objNA };
+  }
+  /** transmission : absorption interne des verres (sur l'axe) et, si fresnel, pertes de Fresnel en incidence normale à chaque dioptre non traité */
+  function sysTransmission(M, wi, fresnel) {
+    const tau = sysTau(M.sys, M.wls[wi]); let tf = 1;
+    if (fresnel) { const n = M.ctxs[wi].nAbs; for (let j = 1; j < M.N; j++) { const s = M.S[j]; if (isMirror(s) || s.elem) continue; const a = n[j - 1], b = n[j]; if (Math.abs(a - b) > 1e-9) tf *= 1 - ((a - b) / (a + b)) ** 2; } }
+    return { tau: isFinite(tau) ? tau : 1, fres: tf };
+  }
+  /**
+   * Couplage dans une fibre réceptrice monomode par intégrale de recouvrement des champs dans la pupille (méthode des calculs de couplage fibré de CODE V) :
+   * η = |Σ √(I dS) · g(s′) · √dO · e^{i2πW}|² / (Σ I dS · π θr² / 2), W = écart de front d'onde réel (λ) par rapport à la sphère centrée sur l'image du point,
+   * g = champ lointain gaussien du mode reçu (θr = λ / (π w_r), MFD = 2 w_r) centré sur le rayon principal, dS / dO = aires des cellules dans les espaces
+   * des sinus objet / image. Source : mode gaussien (monomode, tache gaussienne), sinon pupille uniformément éclairée (point, objet à l'infini).
+   */
+  function smCoupling(M, f, o, mfdR, opts = {}) {
+    const n = opts.n || 32, desc = srcModelDesc(o || { type: 'point' }, 1), W = M.sys.wavelengths.map(w => w.w ?? 1), Wt = W.reduce((a, b) => a + b, 0) || 1;
+    const c0 = ray(M, M.pw, f, 0, 0, { noVig: true }); if (c0.vig || !(mfdR > 0)) return null;
+    const gauss = !M.objInf && (desc.kind === 'sm' || desc.kind === 'gauss');
+    let eta = 0; const per = [];
+    M.wls.forEach((l, wi) => {
+      const ref = opdRef(M, wi, f); if (!ref) { per.push({ l, eta: 0 }); return; }
+      const cw = ref.chief, thR = l / (Math.PI * mfdR / 2), nI = M.ctxs[wi].nAbs[M.N - 1];
+      let re = 0, im = 0, Is = 0;
+      for (const c of pupilCells(M, wi, f, n, true)) {
+        if (!isFinite(c.dS)) continue;
+        const I = gauss ? desc.I(c.s[0] * c.s[0] + c.s[1] * c.s[1], 1, l) : 1, m = I * c.dS * c.fr; Is += m;
+        if (c.r.vig || !isFinite(c.dO)) continue; const w = ref.W(c.r); if (!isFinite(w)) continue;
+        const sx = nI * (c.r.L - cw.L), sy = nI * (c.r.M - cw.M), g = Math.exp(-(sx * sx + sy * sy) / (thR * thR));
+        const a = Math.sqrt(m) * g * Math.sqrt(c.dO * c.fr * nI * nI), ph = 2 * Math.PI * w; re += a * Math.cos(ph); im += a * Math.sin(ph);
+      }
+      if (gauss) Is = Math.max(Is, desc.tot(1, l)); // l'énergie hors pupille compte dans le dénominateur
+      const e = Is > 0 ? Math.min(1, (re * re + im * im) / (Is * Math.PI * thR * thR / 2)) : 0;
+      per.push({ l, eta: e }); eta += W[wi] / Wt * e;
+    });
+    return { eta, per };
+  }
   /* ---------------- Source étendue (fibre, fente…) ---------------- */
   /**
    * o : { type: 'point'|'disk'|'gauss'|'rect', d (diamètre / MFD), w, h, na }. Unités objet : µm (objet à distance finie) ou secondes d'arc (objet à l'infini).
@@ -1518,12 +1635,13 @@ const OE = (() => {
     return { type, Q: Qe, pq, img, src: sImg, tot, peak: pk, dEff: d, cx: (cxm - h) * pq, cy: (cym - h) * pq, px, py, fwhmX: fwhm(px), fwhmY: fwhm(py), d50, d80, d95, coupling, J, inf, NAs, sh };
   }
   /** énergie d'une image (grille Q×Q, pas pq) intégrée sur des pixels de pas p centrés sur (cx, cy) */
-  function binImage(img, Q, pq, p, cx, cy, nb = 9, phase = 'centre') {
-    const h = Q >> 1, off = phase === 'coin' ? 0 : 0.5, c = nb >> 1, G = new Float64Array(nb * nb); let tot = 0;
+  function binImage(img, Q, pq, p, cx, cy, nb = 9, phase = 'centre', ff = 1) {
+    const h = Q >> 1, off = phase === 'coin' ? 0 : 0.5, c = nb >> 1, G = new Float64Array(nb * nb), half = Math.sqrt(Math.min(1, Math.max(1e-4, ff))) / 2, hw = Math.min(0.5, pq / p / 2); let tot = 0;
     for (let j = 0; j < Q; j++) for (let i = 0; i < Q; i++) {
       const v = img[j * Q + i]; if (!v) continue; tot += v;
-      const ix = Math.floor(((i - h) * pq - cx) / p + off) + c, iy = Math.floor(((j - h) * pq - cy) / p + off) + c;
-      if (ix >= 0 && iy >= 0 && ix < nb && iy < nb) G[iy * nb + ix] += v;
+      const ux = ((i - h) * pq - cx) / p + off, uy = ((j - h) * pq - cy) / p + off, fx0 = Math.floor(ux), fy0 = Math.floor(uy), ix = fx0 + c, iy = fy0 + c;
+      const wf = half < 0.5 ? ffW(ux - fx0, hw, half) * ffW(uy - fy0, hw, half) : 1; if (!wf) continue;
+      if (ix >= 0 && iy >= 0 && ix < nb && iy < nb) G[iy * nb + ix] += v * wf;
     }
     for (let k = 0; k < G.length; k++) G[k] /= tot || 1;
     return { G, nb };
@@ -2501,7 +2619,7 @@ const OE = (() => {
 
   return { ghosts, MCT, mcOn, mcSync, mcSet, mcLoad, mcApply, mcCtl, mcAddOp, mcSummary, fieldSweep, throughFocus, mtfField, beamArea, relIllum, distGrid, tolTrialD, DEG, fiberInfo, binPSF, detMTF, extSource, binImage, imageSim, polPupil, polOut, POLSTATES, TOLT, TOLC, LT, quickFocus, wlSel, opValue, parseModel, fmtModel, glassNearest, glassPool, toModel, subTry, tolBase, tolDefaults, tolFreeze, tolItems, tolGen, tolApplicable, tolLabel, tolApply, tolWorse, tolSens, tolInverse, tolTrial, tolRebuild, tolValue, niceDown, rng, mtfAt, compensate, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, glassProps, glassTau, sysTau, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
     wavefront, zernFit, ZN37, psf, psfGrid, mtf, mtfGeo, pupilScale, otfAC, mtfOne, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
-    OPS, OPG, meritUpgrade, meritPupil, gaussLegendre, meritR, consViol, getVars, getVal, setVal, residuals, meritOf, optStep, pupilGrid, indices, paraxial,
+    srcCoupling, smCoupling, sysTransmission, srcModelDesc, pupilCells, OPS, OPG, meritUpgrade, meritPupil, gaussLegendre, meritR, consViol, getVars, getVal, setVal, residuals, meritOf, optStep, pupilGrid, indices, paraxial,
     ASPK, FTYPES, vigMap, modelN, aimMode, setVignetting, convertFields, thermalScan, glassTherm, nAir, envN, envCtx, isSolid };
 })();
 if (typeof module !== 'undefined') module.exports = OE;

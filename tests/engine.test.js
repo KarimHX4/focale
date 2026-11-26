@@ -322,6 +322,29 @@ S 1.822175677212961 1.085816541265434 743972.448504\nS -21.29932312571177 0.1000
     RSI.forEach((ys, k) => { const P = [], t = OE.ray(M, M.pw, M.sys.fields[k + 1], 0, 0, { pts: P }); ys.forEach((y, j) => { dy = Math.max(dy, Math.abs(P[j][4] - y)); }); RZ[k].forEach((z, j) => { dz = Math.max(dz, Math.abs(P[j][2] - M.zg[j + 1] - z)); }); dt = Math.max(dt, Math.abs(t.M / t.N - TAN[k])); });
     near('CODE V RSI : Y du rayon principal sur chaque surface (F2–F4)', dy, 0, 6e-6); near('CODE V RSI : TANY dans l\'espace image', dt, 0, 6e-6); near('CODE V RSI : Z (flèche) du rayon principal sur chaque surface', dz, 0, 6e-6);
     const b = IO.parseSeq(IO.toSeq(sy).text).sys; near('CODE V : aller-retour du FNO (F/# de travail)', b.aperture.type === 'WFNO' && b.aperture.value === 3.5 ? 1 : 0, 1, 0); }
+  { // couplage source → système → fibre (rayons réels, recouvrement de modes)
+    const Sf = (r, t, o = {}) => ({ r, t, glass: '', sd: 0, k: 0, ...o });
+    const mk = (ap, surf) => OE.prepare({ title: '', aperture: ap, fields: [{ x: 0, y: 0, w: 1 }], wavelengths: [{ um: 1.55, w: 1 }], primary: 0, surfaces: surf });
+    let M = mk({ type: 'EPD', value: 100, obscuration: 0 }, [Sf(Infinity, 200), Sf(Infinity, 200, { stop: true, elem: 'ideal', fid: 100 }), Sf(Infinity, 0)]); const NA = M.par.objNA, f0 = { x: 0, y: 0 };
+    near('Couplage SI ON 0,1 < ON objet : 100 %', OE.srcCoupling(M, f0, { type: 'fiber', fib: 'si', core: 50, na: 0.1 }).eta, 1, 2e-3);
+    near('Couplage SI ON 0,48 : (ON objet / ON)²', OE.srcCoupling(M, f0, { type: 'fiber', fib: 'si', core: 50, na: 0.48 }).eta, (NA / 0.48) ** 2, 3e-3);
+    { const k = NA / 0.48; near('Couplage GI ON 0,48 : 2k² − k⁴', OE.srcCoupling(M, f0, { type: 'fiber', fib: 'gi', core: 50, na: 0.48 }).eta, 2 * k * k - k ** 4, 6e-3); }
+    { const th = 1.55 / (Math.PI * 5.2); near('Couplage monomode : 1 − exp(−2 ON²/θ₀²)', OE.srcCoupling(M, f0, { type: 'fiber', fib: 'sm', mfd: 10.4 }).eta, 1 - Math.exp(-2 * NA * NA / th / th), 2e-3); }
+    near('Fibre réceptrice MM (×1) : troncature par son ON', OE.srcCoupling(M, f0, { type: 'fiber', fib: 'si', core: 50, na: 0.48 }, { rcv: { core: 50, na: 0.22 } }).rcv, (0.22 / 0.48) ** 2, 4e-3);
+    near('Lambertien (disque sans ON) : ON objet²', OE.srcCoupling(M, f0, { type: 'disk', d: 20, na: 1 }).eta, NA * NA, 2e-3);
+    // miroir sphérique au centre de courbure : imagerie ×(−1) parfaite
+    M = mk({ type: 'EPD', value: 150, obscuration: 0 }, [Sf(Infinity, 200), Sf(-200, -200, { stop: true, glass: 'MIRROR' }), Sf(Infinity, 0)]);
+    near('Recouvrement monomode, modes identiques (×1)', OE.smCoupling(M, f0, { type: 'fiber', fib: 'sm', mfd: 10.4 }, 10.4).eta, 1, 2e-3);
+    near('Recouvrement monomode, MFD ×2 : (2w₁w₂/(w₁²+w₂²))²', OE.smCoupling(M, f0, { type: 'fiber', fib: 'sm', mfd: 10.4 }, 20.8).eta, 0.64, 2e-3);
+    { const r = OE.smCoupling(M, { x: 0, y: 0.003 }, { type: 'fiber', fib: 'sm', mfd: 10.4 }, 10.4); near('Recouvrement monomode : source décentrée de 3 µm, fibre réceptrice sur l\'image', r.eta, 1, 3e-3); }
+    // faisceau collimaté uniforme → fibre monomode : 2(1 − e^{−x})²/x, maximum 81,45 %
+    M = mk({ type: 'EPD', value: 20, obscuration: 0 }, [Sf(Infinity, Infinity), Sf(Infinity, 100, { stop: true, elem: 'ideal', fid: 100 }), Sf(Infinity, 0)]);
+    { const na = M.par.imgSpaceNA, x = 1.2564, th = Math.sqrt(na * na / x); near('Pupille uniforme → monomode : optimum 81,45 %', OE.smCoupling(M, f0, null, 2 * 1.55 / (Math.PI * th)).eta, 2 * (1 - Math.exp(-x)) ** 2 / x, 4e-3); }
+    near('Fresnel : 4 % par dioptre n = 1,5', (() => { const m = OE.prepare({ title: '', aperture: { type: 'EPD', value: 10, obscuration: 0 }, fields: [{ y: 0 }], wavelengths: [{ um: 0.55, w: 1 }], primary: 0, surfaces: [Sf(Infinity, Infinity), Sf(Infinity, 5, { glass: '1.5:60', stop: true }), Sf(Infinity, 10), Sf(Infinity, 0)] }); return OE.sysTransmission(m, 0, true).fres; })(), 0.96 * 0.96, 1e-3);
+    // remplissage des pixels
+    { const P = 64, I = new Float64Array(P * P).fill(1), b = OE.binPSF(I, P, 1, 8, 'coin', 8, 0.25); near('Pixel à 25 % de remplissage : 25 % du flux uniforme collecté', b.G.reduce((a, v) => a + v, 0), 0.25, 1e-9); }
+    near('FTM pixel ff = 25 % : sinc(π f p/2) à Nyquist', OE.detMTF(1 / 0.006, 0.003, 0.25), Math.sin(Math.PI / 4) / (Math.PI / 4), 1e-9);
+  }
   console.log(fail ? `${fail} échec(s)` : 'Tous les tests passent'); process.exit(fail ? 1 : 0);
 })();
 
