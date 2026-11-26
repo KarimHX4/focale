@@ -30,6 +30,26 @@ const fmt = (v, d = 5) => {
   return String(+v.toPrecision(d + (a >= 100 ? 1 : 0)));
 };
 const fx = (v, d = 3) => (v == null || !isFinite(v)) ? (v === Infinity ? '∞' : '—') : (+v).toFixed(d);
+/* ---------------- Unités d'affichage (préférences de l'utilisateur, App.units) ---------------- */
+const UNITS = {
+  wfe: { l: 'Front d\'onde, OPD, Zernike, Seidel (W)', o: [['wv', 'λ — ondes'], ['mwv', 'mλ — milli-ondes'], ['nm', 'nm'], ['um', 'µm']] },
+  tr: { l: 'Aberrations au plan image (spot, ray fan, PSF, défocalisation)', o: [['um', 'µm'], ['mm', 'mm']] },
+  wl: { l: 'Longueurs d\'onde affichées', o: [['nm', 'nm'], ['um', 'µm']] },
+  fq: { l: 'Fréquences spatiales', o: [['cy', 'cycles/mm'], ['lp', 'paires de lignes/mm (pl/mm)']] },
+};
+const UDEF = { wfe: 'wv', tr: 'um', wl: 'nm', fq: 'cy' };
+const un = k => (App.units && UNITS[k] && UNITS[k].o.some(o => o[0] === App.units[k])) ? App.units[k] : UDEF[k];
+/** front d'onde : facteur ondes → unité d'affichage pour la longueur d'onde lum (µm) ; libellé ; nombre de décimales équivalent */
+const kW = lum => ({ wv: 1, mwv: 1000, nm: lum * 1000, um: lum })[un('wfe')];
+const uW = () => ({ wv: 'λ', mwv: 'mλ', nm: 'nm', um: 'µm' })[un('wfe')];
+const dW = d => ({ wv: d, mwv: Math.max(0, d - 3), nm: Math.max(0, d - 3), um: d })[un('wfe')];
+const sW = (v, lum, d = 4) => `${fx(v * kW(lum), dW(d))} ${uW()}`;
+/** aberrations au plan image : facteur mm → unité d'affichage ; libellé ; décimales */
+const kT = () => un('tr') === 'mm' ? 1 : 1e3, uT = () => un('tr') === 'mm' ? 'mm' : 'µm', dT = d => un('tr') === 'mm' ? d + 3 : d;
+const sT = (vmm, d = 2) => `${fx(vmm * kT(), dT(d))} ${uT()}`;
+/** longueur d'onde (µm) affichée dans l'unité choisie */
+const sL = (um, d = 5) => un('wl') === 'um' ? `${fmt(um, d)} µm` : `${fmt(um * 1000, d)} nm`;
+const uF = () => un('fq') === 'lp' ? 'pl/mm' : 'cy/mm';
 function parseNum(s, allowInf = true) {
   s = String(s).trim().toLowerCase().replace(',', '.').replace(/\s/g, '');
   if (allowInf && ['inf', 'infini', 'infinity', '∞', '+inf', ''].includes(s)) return Infinity;
@@ -58,14 +78,14 @@ const elemOf = s => s.elem === 'grating' ? (OE.isMirror(s) ? 'rgrating' : 'grati
 const App = {
   sys: null, M: null, sel: 1, hist: [], hmeta: [], hi: -1, focus: null,
   panes: [{ type: 'spot' }, { type: 'wfe', fi: 0 }, { type: 'mtf' }, { type: 'psf', fi: 0 }, { type: 'rayfan' }, { type: 'footprint' }],
-  grid: 4, mode: '2d', view: { auto: true, s: 1, ox: 0, oy: 0, yaw: 0.55, pitch: 0.32 }, nRays: 7, ray3: 'xy', showAsph: false, qf: { crit: 'SPOT', wl: 'central' }, asst: true, fw: {},
+  units: { ...UDEF }, grid: 4, mode: '2d', view: { auto: true, s: 1, ox: 0, oy: 0, yaw: 0.55, pitch: 0.32 }, nRays: 7, ray3: 'xy', showAsph: false, qf: { crit: 'SPOT', wl: 'central' }, asst: true, fw: {},
 };
-function save() { try { localStorage.setItem('focale.sys', toJSON(App.sys)); localStorage.setItem('focale.ui', JSON.stringify({ panes: App.panes, grid: App.grid, qf: App.qf, asst: App.asst, fw: App.fw, nRays: App.nRays, ray3: App.ray3, cardOrder: App.cardOrder || null, cardClosed: [...closedCards], th: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light' })); } catch (e) { } }
+function save() { try { localStorage.setItem('focale.sys', toJSON(App.sys)); localStorage.setItem('focale.ui', JSON.stringify({ panes: App.panes, grid: App.grid, qf: App.qf, asst: App.asst, units: App.units, fw: App.fw, nRays: App.nRays, ray3: App.ray3, cardOrder: App.cardOrder || null, cardClosed: [...closedCards], th: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light' })); } catch (e) { } }
 function load() {
   try {
     const s = localStorage.getItem('focale.sys'); if (s) App.sys = normalize(fromJSON(s));
     const u = JSON.parse(localStorage.getItem('focale.ui') || 'null');
-    if (u) { if (Array.isArray(u.panes) && u.panes.length >= 6) App.panes = u.panes; if (u.grid) App.grid = u.grid; if (u.qf) App.qf = { ...App.qf, ...u.qf }; if (u.asst === false) App.asst = false; if (u.fw && typeof u.fw === 'object') App.fw = u.fw; if (Number.isInteger(u.nRays) && u.nRays >= 3 && u.nRays <= 100) App.nRays = u.nRays; if (RAY3.some(o => o[0] === u.ray3)) App.ray3 = u.ray3; if (Array.isArray(u.cardOrder)) App.cardOrder = u.cardOrder; if (Array.isArray(u.cardClosed)) { closedCards.clear(); for (const k of u.cardClosed) closedCards.add(k); } }
+    if (u) { if (Array.isArray(u.panes) && u.panes.length >= 6) App.panes = u.panes; if (u.grid) App.grid = u.grid; if (u.qf) App.qf = { ...App.qf, ...u.qf }; if (u.asst === false) App.asst = false; if (u.units && typeof u.units === 'object') App.units = { ...u.units }; if (u.fw && typeof u.fw === 'object') App.fw = u.fw; if (Number.isInteger(u.nRays) && u.nRays >= 3 && u.nRays <= 100) App.nRays = u.nRays; if (RAY3.some(o => o[0] === u.ray3)) App.ray3 = u.ray3; if (Array.isArray(u.cardOrder)) App.cardOrder = u.cardOrder; if (Array.isArray(u.cardClosed)) { closedCards.clear(); for (const k of u.cardClosed) closedCards.add(k); } }
     // thème : sombre par défaut (premier lancement) ; ensuite le dernier choix de l'utilisateur
     document.documentElement.dataset.theme = u && u.th === 'light' ? '' : 'dark';
   } catch (e) { App.sys = null; }
@@ -452,7 +472,7 @@ function renderSide() {
       <span>Hauteur image parax.</span><span>${fx(p.imgH, 4)}</span>
       <span>Longueur totale</span><span>${fx(p.ttl, 3)}</span>
       <span>Invariant de Lagrange</span><span>${fx(p.H, 5)}</span>
-      <span>λ primaire</span><span>${fx(M.wls[M.pw] * 1000, 2)} nm</span></div>
+      <span>λ primaire</span><span>${sL(M.wls[M.pw], 3)}</span></div>
       <div class="hint" style="margin-top:6px">Positions relatives : PE / 1ʳᵉ surface, PS / plan image. Hauteur image et grandissement au plan image paraxial (comme CODE V).</div>`);
   }
   h += cardOrder().map(k => C[k] || '').join('');
@@ -604,7 +624,7 @@ function elemEditor(x, j, N) {
     h = head('Surface diffractive (DOE, phase de révolution)') + inp('dm', 'Ordre de diffraction', 'm', m) + inp('dnr', 'Rayon de normalisation', 'mm', R)
       + [0, 1, 2, 3, 4, 5].map(k => `<div class="row"><label>A${k + 1} <span style="opacity:.7">(ρ${['²', '⁴', '⁶', '⁸', '¹⁰', '¹²'][k]}, rad)</span></label><input class="in mini" data-f="doe" data-k="${k}" value="${fmt(+A[k] || 0, 7)}"></div>`).join('')
       + `<div class="row"><label>Variables (optimisation)</label><select class="in mini" data-f="vdoe"><option value="0">aucune</option>${[1, 2, 3, 4].map(n => `<option value="${n}" ${(+x.vdoe || 0) === n ? 'selected' : ''}>A1…A${n}</option>`).join('')}</select></div>`
-      + `<div class="hint">Phase φ = Σ Aᵢ ρ²ⁱ (radians), ρ = r / R ; le rayon reçoit en plus le gradient de m·λ·φ/2π (comme la surface « Binary 2 » de Zemax). Puissance paraxiale à ${fmt(l * 1000, 5)} nm : <b>${P ? fmt(P * 1000, 4) + ' dioptries (f = ' + fmt(1 / P, 5) + ' mm)' : '0'}</b>, proportionnelle à λ (dispersion opposée à celle des verres : νd équivalent ≈ −3,45). A1 &lt; 0 : convergente pour m = 1.</div>`;
+      + `<div class="hint">Phase φ = Σ Aᵢ ρ²ⁱ (radians), ρ = r / R ; le rayon reçoit en plus le gradient de m·λ·φ/2π (comme la surface « Binary 2 » de Zemax). Puissance paraxiale à ${sL(l, 5)} : <b>${P ? fmt(P * 1000, 4) + ' dioptries (f = ' + fmt(1 / P, 5) + ' mm)' : '0'}</b>, proportionnelle à λ (dispersion opposée à celle des verres : νd équivalent ≈ −3,45). A1 &lt; 0 : convergente pour m = 1.</div>`;
   } else if (e === 'polarizer') {
     h = head('Polariseur linéaire idéal') + inp('pang', 'Axe de transmission', '° / X local', x.pang || 0) + '<div class="hint">Ne transmet que la composante du champ selon l\'axe (loi de Malus). Utilisez l\'analyse « Polarisation ».</div>';
   } else if (e === 'waveplate') {
@@ -639,11 +659,11 @@ function srcCard() {
       <div class="chips">${Object.entries(FIBPRE).map(([k, v]) => `<button class="chip" data-a="fibpre" data-v="${k}">${v[0]}</button>`).join('')}</div>`;
     const fi = OE.fiberInfo(S, l);
     if (+S.core >= +S.clad) warn.push('Ø cœur ≥ Ø gaine : vérifiez les diamètres.');
-    if (S.fib === 'sm' && !fi.single) warn.push(`V = ${fx(fi.V, 2)} > 2,405 : la fibre est multimode à ${fmt(l * 1000, 5)} nm (coupure ${fx(fi.lc * 1000, 0)} nm).`);
+    if (S.fib === 'sm' && !fi.single) warn.push(`V = ${fx(fi.V, 2)} > 2,405 : la fibre est multimode à ${sL(l, 5)} (coupure ${sL(fi.lc, 4)}).`);
     if (S.fib === 'sm' && fi.V < 1.2) warn.push(`V = ${fx(fi.V, 2)} < 1,2 : mode très peu guidé, la formule de Marcuse perd en précision — saisissez le MFD de la fiche technique.`);
     if (S.fib !== 'sm' && fi.single) warn.push(`V = ${fx(fi.V, 2)} < 2,405 : la fibre est monomode à cette λ — choisissez « Monomode » pour un calcul en mode gaussien.`);
     if (S.fib === 'sm' && +S.mfd > 0 && Math.abs(+S.mfd - OE.fiberInfo({ ...S, mfd: null }, l).mfd) > 0.35 * +S.mfd && fi.V > 1.2) warn.push('MFD imposé très différent de celui déduit du cœur et de l\'ON : vérifiez les données.');
-    const rows = [['à λ', `${fmt(l * 1000, 5)} nm`], ['Fréquence normalisée V', fx(fi.V, 3)], ['Longueur d\'onde de coupure', `${fx(fi.lc * 1000, 0)} nm`], ['Régime', fi.single ? 'monomode' : `multimode (~${fi.modes} modes)`]];
+    const rows = [['à λ', `${sL(l, 5)}`], ['Fréquence normalisée V', fx(fi.V, 3)], ['Longueur d\'onde de coupure', `${sL(fi.lc, 4)}`], ['Régime', fi.single ? 'monomode' : `multimode (~${fi.modes} modes)`]];
     if (S.fib === 'sm' || fi.single) { rows.push(['Diamètre de mode', `${fx(fi.mfd, 2)} µm${S.fib === 'sm' && +S.mfd > 0 ? ' (imposé)' : ' (Marcuse)'}`]); rows.push(['Divergence θ₀ (1/e²)', `${fx(l / (Math.PI * fi.mfd / 2) * 1000, 1)} mrad`]); }
     rows.push(['Étendue', `${fx(fi.etendue * 1e-6, 6)} mm²·sr`]);
     if (ok && !inf) { rows.push(['ON objet du système', fx(M.par.objNA, 4)]); if (S.fib !== 'sm' && +S.na > M.par.objNA * 1.001) warn.push(`ON de la fibre (${fmt(S.na, 3)}) > ON objet du système (${fx(M.par.objNA, 3)}) : une partie du flux est perdue (voir l'analyse « Source étendue »).`); }
@@ -713,7 +733,7 @@ function detCard() {
   if (st.dk > d.fw * 0.1) warn.push('Le courant d\'obscurité remplit plus de 10 % du puits pendant la pose : réduisez la pose ou refroidissez le capteur.');
   if (M && M.ok) {
     const pmm = d.p * 1e-3, lF = M.ctxs[M.pw].lmm * M.par.wfno, Q = lF / pmm, ih = realImgH(M);
-    info += `<span>Nyquist</span><span>${fx(1 / (2 * pmm), 1)} cy/mm</span><span>Coupure optique</span><span>${fx(1 / lF, 1)} cy/mm</span><span>Q = λF/p</span><span>${fx(Q, 2)}${Q < 1 ? ' (sous-échantillonné)' : Q >= 2 ? ' (≥ Nyquist)' : ''}</span><span>Ø Airy</span><span>${fx(2.44 * lF / pmm, 2)} px</span><span>FTM pixel à Nyquist</span><span>${fx(OE.detMTF(1 / (2 * pmm), pmm, d.ff / 100), 3)}</span>`;
+    info += `<span>Nyquist</span><span>${fx(1 / (2 * pmm), 1)} ${uF()}</span><span>Coupure optique</span><span>${fx(1 / lF, 1)} ${uF()}</span><span>Q = λF/p</span><span>${fx(Q, 2)}${Q < 1 ? ' (sous-échantillonné)' : Q >= 2 ? ' (≥ Nyquist)' : ''}</span><span>Ø Airy</span><span>${fx(2.44 * lF / pmm, 2)} px</span><span>FTM pixel à Nyquist</span><span>${fx(OE.detMTF(1 / (2 * pmm), pmm, d.ff / 100), 3)}</span>`;
     if (ih > 0) { info += `<span>Image réelle (½ diag.)</span><span>${fx(ih, 3)} mm / capteur ${fx(Math.hypot(W, H) / 2, 3)} mm</span>`;
       if (ih > Math.hypot(W, H) / 2 * 1.001) warn.push(`Le champ image (${fx(ih, 3)} mm) dépasse la demi-diagonale du capteur : les champs extrêmes tombent hors du détecteur.`);
       else if (ih < Math.min(W, H) / 2 * 0.5) warn.push('Le champ image couvre moins de la moitié du petit côté du capteur.'); }
@@ -1258,7 +1278,7 @@ function paneHeader(pi) {
   const opt = k => `<option value="${k}" ${k === p.type ? 'selected' : ''}>${PT[k].l}</option>`, inG = new Set(PTG.flatMap(g => g[1]));
   let h = `<select class="pt" data-p="type">${PTG.map(([g, ks]) => `<optgroup label="${g}">${ks.map(opt).join('')}</optgroup>`).join('')}${Object.keys(PT).filter(k => !inG.has(k)).map(opt).join('')}</select>`;
   if (t.f) { p.fi = Math.min(p.fi || 0, s.fields.length - 1); h += `<select data-p="fi">${s.fields.map((f, i) => `<option value="${i}" ${i === p.fi ? 'selected' : ''}>Champ ${i + 1} (${M && M.ok ? fLabel(M, i) : fmt(f.y, 4)})</option>`).join('')}</select>`; }
-  if (t.w) { if (p.wi != null && p.wi >= s.wavelengths.length) p.wi = null; const we = p.wi ?? s.primary; h += `<select data-p="wi">${s.wavelengths.map((w, i) => `<option value="${i}" ${i === we ? 'selected' : ''}>${fmt(w.um * 1000, 5)} nm</option>`).join('')}</select>`; }
+  if (t.w) { if (p.wi != null && p.wi >= s.wavelengths.length) p.wi = null; const we = p.wi ?? s.primary; h += `<select data-p="wi">${s.wavelengths.map((w, i) => `<option value="${i}" ${i === we ? 'selected' : ''}>${sL(w.um, 5)}</option>`).join('')}</select>`; }
   if (t.s) h += `<select data-p="si"><option value="">Surface sélectionnée</option>${s.surfaces.map((x, i) => i ? `<option value="${i}" ${p.si === i ? 'selected' : ''}>Surface ${i}${x.comment ? ' · ' + esc(x.comment) : ''}</option>` : '').join('')}</select>`;
   if (p.type === 'detector') h += `<select data-p="phase"><option value="centre" ${(p.phase || 'centre') === 'centre' ? 'selected' : ''}>centrée sur un pixel</option><option value="coin" ${p.phase === 'coin' ? 'selected' : ''}>centrée sur un coin</option></select>`;
   if (p.type === 'source') {
@@ -1280,8 +1300,8 @@ function paneHeader(pi) {
   if (p.type === 'spot') h += `<label><input type="checkbox" data-p="chief" ${p.chief ? 'checked' : ''}>réf. principal</label>`;
   const nsSel = d => `<select data-p="ns" title="Échantillonnage de la pupille (front d'onde N×N) : 32 rapide, 64 précis">${[32, 64, 128].map(n => `<option value="${n}" ${(+p.ns || d) === n ? 'selected' : ''}>${n}×${n}</option>`).join('')}</select>`;
   if (p.type === 'ghost') h += `<select data-p="coat" title="Réflectance des dioptres"><option value="0" ${!+p.coat ? 'selected' : ''}>Non traités (Fresnel)</option>${[[0.01, 'AR 1 %'], [0.005, 'AR 0,5 %'], [0.0025, 'AR 0,25 %'], [0.001, 'AR 0,1 %']].map(([v, l]) => `<option value="${v}" ${+p.coat === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
-  if (p.type === 'tfmtf') h += `<label>f <input class="in" data-p="tff" style="width:46px;height:22px" value="${p.tff || 30}"> cy/mm</label><label title="Demi-étendue de la défocalisation (vide : automatique, au moins 8 λF² et englobant le meilleur foyer)">± <input class="in" data-p="tfh" style="width:52px;height:22px" value="${p.tfh || ''}" placeholder="auto"> µm</label>${nsSel(32)}<button class="bt" data-p="tfapply" style="height:24px" title="Déplacer le plan image au meilleur foyer trouvé (épaisseur avant l'image)">Appliquer le meilleur foyer</button>`;
-  if (p.type === 'mtffield') h += `<label title="Fréquences spatiales (cycles/mm), séparées par des virgules ou des espaces">f <input class="in" data-p="mff" style="width:96px;height:22px" value="${esc(mffList(p).join(', '))}"> cy/mm</label>${nsSel(32)}`;
+  if (p.type === 'tfmtf') h += `<label>f <input class="in" data-p="tff" style="width:46px;height:22px" value="${p.tff || 30}"> ${uF()}</label><label title="Demi-étendue de la défocalisation (vide : automatique, au moins 8 λF² et englobant le meilleur foyer)">± <input class="in" data-p="tfh" style="width:52px;height:22px" value="${p.tfh || ''}" placeholder="auto"> µm</label>${nsSel(32)}<button class="bt" data-p="tfapply" style="height:24px" title="Déplacer le plan image au meilleur foyer trouvé (épaisseur avant l'image)">Appliquer le meilleur foyer</button>`;
+  if (p.type === 'mtffield') h += `<label title="Fréquences spatiales (cycles/mm), séparées par des virgules ou des espaces">f <input class="in" data-p="mff" style="width:96px;height:22px" value="${esc(mffList(p).join(', '))}"> ${uF()}</label>${nsSel(32)}`;
   if (p.type === 'distgrid') h += `<select data-p="dgn" title="Nombre de lignes de la grille">${[7, 11, 15, 21].map(n => `<option value="${n}" ${(+p.dgn || 11) === n ? 'selected' : ''}>${n}×${n}</option>`).join('')}</select><label title="Coché : les coins de la grille correspondent au champ maximal (diagonale du capteur). Décoché : le bord de la grille correspond au champ maximal."><input type="checkbox" data-p="diag" ${p.diag !== false ? 'checked' : ''}>coins = champ max</label><label title="Amplifier les écarts pour les rendre visibles"><input type="checkbox" data-p="dgx" ${p.dgx ? 'checked' : ''}>écarts ×10</label>`;
   if (p.type === 'thermal') h += `<label>de <input class="in" data-p="t1" style="width:46px;height:22px" value="${p.t1 ?? -20}"></label><label>à <input class="in" data-p="t2" style="width:46px;height:22px" value="${p.t2 ?? 60}"> °C</label>`;
   const fl = !!App.fw['p' + pi];
@@ -1349,7 +1369,7 @@ function setupPaneEvents(el) {
     const tfa = e.target.closest('[data-p="tfapply"]'); if (tfa) { const p = App.panes[+tfa.closest('.pane').dataset.i], d = App.M && App.M.ok ? JCACHE.get(jobSpec(p, App.M).key) : null;
       if (!d || d.err || !isFinite(d.best)) { toast('Attendez la fin du calcul'); return; }
       const j = App.sys.surfaces.length - 2; if (App.sys.surfaces[j].tsolve === 'M') { toast('L\'épaisseur avant l\'image est pilotée par un solve M : retirez-le d\'abord'); return; }
-      commit(s => { s.surfaces[j].t = +(d.t0 + d.best).toFixed(6); }); toast(`Plan image déplacé de ${fx(d.best * 1000, 1)} µm (meilleur foyer à ${fmt(d.freq, 4)} cy/mm)`); return; }
+      commit(s => { s.surfaces[j].t = +(d.t0 + d.best).toFixed(6); }); toast(`Plan image déplacé de ${sT(d.best, 1)} (meilleur foyer à ${fmt(d.freq, 4)} ${uF()})`); return; }
     const run = e.target.closest('[data-p="run"]'); if (run) { const pi = +run.closest('.pane').dataset.i; SIM.cache.clear(); SIM.force = true; renderPane(pi); return; }
     const g = e.target.closest('[data-p="png"]');
     if (g) { const pane = g.closest('.pane'), cv = pane.querySelector('canvas'), p = App.panes[+pane.dataset.i]; const o = document.createElement('canvas'); o.width = cv.width; o.height = cv.height; const oc = o.getContext('2d'); oc.fillStyle = TH.panel || '#fff'; oc.fillRect(0, 0, o.width, o.height); oc.drawImage(cv, 0, 0); o.toBlob(b => download(`${fileBase()}_${p.type}.png`, b)); return; }
@@ -1447,53 +1467,55 @@ function psf3d(p, M, c, w, h, g, ra) {
   }
   c.restore();
   cbar(c, w - 58, 30, 12, Math.max(40, h - 70), log ? -6 : 0, log ? 0 : 100, 'jet', log ? 'log₁₀' : '%');
-  text(c, `glisser : tourner · molette : zoom · double-clic : ajuster · Ø Airy ${fx(2 * ra, 2)} µm`, 8, h - 14, { col: TH.mut, size: 10 });
+  text(c, `glisser : tourner · molette : zoom · double-clic : ajuster · Ø Airy ${sT(2 * ra / 1e3)}`, 8, h - 14, { col: TH.mut, size: 10 });
 }
 const fLabel = (M, i) => { const f = (M.ufields || M.sys.fields)[i] || M.sys.fields[i], u = fUnitOf(M.ftype || (M.objInf ? 'ang' : 'obj')); return f.x ? `(${fmt(f.x, 4)}, ${fmt(f.y, 4)})${u}` : `${fmt(f.y, 4)}${u}`; };
-const wlLegend = M => M.wls.map((l, i) => ({ col: wlCol(l), l: `${fmt(l * 1000, 4)} nm` }));
+const wlLegend = M => M.wls.map((l, i) => ({ col: wlCol(l), l: `${sL(l, 4)}` }));
 const R = {
   spot(p, M, c, w, h) {
     const nf = M.sys.fields.length, sp = M.sys.fields.map((_, i) => OE.spot(M, i, 25));
     const ref = sp.map(s => p.chief && s.chief ? s.chief : [s.cx, s.cy]);
     let half = 0; sp.forEach((s, i) => { for (const q of s.pts) half = Math.max(half, Math.abs(q.x - ref[i][0]), Math.abs(q.y - ref[i][1])); half = Math.max(half, s.airy); });
-    half *= 1.08e3;
+    const kt = kT(); half *= 1.08 * kt;
     const g = subgrid(nf, w, h - 22);
     sp.forEach((s, i) => {
       const col = i % g.cols, row = Math.floor(i / g.cols), cw = w / g.cols, ch = (h - 22) / g.rows;
       const A = axes(c, { x: col * cw, y: row * ch, w: cw, h: ch }, [-half, half], [-half, half], { equal: true, title: `Champ ${fLabel(M, i)}`, ml: 44, mb: 44 });
       clip(c, A.P);
-      const ra = s.airy * 1e3; c.strokeStyle = TH.mut; c.setLineDash([3, 3]); c.beginPath(); c.arc(A.X(0), A.Y(0), Math.abs(A.X(ra) - A.X(0)), 0, 2 * Math.PI); c.stroke(); c.setLineDash([]);
-      c.restore(); if (det().on) pixGrid(c, A, det().p); clip(c, A.P);
+      const ra = s.airy * kt; c.strokeStyle = TH.mut; c.setLineDash([3, 3]); c.beginPath(); c.arc(A.X(0), A.Y(0), Math.abs(A.X(ra) - A.X(0)), 0, 2 * Math.PI); c.stroke(); c.setLineDash([]);
+      c.restore(); if (det().on) pixGrid(c, A, det().p * kt / 1e3); clip(c, A.P);
       const cols = M.wls.map(wlCol);
-      for (const q of s.pts) { c.fillStyle = cols[q.wi]; c.fillRect(A.X((q.x - ref[i][0]) * 1e3) - 1, A.Y((q.y - ref[i][1]) * 1e3) - 1, 2, 2); }
+      for (const q of s.pts) { c.fillStyle = cols[q.wi]; c.fillRect(A.X((q.x - ref[i][0]) * kt) - 1, A.Y((q.y - ref[i][1]) * kt) - 1, 2, 2); }
       c.restore();
-      text(c, `RMS ${fx(s.rms * 1e3, 2)} µm`, A.P.x, A.P.y + A.P.h + 16, { col: TH.fg, size: 10.5, mono: true });
-      text(c, `GEO ${fx(s.geo * 1e3, 2)} µm${s.nv ? ' · vign. ' + Math.round(100 * s.nv / s.ntot) + '%' : ''}`, A.P.x, A.P.y + A.P.h + 29, { col: TH.mut, size: 10.5, mono: true });
+      text(c, `RMS ${sT(s.rms)}`, A.P.x, A.P.y + A.P.h + 16, { col: TH.fg, size: 10.5, mono: true });
+      text(c, `GEO ${sT(s.geo)}${s.nv ? ' · vign. ' + Math.round(100 * s.nv / s.ntot) + '%' : ''}`, A.P.x, A.P.y + A.P.h + 29, { col: TH.mut, size: 10.5, mono: true });
     });
-    legend(c, 8, h - 10, [...wlLegend(M), { col: TH.mut, dash: [3, 3], l: `Airy r=${fx(sp[0].airy * 1e3, 2)} µm` }, ...(det().on ? [{ col: 'rgba(120,140,170,.7)', l: `pixel ${det().p} µm` }] : [])]);
+    legend(c, 8, h - 10, [...wlLegend(M), { col: TH.mut, dash: [3, 3], l: `Airy r=${sT(sp[0].airy)}` }, ...(det().on ? [{ col: 'rgba(120,140,170,.7)', l: `pixel ${det().p} µm` }] : [])]);
   },
-  rayfan(p, M, c, w, h) { fans(c, w, h, M, M.sys.fields.map((_, i) => OE.rayFan(M, i, 61)), 1e3, 'µm'); },
-  opdfan(p, M, c, w, h) { fans(c, w, h, M, M.sys.fields.map((_, i) => OE.opdFan(M, i, 61)), 1, 'λ'); },
+  rayfan(p, M, c, w, h) { fans(c, w, h, M, M.sys.fields.map((_, i) => OE.rayFan(M, i, 61)), kT(), false); },
+  opdfan(p, M, c, w, h) { fans(c, w, h, M, M.sys.fields.map((_, i) => OE.opdFan(M, i, 61)), wi => kW(M.wls[wi]), true); },
   wfe(p, M, c, w, h) {
     let wf = OE.wavefront(M, p.fi || 0, p.wi ?? M.pw, 64, p.tilt !== false), lbl = 'WFE';
     if (+p.zres > 0 && wf.ok) { const z = OE.zernFit(OE.wavefront(M, p.fi || 0, p.wi ?? M.pw, 64, false), +p.zres); wf = { ...wf, W: z.R, rms: z.rmsRes, pv: z.pvRes }; lbl = `Résidu après Z1…Z${z.nz}`; }
-    let m = 0; for (const v of wf.W) if (isFinite(v)) m = Math.max(m, Math.abs(v)); m = m || 1e-3;
-    const A = axes(c, { x: 0, y: 0, w: w - 70, h: h - 6 }, [-1.05, 1.05], [-1.05, 1.05], { equal: true, title: `${lbl}  RMS ${fx(wf.rms, 4)} λ · PV ${fx(wf.pv, 4)} λ ${lbl === 'WFE' && wf.rms <= 0.15 ? ` · Strehl (Maréchal) ≈ ${fx(Math.exp(-((2 * Math.PI * wf.rms) ** 2)), 3)}` : ''}`, ml: 40, mb: 22, zero: false });
+    const lw = M.wls[p.wi ?? M.pw], kw = kW(lw); if (kw !== 1) wf = { ...wf, W: Float64Array.from(wf.W, v => v * kw) };
+    let m = 0; for (const v of wf.W) if (isFinite(v)) m = Math.max(m, Math.abs(v)); m = m || 1e-3 * kw;
+    const A = axes(c, { x: 0, y: 0, w: w - 70, h: h - 6 }, [-1.05, 1.05], [-1.05, 1.05], { equal: true, title: `${lbl}  RMS ${sW(wf.rms, lw)} · PV ${sW(wf.pv, lw)} ${lbl === 'WFE' && wf.rms <= 0.15 ? ` · Strehl (Maréchal) ≈ ${fx(Math.exp(-((2 * Math.PI * wf.rms) ** 2)), 3)}` : ''}`, ml: 40, mb: 22, zero: false });
     A.xr0 = -1; A.xr1 = 1; A.yr0 = -1; A.yr1 = 1;
     heat(c, A, wf.W, wf.N, wf.N, -m, m, 'div', false);
     c.strokeStyle = TH.line; c.beginPath(); c.arc(A.X(0), A.Y(0), A.X(1) - A.X(0), 0, 2 * Math.PI); c.stroke();
-    cbar(c, w - 58, 30, 12, Math.max(40, h - 70), -m, m, 'div', 'λ');
-    text(c, `λ = ${fmt(M.wls[p.wi ?? M.pw] * 1000, 5)} nm · champ ${fLabel(M, p.fi || 0)} · réf. sphère centrée sur le rayon principal`, 40, h - 14, { maxW: w - 48, col: TH.mut, size: 10 });
+    cbar(c, w - 58, 30, 12, Math.max(40, h - 70), -m, m, 'div', uW());
+    text(c, `λ = ${sL(M.wls[p.wi ?? M.pw], 5)} · champ ${fLabel(M, p.fi || 0)} · réf. sphère centrée sur le rayon principal`, 40, h - 14, { maxW: w - 48, col: TH.mut, size: 10 });
   },
   zern(p, M) {
     const nz = ZNOPTS.some(o => o[0] === +p.nz) ? +p.nz : 16, wf = OE.wavefront(M, p.fi || 0, p.wi ?? M.pw, 64, false);
     if (!wf.ok) return '<p class="hint">Front d\'onde indisponible pour ce champ (rayon principal arrêté).</p>';
     const z = OE.zernFit(wf, nz), mx = Math.max(...z.rmsTerm.slice(1)) || 1, expl = Math.sqrt(z.rmsTerm.slice(1).reduce((a, v) => a + v * v, 0));
-    const rows = z.c.map((v, i) => `<tr><td>Z${i + 1}</td><td>${z.order[i]}</td><td style="text-align:left">${z.names[i]}</td><td>${(v >= 0 ? '+' : '') + v.toFixed(5)}</td><td>${i ? fx(z.rmsTerm[i], 5) : '—'}</td><td>${i ? `<div style="height:8px;width:${Math.min(140, z.rmsTerm[i] / mx * 140)}px;background:${v >= 0 ? '#d4553b' : '#3f6fc4'};border-radius:2px"></div>` : ''}</td></tr>`).join('');
-    return `<div class="hint">Zernike Fringe Z1…Z${nz} (${ZNOPTS.find(o => o[0] === nz)[1]}), unités : ondes (λ = ${fmt(M.wls[p.wi ?? M.pw] * 1000, 5)} nm), champ ${fLabel(M, p.fi || 0)}. Pupille normalisée, θ depuis l'axe X ; n = ordre radial ; RMS = contribution du terme au front d'onde RMS.</div>
-      <table style="margin-top:8px"><tr><th>Terme</th><th>n</th><th style="text-align:left">Aberration</th><th>Coef. (λ)</th><th>RMS (λ)</th><th></th></tr>${rows}</table>
-      <div class="kv" style="margin-top:8px;max-width:440px"><span>RMS total (piston retiré)</span><span>${fx(z.rmsTot, 5)} λ</span><span>RMS des termes Z2…Z${nz}</span><span>${fx(expl, 5)} λ</span>
-      <span><b>Résidu au-delà de Z${nz}</b> : RMS</span><span><b>${fx(z.rmsRes, 5)} λ</b></span><span>Résidu : PV</span><span>${fx(z.pvRes, 4)} λ</span>
+    const lw = M.wls[p.wi ?? M.pw], kw = kW(lw), d5 = dW(5), U = uW();
+    const rows = z.c.map((v, i) => `<tr><td>Z${i + 1}</td><td>${z.order[i]}</td><td style="text-align:left">${z.names[i]}</td><td>${(v >= 0 ? '+' : '') + (v * kw).toFixed(d5)}</td><td>${i ? fx(z.rmsTerm[i] * kw, d5) : '—'}</td><td>${i ? `<div style="height:8px;width:${Math.min(140, z.rmsTerm[i] / mx * 140)}px;background:${v >= 0 ? '#d4553b' : '#3f6fc4'};border-radius:2px"></div>` : ''}</td></tr>`).join('');
+    return `<div class="hint">Zernike Fringe Z1…Z${nz} (${ZNOPTS.find(o => o[0] === nz)[1]}), unités : ${un('wfe') === 'wv' ? 'ondes' : un('wfe') === 'mwv' ? 'milli-ondes' : U} (λ = ${sL(lw, 5)}), champ ${fLabel(M, p.fi || 0)}. Pupille normalisée, θ depuis l'axe X ; n = ordre radial ; RMS = contribution du terme au front d'onde RMS.</div>
+      <table style="margin-top:8px"><tr><th>Terme</th><th>n</th><th style="text-align:left">Aberration</th><th>Coef. (${U})</th><th>RMS (${U})</th><th></th></tr>${rows}</table>
+      <div class="kv" style="margin-top:8px;max-width:440px"><span>RMS total (piston retiré)</span><span>${sW(z.rmsTot, lw, 5)}</span><span>RMS des termes Z2…Z${nz}</span><span>${sW(expl, lw, 5)}</span>
+      <span><b>Résidu au-delà de Z${nz}</b> : RMS</span><span><b>${sW(z.rmsRes, lw, 5)}</b></span><span>Résidu : PV</span><span>${sW(z.pvRes, lw, 4)}</span>
       <span>Part de la variance expliquée</span><span>${fx(100 * (1 - (z.rmsRes / (z.rmsTot || 1)) ** 2), 3)} %</span></div>
       <p class="hint">Le résidu (front d'onde moins l'ajustement) contient les ordres supérieurs à ceux retenus ; sa carte s'affiche dans « Carte de front d'onde » (option « résidu après Z… »).</p>`;
   },
@@ -1513,18 +1535,18 @@ const R = {
     const half = Math.max(4, Math.min(P >> 1, Math.round(P / 4 / zoom))), n = 2 * half, o = P / 2 - half, data = new Float64Array(n * n);
     let mx = 0;
     for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { const v = ps.I[(y + o) * P + x + o]; data[y * n + x] = v; mx = Math.max(mx, v); }
-    const ext = half * ps.dx * 1e3, exX = half * (ps.dxX || ps.dx) * 1e3, exY = half * (ps.dxY || ps.dx) * 1e3; // pas anisotrope hors axe (F/# réels T et S)
+    const kt = kT(), ext = half * ps.dx * kt, exX = half * (ps.dxX || ps.dx) * kt, exY = half * (ps.dxY || ps.dx) * kt, ra2 = ra * kt / 1e3; // pas anisotrope hors axe (F/# réels T et S)
     if (p.log) for (let i = 0; i < data.length; i++) data[i] = Math.log10(Math.max(data[i] / mx, 1e-6));
-    const A = axes(c, { x: 0, y: 0, w: w - 70, h: h - 4 }, [-exX, exX], [-exY, exY], { equal: true, title: `PSF  Strehl ${fx(ps.strehl, 4)} · zoom ×${fmt(zoom, 2)}`, ml: 46, xl: 'µm', zero: false });
+    const A = axes(c, { x: 0, y: 0, w: w - 70, h: h - 4 }, [-exX, exX], [-exY, exY], { equal: true, title: `PSF  Strehl ${fx(ps.strehl, 4)} · zoom ×${fmt(zoom, 2)}`, ml: 46, xl: uT(), zero: false });
     A.xr0 = -exX; A.xr1 = exX; A.yr0 = -exY; A.yr1 = exY;
     heat(c, A, data, n, n, p.log ? -6 : 0, p.log ? 0 : mx, 'inferno', true);
-    c.strokeStyle = 'rgba(255,255,255,.45)'; c.setLineDash([3, 3]); c.beginPath(); c.arc(A.X(0), A.Y(0), A.X(ra) - A.X(0), 0, 2 * Math.PI); c.stroke(); c.setLineDash([]);
+    c.strokeStyle = 'rgba(255,255,255,.45)'; c.setLineDash([3, 3]); c.beginPath(); c.arc(A.X(0), A.Y(0), A.X(ra2) - A.X(0), 0, 2 * Math.PI); c.stroke(); c.setLineDash([]);
     cbar(c, w - 58, 30, 12, Math.max(40, h - 70), p.log ? -6 : 0, p.log ? 0 : mx, 'inferno', p.log ? 'log₁₀' : 'Strehl');
     if (det().on) {
-      const pu = det().p, bp = OE.binPSF(ps.I, ps.P, ps.dx, pu * 1e-3, 'centre', 3, det().ff / 100);
-      if (p.pix) { const L = lut('inferno'); const nb = Math.ceil(ext / pu) * 2 + 1, b2 = OE.binPSF(ps.I, ps.P, ps.dx, pu * 1e-3, 'centre', nb, det().ff / 100); const m2 = Math.max(...b2.G);
-        clip(c, A.P); for (let iy = 0; iy < nb; iy++) for (let ix = 0; ix < nb; ix++) { const v = b2.G[iy * nb + ix] / m2, k = Math.round(Math.max(0, Math.min(1, v)) * 255); c.fillStyle = `rgb(${L[k * 3]},${L[k * 3 + 1]},${L[k * 3 + 2]})`; const x0 = A.X((ix - (nb >> 1) - 0.5) * pu), y0 = A.Y((iy - (nb >> 1) + 0.5) * pu); c.fillRect(x0, y0, A.X(pu) - A.X(0) + 0.5, A.Y(0) - A.Y(pu) + 0.5); } c.restore(); }
-      pixGrid(c, A, pu, 'rgba(255,255,255,.35)');
+      const pu = det().p, pa = pu * kt / 1e3, bp = OE.binPSF(ps.I, ps.P, ps.dx, pu * 1e-3, 'centre', 3, det().ff / 100);
+      if (p.pix) { const L = lut('inferno'); const nb = Math.ceil(ext / pa) * 2 + 1, b2 = OE.binPSF(ps.I, ps.P, ps.dx, pu * 1e-3, 'centre', nb, det().ff / 100); const m2 = Math.max(...b2.G);
+        clip(c, A.P); for (let iy = 0; iy < nb; iy++) for (let ix = 0; ix < nb; ix++) { const v = b2.G[iy * nb + ix] / m2, k = Math.round(Math.max(0, Math.min(1, v)) * 255); c.fillStyle = `rgb(${L[k * 3]},${L[k * 3 + 1]},${L[k * 3 + 2]})`; const x0 = A.X((ix - (nb >> 1) - 0.5) * pa), y0 = A.Y((iy - (nb >> 1) + 0.5) * pa); c.fillRect(x0, y0, A.X(pa) - A.X(0) + 0.5, A.Y(0) - A.Y(pa) + 0.5); } c.restore(); }
+      pixGrid(c, A, pa, 'rgba(255,255,255,.35)');
       text(c, `pixel ${pu} µm · énergie pixel central ${fx(bp.G[4] * 100, 1)} % · 3×3 ${fx(bp.G.reduce((a, b) => a + b, 0) * 100, 1)} %`, A.P.x + 4, A.P.y + A.P.h - 14, { col: '#fff', size: 10.5 });
     }
     text(c, 'molette : zoom · double-clic : ×1', A.P.x + A.P.w - 4, A.P.y + 4, { col: 'rgba(255,255,255,.55)', size: 9.5, align: 'right' });
@@ -1532,7 +1554,7 @@ const R = {
   mtf(p, M, c, w, h, d) {
     const geo = p.mt === 'geo', N = +p.ns || 64, sc = d.sc, res = d.res;
     const f = res[0].f;
-    const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, [0, f[f.length - 1]], [0, 1.02], { xl: 'Fréquence spatiale (cycles/mm)', yl: 'Module FTM', title: geo ? `FTM polychromatique géométrique (rayons${p.gdl !== false ? ' × limite de diffraction' : ''})` : `FTM polychromatique (diffraction, autocorrélation de la pupille ${N}×${N})` });
+    const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, [0, f[f.length - 1]], [0, 1.02], { xl: `Fréquence spatiale (${un('fq') === 'lp' ? 'paires de lignes/mm' : 'cycles/mm'})`, yl: 'Module FTM', title: geo ? `FTM polychromatique géométrique (rayons${p.gdl !== false ? ' × limite de diffraction' : ''})` : `FTM polychromatique (diffraction, autocorrélation de la pupille ${N}×${N})` });
     { const pw = M.pw, fn = sc.map((a, i) => `F${i + 1} ${fx(1 / a[pw].dM, 2)}/${fx(1 / a[pw].dL, 2)}`).join(' · ');
       text(c, `F/# réels T/S (λ réf.) : ${fn}`, A.P.x + 6, A.P.y + 4, { col: TH.mut, size: 10, maxW: A.P.w - 12 }); }
     pline(c, A, f, res[0].DL, TH.fg, 1.2, [2, 2]);
@@ -1548,13 +1570,13 @@ const R = {
     legend(c, 8, h - 8, [...dl, { col: TH.fg, dash: [2, 2], l: 'Limite de diffraction' }, { col: TH.mut, l: 'Tangentiel' }, { col: TH.mut, dash: [6, 4], l: 'Sagittal' }, ...M.sys.fields.map((_, i) => ({ col: fcol(i), l: fLabel(M, i) }))]);
   },
   ee(p, M, c, w, h) {
-    const e = OE.encircled(M, p.fi || 0);
-    const r = e.r.map(v => v * 1e3);
+    const e = OE.encircled(M, p.fi || 0), kt = kT();
+    const r = e.r.map(v => v * kt);
     // rayon à 80 % d'énergie, interpolé linéairement
     const r80 = arr => { const k = arr.findIndex(v => v >= 0.8); if (k < 0) return NaN; if (k === 0) return r[0]; const t = (0.8 - arr[k - 1]) / (arr[k] - arr[k - 1] || 1); return r[k - 1] + t * (r[k] - r[k - 1]); };
-    const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, [0, r[r.length - 1]], [0, 1.02], { xl: 'Rayon (µm)', yl: 'Fraction d\'énergie', title: `Énergie encerclée · champ ${fLabel(M, p.fi || 0)} — r80 ${fx(r80(e.D), 2)} µm (diffr.) · ${fx(r80(e.G), 2)} µm (géom.)` });
+    const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, [0, r[r.length - 1]], [0, 1.02], { xl: `Rayon (${uT()})`, yl: 'Fraction d\'énergie', title: `Énergie encerclée · champ ${fLabel(M, p.fi || 0)} — r80 ${sT(r80(e.D) / kt)} (diffr.) · ${sT(r80(e.G) / kt)} (géom.)` });
     pline(c, A, r, e.D, '#2563eb', 1.8); pline(c, A, r, e.G, '#ea580c', 1.6, [6, 4]);
-    const ra = e.airy * 1e3; c.strokeStyle = TH.mut; c.setLineDash([2, 3]); c.beginPath(); c.moveTo(A.X(ra), A.P.y); c.lineTo(A.X(ra), A.P.y + A.P.h); c.stroke(); c.setLineDash([]);
+    const ra = e.airy * kt; c.strokeStyle = TH.mut; c.setLineDash([2, 3]); c.beginPath(); c.moveTo(A.X(ra), A.P.y); c.lineTo(A.X(ra), A.P.y + A.P.h); c.stroke(); c.setLineDash([]);
     legend(c, 8, h - 8, [{ col: '#2563eb', l: 'Diffraction (λ principale)' }, { col: '#ea580c', dash: [6, 4], l: 'Géométrique (polychromatique)' }, { col: TH.mut, dash: [2, 3], l: 'Rayon d\'Airy' }]);
   },
   footprint(p, M, c, w, h) {
@@ -1596,42 +1618,42 @@ const R = {
     });
     const lm = sd.lmm;
     legend(c, 8, h - 22, keys.map((k, i) => ({ col: kc[i], l: nm[i] })));
-    text(c, `W040 = ${fx(sd.sum.SI / 8 / lm, 3)} λ · W131 = ${fx(sd.sum.SII / 2 / lm, 3)} λ · W222 = ${fx(sd.sum.SIII / 2 / lm, 3)} λ · W220 = ${fx((sd.sum.SIV) / 4 / lm, 3)} λ · W311 = ${fx(sd.sum.SV / 2 / lm, 3)} λ`, 8, h - 12, { col: TH.mut, size: 10.5, mono: true, maxW: w - 16 });
+    const lu = lm * 1e3; text(c, `W040 = ${sW(sd.sum.SI / 8 / lm, lu, 3)} · W131 = ${sW(sd.sum.SII / 2 / lm, lu, 3)} · W222 = ${sW(sd.sum.SIII / 2 / lm, lu, 3)} · W220 = ${sW((sd.sum.SIV) / 4 / lm, lu, 3)} · W311 = ${sW(sd.sum.SV / 2 / lm, lu, 3)}`, 8, h - 12, { col: TH.mut, size: 10.5, mono: true, maxW: w - 16 });
   },
   thermal(p, M, c, w, h, r) {
     const T1 = p.t1 ?? -20, T2 = p.t2 ?? 60, efl0 = M.par.efl, h1 = Math.round(h / 2), solve = App.sys.surfaces.some(x => x.tsolve === 'M');
-    const dE = r.efl.map(v => (v - efl0) * 1000);
-    let A = axes(c, { x: 0, y: 0, w, h: h1 - 20 }, [T1, T2], range([r.dz, dE], 0.1), { xl: '', yl: 'µm', title: solve ? 'Δ focale — solve de mise au point (M) actif : le plan image suit le foyer' : 'Défocalisation (foyer paraxial − plan image) et Δ focale' });
-    pline(c, A, r.T, r.dz, TH.acc, 2); pline(c, A, r.T, dE, TH.mut, 1.6, [5, 4]);
+    const kt = kT() / 1e3, lw = M.wls[M.pw], kw = kW(lw), dE = r.efl.map(v => (v - efl0) * 1000 * kt), dz = r.dz.map(v => v * kt), wfe = r.wfe.map(v => v * kw), spt = r.spot.map(v => v * kt);
+    let A = axes(c, { x: 0, y: 0, w, h: h1 - 20 }, [T1, T2], range([dz, dE], 0.1), { xl: '', yl: uT(), title: solve ? 'Δ focale — solve de mise au point (M) actif : le plan image suit le foyer' : 'Défocalisation (foyer paraxial − plan image) et Δ focale' });
+    pline(c, A, r.T, dz, TH.acc, 2); pline(c, A, r.T, dE, TH.mut, 1.6, [5, 4]);
     const T0 = M.env ? M.env.T : 20; c.strokeStyle = TH.mut; c.setLineDash([2, 3]); c.beginPath(); c.moveTo(A.X(T0), A.P.y); c.lineTo(A.X(T0), A.P.y + A.P.h); c.stroke(); c.setLineDash([]);
-    legend(c, 8, h1 - 8, [{ col: TH.acc, l: 'Défocalisation (µm)' }, { col: TH.mut, dash: [5, 4], l: 'Δ focale par rapport à ' + fmt(T0, 4) + ' °C (µm)' }]);
-    A = axes(c, { x: 0, y: h1 + 2, w, h: h - h1 - 22 }, [T1, T2], range([r.wfe], 0.1), { xl: 'Température (°C)', yl: 'RMS (λ)', title: `Qualité au plan image — champ ${fLabel(M, p.fi || 0)} : WFE RMS (λ) et spot RMS (µm, échelle à droite)` });
-    pline(c, A, r.T, r.wfe, '#16a34a', 2);
-    const sr = range([r.spot], 0.1), ys = v => A.P.y + A.P.h - (v - sr[0]) / (sr[1] - sr[0] || 1) * A.P.h;
-    c.strokeStyle = '#f59e0b'; c.lineWidth = 1.6; c.setLineDash([4, 3]); c.beginPath(); r.T.forEach((t, i) => { const X = A.X(t), Y = ys(r.spot[i]); i ? c.lineTo(X, Y) : c.moveTo(X, Y); }); c.stroke(); c.setLineDash([]);
-    text(c, `${fx(sr[1], 2)} µm`, A.P.x + A.P.w - 4, A.P.y + 2, { col: '#f59e0b', size: 10, align: 'right' });
-    legend(c, 8, h - 8, [{ col: '#16a34a', l: 'WFE RMS (λ)' }, { col: '#f59e0b', dash: [4, 3], l: `Spot RMS (µm, ${fx(sr[0], 2)} à ${fx(sr[1], 2)})` }]);
+    legend(c, 8, h1 - 8, [{ col: TH.acc, l: `Défocalisation (${uT()})` }, { col: TH.mut, dash: [5, 4], l: 'Δ focale par rapport à ' + fmt(T0, 4) + ` °C (${uT()})` }]);
+    A = axes(c, { x: 0, y: h1 + 2, w, h: h - h1 - 22 }, [T1, T2], range([wfe], 0.1), { xl: 'Température (°C)', yl: `RMS (${uW()})`, title: `Qualité au plan image — champ ${fLabel(M, p.fi || 0)} : WFE RMS (${uW()}) et spot RMS (${uT()}, échelle à droite)` });
+    pline(c, A, r.T, wfe, '#16a34a', 2);
+    const sr = range([spt], 0.1), ys = v => A.P.y + A.P.h - (v - sr[0]) / (sr[1] - sr[0] || 1) * A.P.h;
+    c.strokeStyle = '#f59e0b'; c.lineWidth = 1.6; c.setLineDash([4, 3]); c.beginPath(); r.T.forEach((t, i) => { const X = A.X(t), Y = ys(spt[i]); i ? c.lineTo(X, Y) : c.moveTo(X, Y); }); c.stroke(); c.setLineDash([]);
+    text(c, `${fx(sr[1], dT(2))} ${uT()}`, A.P.x + A.P.w - 4, A.P.y + 2, { col: '#f59e0b', size: 10, align: 'right' });
+    legend(c, 8, h - 8, [{ col: '#16a34a', l: `WFE RMS (${uW()}, ${sL(lw)})` }, { col: '#f59e0b', dash: [4, 3], l: `Spot RMS (${uT()}, ${fx(sr[0], dT(2))} à ${fx(sr[1], dT(2))})` }]);
   },
   tfmtf(p, M, c, w, h, d) {
-    const X = d.dz.map(v => v * 1e3), F = M.sys.fields;
-    const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, [X[0], X[X.length - 1]], [0, 1.02], { xl: 'Défocalisation par rapport au plan image (µm)', yl: 'Module FTM', title: `FTM through-focus à ${fmt(d.freq, 4)} cy/mm — meilleur foyer ${d.best >= 0 ? '+' : ''}${fx(d.best * 1e3, 1)} µm (FTM moyenne ${fx(d.bestV, 3)})` });
+    const kt = kT(), X = d.dz.map(v => v * kt), F = M.sys.fields;
+    const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, [X[0], X[X.length - 1]], [0, 1.02], { xl: `Défocalisation par rapport au plan image (${uT()})`, yl: 'Module FTM', title: `FTM through-focus à ${fmt(d.freq, 4)} ${uF()} — meilleur foyer ${d.best >= 0 ? '+' : ''}${sT(d.best, 1)} (FTM moyenne ${fx(d.bestV, 3)})` });
     pline(c, A, X, d.DL, TH.fg, 1.2, [2, 2]);
     d.T.forEach((t, i) => { pline(c, A, X, t, fcol(i), 1.7); pline(c, A, X, d.S[i], fcol(i), 1.7, [6, 4]); });
     pline(c, A, X, d.avg, '#f59e0b', 2.6);
     const vl = (x, col, dash, lab) => { if (A.X(x) < A.P.x || A.X(x) > A.P.x + A.P.w) return; c.strokeStyle = col; c.lineWidth = 1.2; c.setLineDash(dash); c.beginPath(); c.moveTo(A.X(x), A.P.y); c.lineTo(A.X(x), A.P.y + A.P.h); c.stroke(); c.setLineDash([]); if (lab) text(c, lab, A.X(x) + 4, A.P.y + 4, { col, size: 10 }); };
-    vl(0, TH.mut, [2, 3], 'plan image'); vl(d.best * 1e3, TH.acc, [5, 3], 'meilleur foyer');
+    vl(0, TH.mut, [2, 3], 'plan image'); vl(d.best * kt, TH.acc, [5, 3], 'meilleur foyer');
     legend(c, 8, h - 8, [{ col: TH.fg, dash: [2, 2], l: 'Limite de diffraction' }, { col: '#f59e0b', l: 'Moyenne (T+S)/2 pondérée' }, { col: TH.mut, l: 'T' }, { col: TH.mut, dash: [6, 4], l: 'S' }, ...F.map((_, i) => ({ col: fcol(i), l: fLabel(M, i) }))]);
   },
   mtffield(p, M, c, w, h, d) {
     const u = d.u, xr = [0, Math.max(...u.filter(isFinite)) || 1], fc = ['#2563eb', '#16a34a', '#dc2626', '#9333ea', '#ea580c', '#0891b2'];
-    const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, xr, [0, 1.02], { xl: `Champ (${d.unit})`, yl: 'Module FTM', title: `FTM en fonction du champ — ${d.freqs.map(f => fmt(f, 4)).join(', ')} cy/mm (pupille ${+p.ns || 32}×${+p.ns || 32})` });
+    const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, xr, [0, 1.02], { xl: `Champ (${d.unit})`, yl: 'Module FTM', title: `FTM en fonction du champ — ${d.freqs.map(f => fmt(f, 4)).join(', ')} ${uF()} (pupille ${+p.ns || 32}×${+p.ns || 32})` });
     d.freqs.forEach((f, q) => { const col = fc[q % fc.length]; pline(c, A, u, d.T[q], col, 1.8); pline(c, A, u, d.S[q], col, 1.8, [6, 4]); pline(c, A, u, d.DL[q], col, 0.9, [1, 3]); });
     if (!d.img) d.defF.forEach((v, i) => { if (A.X(v) < A.P.x - 1 || A.X(v) > A.P.x + A.P.w + 1) return; c.fillStyle = fcol(i); c.beginPath(); c.moveTo(A.X(v), A.P.y + A.P.h); c.lineTo(A.X(v) - 4, A.P.y + A.P.h + 6); c.lineTo(A.X(v) + 4, A.P.y + A.P.h + 6); c.fill(); });
-    legend(c, 8, h - 8, [{ col: TH.mut, l: 'T' }, { col: TH.mut, dash: [6, 4], l: 'S' }, { col: TH.mut, dash: [1, 3], l: 'limite de diffraction' }, ...d.freqs.map((f, q) => ({ col: fc[q % fc.length], l: `${fmt(f, 4)} cy/mm` }))]);
+    legend(c, 8, h - 8, [{ col: TH.mut, l: 'T' }, { col: TH.mut, dash: [6, 4], l: 'S' }, { col: TH.mut, dash: [1, 3], l: 'limite de diffraction' }, ...d.freqs.map((f, q) => ({ col: fc[q % fc.length], l: `${fmt(f, 4)} ${uF()}` }))]);
   },
   relillum(p, M, c, w, h, d) {
     const u = d.u, xr = [0, Math.max(...u.filter(isFinite)) || 1], lo = Math.min(...d.ri.filter(isFinite), ...d.cos4.filter(isFinite));
-    const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, xr, [Math.min(0, Math.floor(lo * 10) / 10), 1.05], { xl: `Champ (${d.unit})`, yl: 'Éclairement relatif', title: `Éclairement relatif à ${fmt(d.wl * 1000, 5)} nm — bord du champ ${fx(100 * d.ri[d.ri.length - 1], 1)} %` });
+    const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, xr, [Math.min(0, Math.floor(lo * 10) / 10), 1.05], { xl: `Champ (${d.unit})`, yl: 'Éclairement relatif', title: `Éclairement relatif à ${sL(d.wl, 5)} — bord du champ ${fx(100 * d.ri[d.ri.length - 1], 1)} %` });
     pline(c, A, u, d.cos4, TH.mut, 1.3, [5, 4]); pline(c, A, u, d.ri, TH.acc, 2.2);
     legend(c, 8, h - 8, [{ col: TH.acc, l: 'Éclairement relatif (vignetage et aberrations de pupille inclus)' }, { col: TH.mut, dash: [5, 4], l: 'cos⁴ θ′ du rayon principal' }]);
   },
@@ -1661,14 +1683,14 @@ const R = {
     const S = OE.mcSummary(App.sys), cur = App.sys.mc.cur | 0, nm = k => esc((App.sys.mc.names || [])[k] || `Config ${k + 1}`);
     const row = (l, f) => `<tr><th style="text-align:left">${l}</th>${S.map(o => `<td class="mono" style="text-align:right${o.k === cur ? ';background:var(--sel)' : ''}">${o.ok ? f(o) : '—'}</td>`).join('')}</tr>`;
     return `<table style="width:100%"><tr><th></th>${S.map(o => `<th style="text-align:right"><button class="bt" data-mcgo="${o.k}" style="height:22px${o.k === cur ? ';border-color:var(--acc);color:var(--acc)' : ''}">${nm(o.k)}</button></th>`).join('')}</tr>
-      ${row('Focale (EFL), mm', o => fx(o.efl, 4))}${row('F/# de travail', o => fx(o.wfno, 3))}${row('Champ max', o => fmt(o.fmax, 4) + (App.M.objInf ? '°' : ' mm'))}${row('Hauteur image, mm', o => fx(o.imgH, 3))}${row('Tirage (BFL), mm', o => fx(o.bfl, 3))}${row('Longueur totale, mm', o => fx(o.ttl, 3))}${row('Spot RMS max, µm', o => fx(o.spot, 2))}${row('WFE RMS max, λ', o => fx(o.wfe, 3))}</table>
+      ${row('Focale (EFL), mm', o => fx(o.efl, 4))}${row('F/# de travail', o => fx(o.wfno, 3))}${row('Champ max', o => fmt(o.fmax, 4) + (App.M.objInf ? '°' : ' mm'))}${row('Hauteur image, mm', o => fx(o.imgH, 3))}${row('Tirage (BFL), mm', o => fx(o.bfl, 3))}${row('Longueur totale, mm', o => fx(o.ttl, 3))}${row(`Spot RMS max, ${uT()}`, o => fx(o.spot * kT() / 1e3, dT(2)))}${row(`WFE RMS max, ${uW()}`, o => fx(o.wfe * kW(App.M.wls[App.M.pw]), dW(3)))}</table>
       <div class="hint" style="padding:6px 2px">Cliquez sur une configuration pour l'activer. Paramètres variables : ${App.sys.mc.ops.length} ligne(s) dans l'éditeur de multi-configuration.</div>`;
   },
   chrom(p, M, c, w, h) {
-    const cs = OE.chromShift(M, 60);
-    const A = axes(c, { x: 0, y: 0, w, h }, [cs.l[0], cs.l[cs.l.length - 1]], range([cs.dz], 0.1), { xl: 'Longueur d\'onde (µm)', yl: 'Décalage focal (µm)', title: `Décalage focal chromatique paraxial — étendue ${fx(Math.max(...cs.dz) - Math.min(...cs.dz), 2)} µm` });
+    const cs0 = OE.chromShift(M, 60), kt = kT() / 1e3, kl = un('wl') === 'nm' ? 1000 : 1, cs = { l: cs0.l.map(v => v * kl), dz: cs0.dz.map(v => v * kt) };
+    const A = axes(c, { x: 0, y: 0, w, h }, [cs.l[0], cs.l[cs.l.length - 1]], range([cs.dz], 0.1), { xl: `Longueur d'onde (${un('wl') === 'nm' ? 'nm' : 'µm'})`, yl: `Décalage focal (${uT()})`, title: `Décalage focal chromatique paraxial — étendue ${sT((Math.max(...cs0.dz) - Math.min(...cs0.dz)) / 1e3)}` });
     pline(c, A, cs.l, cs.dz, TH.acc, 2);
-    clip(c, A.P); M.wls.forEach(l => { c.fillStyle = wlCol(l); const k = cs.l.reduce((b, v, i) => Math.abs(v - l) < Math.abs(cs.l[b] - l) ? i : b, 0); c.beginPath(); c.arc(A.X(l), A.Y(cs.dz[k]), 4, 0, 7); c.fill(); }); c.restore();
+    clip(c, A.P); M.wls.forEach(l0 => { const l = l0 * kl; c.fillStyle = wlCol(l0); const k = cs.l.reduce((b, v, i) => Math.abs(v - l) < Math.abs(cs.l[b] - l) ? i : b, 0); c.beginPath(); c.arc(A.X(l), A.Y(cs.dz[k]), 4, 0, 7); c.fill(); }); c.restore();
   },
   glass(p, M, c, w, h) {
     const used = new Set(M.S.map(s => OE.glassKey(s.glass)).filter(Boolean)), sel = p.cat || '';
@@ -1705,7 +1727,7 @@ const R = {
     if (!d.on) { wrapText(c, 'Activez un détecteur dans le panneau de gauche (carte « Détecteur »).', 14, 14, w - 28, { col: TH.mut }); return; }
     const wi = p.wi ?? M.pw, ps = OE.psf(M, p.fi || 0, wi, 64, 256), pm = d.p * 1e-3, nb = 7, b = OE.binPSF(ps.I, ps.P, ps.dx, pm, p.phase || 'centre', nb, d.ff / 100);
     const sz = Math.min(w * 0.52, h - 40), cell = sz / nb, x0 = 12, y0 = 28, L = lut('vir'), mx = Math.max(...b.G);
-    text(c, `PSF intégrée sur les pixels (${d.p} µm) — champ ${fLabel(M, p.fi || 0)}, ${fmt(M.wls[wi] * 1000, 5)} nm`, x0, 8, { b: true });
+    text(c, `PSF intégrée sur les pixels (${d.p} µm) — champ ${fLabel(M, p.fi || 0)}, ${sL(M.wls[wi], 5)}`, x0, 8, { b: true });
     for (let iy = 0; iy < nb; iy++) for (let ix = 0; ix < nb; ix++) {
       const v = b.G[iy * nb + ix], k = Math.round(Math.min(1, v / mx) * 255), X = x0 + ix * cell, Y = y0 + (nb - 1 - iy) * cell;
       c.fillStyle = `rgb(${L[k * 3]},${L[k * 3 + 1]},${L[k * 3 + 2]})`; c.fillRect(X, Y, cell - 1, cell - 1);
@@ -1716,7 +1738,7 @@ const R = {
     const lF = M.ctxs[wi].lmm * M.par.wfno, sp = OE.spot(M, p.fi || 0, 21);
     const rows = [['Pixel central', fx(G[c0 * nb + c0] * 100, 2) + ' %'], ['Meilleur carré 2×2', fx(q2 * 100, 2) + ' %'], ['Carré 3×3', fx(sum(1) * 100, 2) + ' %'], ['Carré 5×5', fx(sum(2) * 100, 2) + ' %'],
       ['Strehl', fx(ps.strehl, 3)], ['Q = λF / p', fx(lF / pm, 2) + (lF / pm >= 2 ? ' ✓ Nyquist' : ' < 2')], ['Ø Airy', fx(2.44 * lF / pm, 2) + ' px'], ['Spot RMS', fx(sp.rms / pm, 2) + ' px'],
-      ['Nyquist détecteur', fx(1 / (2 * pm), 1) + ' cy/mm'], ['Coupure optique', fx(1 / lF, 1) + ' cy/mm'], ['FTM pixel à Nyquist', fx(OE.detMTF(1 / (2 * pm), pm, d.ff / 100), 3) + (d.ff < 100 ? ` (remplissage ${fmt(d.ff, 3)} %)` : '')],
+      ['Nyquist détecteur', fx(1 / (2 * pm), 1) + ' ' + uF()], ['Coupure optique', fx(1 / lF, 1) + ' ' + uF()], ['FTM pixel à Nyquist', fx(OE.detMTF(1 / (2 * pm), pm, d.ff / 100), 3) + (d.ff < 100 ? ` (remplissage ${fmt(d.ff, 3)} %)` : '')],
       ...(d.ff < 100 ? [['Perte par remplissage', fx((1 - b.G.reduce((a, v) => a + v, 0) / Math.max(1e-12, OE.binPSF(ps.I, ps.P, ps.dx, pm, p.phase || 'centre', nb, 1).G.reduce((a, v) => a + v, 0))) * 100, 1) + ' % (7×7 px)']] : [])];
     const tx = x0 + sz + 18; kvList(c, tx, y0, w - tx - 10, rows, h - y0 - 8);
     text(c, 'valeurs en % de l\'énergie', x0, y0 + sz + 6, { col: TH.mut, size: 10 });
@@ -1753,7 +1775,7 @@ const R = {
     pline(c, B, xs.map(v => v - cxu), Array.from(r.px, v => v / mxx), TH.acc, 1.8); pline(c, B, xs.map(v => v - cyu), Array.from(r.py, v => v / mxy), '#ea580c', 1.6, [5, 3]);
     const mag = Math.sqrt(Math.abs(r.J[0] * r.J[3] - r.J[1] * r.J[2])) * 1e3, cp = inf ? null : srcPower(M, p.fi || 0, S, o);
     const pct = v => fx(v * 100, v < 0.01 ? 3 : 1) + ' %';
-    const lines = [['Spectre', M.wls.length > 1 ? `${fmt(Math.min(...M.wls) * 1000, 5)} – ${fmt(Math.max(...M.wls) * 1000, 5)} nm` : `${fmt(M.wls[0] * 1000, 5)} nm`], ['Grandissement local', inf ? `${fx(mag, 4)} µm/″` : `× ${fx(mag, 4)}`], ['Taille géométrique', st === 'point' ? '—' : st === 'rect' ? `${fx(odraw.w * mag, 2)} × ${fx(odraw.h * mag, 2)} µm` : `Ø ${fx(odraw.d * mag, 2)} µm${st === 'gauss' ? ' (1/e²)' : ''}`],
+    const lines = [['Spectre', M.wls.length > 1 ? `${sL(Math.min(...M.wls))} – ${sL(Math.max(...M.wls))}` : sL(M.wls[0])], ['Grandissement local', inf ? `${fx(mag, 4)} µm/″` : `× ${fx(mag, 4)}`], ['Taille géométrique', st === 'point' ? '—' : st === 'rect' ? `${fx(odraw.w * mag, 2)} × ${fx(odraw.h * mag, 2)} µm` : `Ø ${fx(odraw.d * mag, 2)} µm${st === 'gauss' ? ' (1/e²)' : ''}`],
       ['FWHM X / Y', `${fx(r.fwhmX * 1e3, 2)} / ${fx(r.fwhmY * 1e3, 2)} µm`], ['Ø 50 / 80 / 95 % énergie', `${fx(r.d50 * 1e3, 2)} / ${fx(r.d80 * 1e3, 2)} / ${fx(r.d95 * 1e3, 2)} µm`]];
     const dB = v => fx(-10 * Math.log10(Math.max(v, 1e-12)), 2) + ' dB', big = v => v >= 1e6 ? v.toExponential(2).replace('e+', '·10^') : fx(v, 4);
     if (cp && cp.c) {
@@ -1778,8 +1800,9 @@ const R = {
     let h = `<h4 style="margin-top:0">${esc(M.sys.title || 'Système')}</h4><table><tr><th>#</th><th>Rayon</th><th>Épaisseur</th><th>Verre</th><th>nd</th><th>½Ø</th><th>Conique</th><th>Commentaire</th></tr>`;
     S.forEach((s, i) => { const nd = OE.isMirror(s) ? 'miroir' : OE.isAir(s.glass) ? '' : fx(OE.glassN(s.glass, 0.5875618), 5); h += `<tr><td>${i}${s.stop ? '*' : ''}</td><td>${fmt(s.r, 7)}</td><td>${fmt(s.t, 7)}${s.tsolve === 'M' ? ' M' : ''}</td><td style="text-align:left">${esc(s.glass)}</td><td>${nd}</td><td>${i ? fmt(s.sd, 5) : ''}</td><td>${s.k ? fmt(s.k, 6) : ''}</td><td style="text-align:left">${esc(s.comment)}</td></tr>`; });
     h += `</table><p class="hint">* diaphragme · M : solve de mise au point paraxiale</p>`;
-    h += `<h4>Performances par champ (λ prim. ${fmt(M.wls[M.pw] * 1000, 5)} nm pour la WFE)</h4><table><tr><th>Champ</th><th>Spot RMS (µm)</th><th>Spot GEO (µm)</th><th>WFE RMS (λ)</th><th>WFE PV (λ)</th><th>Strehl</th></tr>`;
-    M.sys.fields.forEach((f, i) => h += `<tr><td>${fLabel(M, i)}</td><td>${fx(sp[i].rms * 1e3, 2)}</td><td>${fx(sp[i].geo * 1e3, 2)}</td><td>${fx(wf[i].rms, 4)}</td><td>${fx(wf[i].pv, 3)}</td><td>${fx(OE.psf(M, i, M.pw, 48, 128).strehl, 3)}</td></tr>`);
+    h += `<h4>Performances par champ (λ prim. ${sL(M.wls[M.pw], 5)} pour la WFE)</h4><table><tr><th>Champ</th><th>Spot RMS (${uT()})</th><th>Spot GEO (${uT()})</th><th>WFE RMS (${uW()})</th><th>WFE PV (${uW()})</th><th>Strehl</th></tr>`;
+    const kt = kT(), kw = kW(M.wls[M.pw]);
+    M.sys.fields.forEach((f, i) => h += `<tr><td>${fLabel(M, i)}</td><td>${fx(sp[i].rms * kt, dT(2))}</td><td>${fx(sp[i].geo * kt, dT(2))}</td><td>${fx(wf[i].rms * kw, dW(4))}</td><td>${fx(wf[i].pv * kw, dW(3))}</td><td>${fx(OE.psf(M, i, M.pw, 48, 128).strehl, 3)}</td></tr>`);
     h += `</table><h4>Paraxial</h4><table><tr><td style="text-align:left">EFL</td><td>${fx(par.efl, 4)}</td><td style="text-align:left">F/# travail</td><td>${fx(par.wfno, 3)}</td></tr><tr><td style="text-align:left">BFL</td><td>${fx(par.bfl, 4)}</td><td style="text-align:left">TTL</td><td>${fx(par.ttl, 3)}</td></tr><tr><td style="text-align:left">PE Ø / pos.</td><td>${fx(par.epd, 3)} / ${fx(par.zE, 3)}</td><td style="text-align:left">PS Ø / pos.</td><td>${fx(par.xpD, 3)} / ${fx(par.xpZ, 3)}</td></tr></table>`;
     return h;
   },
@@ -1924,16 +1947,17 @@ function pixGrid(c, A, pUm, col) {
   for (let k = Math.ceil(yr[0] / pUm - 0.5); k * pUm - pUm / 2 <= yr[1]; k++) { const y = A.Y(k * pUm - pUm / 2); c.moveTo(A.P.x, y); c.lineTo(A.P.x + A.P.w, y); }
   c.stroke(); c.restore(); return true;
 }
-function fans(c, w, h, M, data, k, unit) {
-  const nf = data.length, rowH = (h - 18) / nf;
-  let m = 0; data.forEach(d => d.forEach(q => { for (const v of [...q.T, ...q.S]) if (isFinite(v)) m = Math.max(m, Math.abs(v * k)); })); m = (m || 1e-6) * 1.08;
+/** k : facteur d'affichage, nombre ou fonction de l'indice de longueur d'onde (OPD en nm ou µm) ; opd : coupes de front d'onde */
+function fans(c, w, h, M, data, k0, opd) {
+  const nf = data.length, rowH = (h - 18) / nf, kf = typeof k0 === 'function' ? k0 : () => k0, unit = opd ? uW() : uT();
+  let m = 0; data.forEach(d => d.forEach(q => { const k = kf(q.wi); for (const v of [...q.T, ...q.S]) if (isFinite(v)) m = Math.max(m, Math.abs(v * k)); })); m = (m || 1e-6) * 1.08;
   data.forEach((d, fi) => {
     ['T', 'S'].forEach((ax, j) => {
-      const A = axes(c, { x: j * w / 2, y: fi * rowH, w: w / 2, h: rowH }, [-1, 1], [-m, m], { title: `${ax === 'T' ? 'Tangentiel' : 'Sagittal'} · ${fLabel(M, fi)}`, ml: 46, mb: fi === nf - 1 ? 20 : 16, yl: j === 0 ? (unit === 'µm' ? (ax === 'T' ? 'εy (µm)' : '') : 'W (λ)') : '' });
-      d.forEach(q => pline(c, A, q.P, q[ax].map(v => v * k), wlCol(M.wls[q.wi]), 1.6));
+      const A = axes(c, { x: j * w / 2, y: fi * rowH, w: w / 2, h: rowH }, [-1, 1], [-m, m], { title: `${ax === 'T' ? 'Tangentiel' : 'Sagittal'} · ${fLabel(M, fi)}`, ml: 46, mb: fi === nf - 1 ? 20 : 16, yl: j === 0 ? (!opd ? (ax === 'T' ? `εy (${unit})` : '') : `W (${unit})`) : '' });
+      d.forEach(q => { const k = kf(q.wi); pline(c, A, q.P, q[ax].map(v => v * k), wlCol(M.wls[q.wi]), 1.6); });
     });
   });
-  legend(c, 8, h - 7, [...wlLegend(M), { col: TH.mut, l: unit === 'µm' ? 'abscisse : pupille normalisée Py / Px' : 'OPD, abscisse : Py / Px' }]);
+  legend(c, 8, h - 7, [...wlLegend(M), { col: TH.mut, l: !opd ? 'abscisse : pupille normalisée Py / Px' : 'OPD, abscisse : Py / Px' }]);
 }
 
 /* ---------------- Optimisation ---------------- */
@@ -1958,7 +1982,7 @@ function openOptim() {
   const s = App.sys; OE.meritUpgrade(s); const mf = s.merit, wasOpen = !!$('#ovars'); mf.ops = mf.ops || [];
   if (!OPT.running && !OPT.x0) OPT.x0 = optSnapVars(s);
   const W = s.wavelengths, cen = OE.wlSel(s, 'central')[0], mc = OE.mcOn(s), pu = mf.pupil || { type: 'GQ', rings: 3, arms: 8 }, bnd = mf.bnd || {};
-  const wlOpts = [['all', 'Toutes les λ (pondérées)'], ['central', `λ centrale (${fmt(W[cen].um * 1000, 5)} nm)`], ['primary', `λ primaire (${fmt(W[s.primary | 0].um * 1000, 5)} nm)`], ...W.map((w, i) => [String(i), `λ${i + 1} seule (${fmt(w.um * 1000, 5)} nm)`])];
+  const wlOpts = [['all', 'Toutes les λ (pondérées)'], ['central', `λ centrale (${sL(W[cen].um, 5)})`], ['primary', `λ primaire (${sL(W[s.primary | 0].um, 5)})`], ...W.map((w, i) => [String(i), `λ${i + 1} seule (${sL(w.um, 5)})`])];
   const wsel = mf.wl == null ? 'all' : String(mf.wl), sel = (id, cur, opts, attr = '') => `<select class="in" id="${id}" ${attr}>${opts.map(([k, l]) => `<option value="${k}" ${String(cur) === String(k) ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
   const num = (id, v, ph, w = 48, t = '') => `<input class="in" id="${id}" value="${v == null ? '' : v}" placeholder="${ph}" style="width:${w}px" title="${t}">`;
   const cyc = OPT.cyc || 'auto';
@@ -1981,7 +2005,7 @@ function openOptim() {
       <td class="ov" data-ov="${i}"></td><td class="ov" data-oc="${i}"></td>
       <td class="oact"><button class="x" data-d="oup" data-i="${i}" title="Monter">↑</button><button class="x" data-d="odn" data-i="${i}" title="Descendre">↓</button><button class="x" data-d="odel" data-i="${i}" title="Supprimer">✕</button></td></tr>`;
   };
-  const imgLab = { SPOT: 'Spot RMS', WFE: 'Front d\'onde RMS', MTF: `Contraste 1 − FTM à ${mf.mtfF || 30} cy/mm`, NONE: 'aucun' }[mf.image || 'SPOT'];
+  const imgLab = { SPOT: 'Spot RMS', WFE: 'Front d\'onde RMS', MTF: `Contraste 1 − FTM à ${mf.mtfF || 30} ${uF()}`, NONE: 'aucun' }[mf.image || 'SPOT'];
   const puLab = pu.type === 'RA' ? `grille ${pu.grid || 8}×${pu.grid || 8}` : `Gauss ${pu.rings || 3} anneaux × ${pu.arms || 8} bras`;
   dlg(`<h2>Optimisation <span class="hint" style="font-weight:400;margin-left:8px">moindres carrés amortis · contraintes exactes de Lagrange</span><button class="x" data-d="close">✕</button></h2>
   <div class="db"><div class="ogrid">
@@ -1998,7 +2022,7 @@ function openOptim() {
       <label class="ck"><input type="checkbox" id="mfSym" ${mf.sym !== false ? 'checked' : ''}> Symétrie axiale : demi-pupille si le système est de révolution</label>
       <div class="hint" style="margin-top:4px;font-weight:600;color:var(--fg)">Poids des champs et des λ <span style="font-weight:400">(vide = ceux du système)</span></div>
       <div class="owt">${s.fields.map((f, i) => `<label title="Poids du champ ${i + 1} dans le critère image">C${i + 1} <input class="in" data-ow="fw" data-i="${i}" value="${Array.isArray(mf.fw) && mf.fw[i] != null && mf.fw[i] !== '' ? mf.fw[i] : ''}" placeholder="${f.w ?? 1}"></label>`).join('')}</div>
-      <div class="owt">${W.map((w, i) => `<label title="Poids de ${fmt(w.um * 1000, 5)} nm dans le critère image">λ${i + 1} <input class="in" data-ow="ww" data-i="${i}" value="${Array.isArray(mf.ww) && mf.ww[i] != null && mf.ww[i] !== '' ? mf.ww[i] : ''}" placeholder="${w.w ?? 1}"></label>`).join('')}</div>
+      <div class="owt">${W.map((w, i) => `<label title="Poids de ${sL(w.um, 5)} dans le critère image">λ${i + 1} <input class="in" data-ow="ww" data-i="${i}" value="${Array.isArray(mf.ww) && mf.ww[i] != null && mf.ww[i] !== '' ? mf.ww[i] : ''}" placeholder="${w.w ?? 1}"></label>`).join('')}</div>
       <h4 class="th4">Contraintes de bord <span class="hint">(lignes MNCG, MXCG, MNEG, MNCA, MXCA, MNEA)</span></h4>
       <table class="obnd"><tr><th></th><th>centre min</th><th>centre max</th><th>bord min</th></tr>
         <tr><td>Verre</td><td>${num('bgmin', bnd.gmin, '—', 52)}</td><td>${num('bgmax', bnd.gmax, '—', 52)}</td><td>${num('bgemin', bnd.gemin, '—', 52)}</td></tr>
@@ -2153,7 +2177,7 @@ function optLive() {
   }
   const iv = $('#oimgv'), ic = $('#oimgc');
   const iw = r.imgW || 0, ir = iw ? Math.sqrt(r.img2 / iw) : NaN;
-  if (iv) iv.textContent = s.merit.image === 'NONE' || !iw ? '—' : s.merit.image === 'SPOT' ? `${fmt(ir * 1e3, 5)} µm` : s.merit.image === 'WFE' ? `${fmt(ir, 4)} λ` : `${fmt(ir, 4)}`;
+  if (iv) iv.textContent = s.merit.image === 'NONE' || !iw ? '—' : s.merit.image === 'SPOT' ? `${fmt(ir * kT(), 5)} ${uT()}` : s.merit.image === 'WFE' ? `${fmt(ir * kW(App.M && App.M.ok ? App.M.wls[App.M.pw] : 0.55), 4)} ${uW()}` : `${fmt(ir, 4)}`;
   if (ic) ic.textContent = fx(100 * r.img2 / m2, 1);
   drawMerit();
 }
@@ -2247,7 +2271,7 @@ function openColorPicker(btn) {
   closeColorPicker();
   const kind = btn.dataset.cpk, i = +btn.dataset.i, s = App.sys, item = kind === 'f' ? s.fields[i] : s.wavelengths[i]; if (!item) return;
   const old = hexCol(kind === 'f' ? fcol(i) : wlCol(item.um));
-  const name = kind === 'f' ? `du champ ${i + 1}` : `de λ${i + 1} (${fmt(item.um * 1000, 5)} nm)`;
+  const name = kind === 'f' ? `du champ ${i + 1}` : `de λ${i + 1} (${sL(item.um, 5)})`;
   let cur = old;
   const d = document.createElement('div'); d.id = 'cpop'; d.className = 'cpop';
   d.innerHTML = `<div class="cph">Couleur ${name}</div>
@@ -2280,6 +2304,19 @@ const SDT = [['pup', 'Pupille'], ['wl', 'Longueurs d\'onde'], ['fld', 'Champs / 
 var SD = { tab: 'fld', conv: true, gen: { n: 5, mode: 'area' } };
 const MOUNTS = [[23.6, 'Aluminium 6061'], [22.9, 'Aluminium 7075'], [17.3, 'Inox 303 / 304'], [9.9, 'Inox 416'], [8.6, 'Titane Ti-6Al-4V'], [18.7, 'Laiton'], [16.9, 'Cuivre'], [1.3, 'Invar 36'], [2.6, 'Carbure de silicium'], [56, 'Ultem (PEI)'], [65, 'Polycarbonate'], [70, 'PMMA']];
 const objInfOf = s => !isFinite(s.surfaces[0].t) || Math.abs(s.surfaces[0].t) > 1e10;
+/** préférences d'unités d'affichage (enregistrées avec l'interface, pas dans le fichier système) */
+function openUnits() {
+  const M = App.M && App.M.ok ? App.M : null, l = M ? M.wls[M.pw] : 0.5875618;
+  const ex = { wfe: k => ({ wv: '0,0714 λ', mwv: '71,4 mλ', nm: fx(0.0714 * l * 1000, 1) + ' nm', um: fx(0.0714 * l, 4) + ' µm' })[k], tr: k => k === 'mm' ? '0,0125 mm' : '12,5 µm', wl: k => k === 'um' ? fmt(l, 5) + ' µm' : fmt(l * 1000, 5) + ' nm', fq: k => k === 'lp' ? '50 pl/mm' : '50 cy/mm' };
+  dlg(`<h2>Unités d'affichage <button class="x" data-d="close">✕</button></h2><div class="db" id="udlg" style="max-width:560px">
+    <p class="hint" style="margin-top:0">Unités des résultats affichés dans les analyses, la prescription, l'optimisation (valeur du critère image) et le rapport PDF. Les calculs ne changent pas ; ces préférences sont mémorisées par le navigateur, pas dans le fichier du système.</p>
+    <table class="mt"><tr><th style="text-align:left">Grandeur</th><th style="text-align:left">Unité</th><th style="text-align:left">Exemple</th></tr>
+    ${Object.entries(UNITS).map(([k, d]) => `<tr><td style="text-align:left">${d.l}</td><td><select class="in" data-un="${k}">${d.o.map(([v, t]) => `<option value="${v}" ${un(k) === v ? 'selected' : ''}>${t}</option>`).join('')}</select></td><td class="hint" style="text-align:left">${ex[k](un(k))}</td></tr>`).join('')}</table>
+    <p class="hint">Front d'onde en nm ou µm : conversion à la longueur d'onde de chaque calcul (λ primaire pour les tableaux et le critère polychromatique, λ de chaque courbe pour les coupes OPD). Le critère de Maréchal (0,0714 λ RMS) vaut ${fx(0.0714 * l * 1000, 1)} nm à ${fmt(l * 1000, 5)} nm.</p>
+    <p class="hint">Restent dans leurs unités propres, rappelées dans leurs en-têtes : les cibles et valeurs des opérandes de la fonction de mérite (OPDC, ZERN… en λ, TRAY… en mm), le tolérancement (critères en λ ou µm), le détecteur et la source (µm, pixels) et la saisie du système (mm, degrés, µm pour les longueurs d'onde).</p>
+    <div class="row"><button class="bt" data-d="unreset">Unités par défaut (λ, µm, nm, cy/mm)</button></div></div>`);
+}
+function setUnit(k, v) { App.units = { ...UDEF, ...(App.units || {}), [k]: v }; save(); renderSide(); renderPanes(); if ($('#ovars')) optLive(); if ($('#udlg')) openUnits(); }
 function openSysData(tab) {
   if (tab) SD.tab = tab;
   dlg(`<h2>Données système <button class="x" data-d="close">✕</button></h2><div class="db sdw" id="sdw"></div>`, true, { w: 1000, h: 640 });
@@ -2557,6 +2594,8 @@ function setupDlg() {
       if (k === 'cmp') o.cmp = t.value; else if (k === 'lag') { if (t.checked) o.lag = true; else delete o.lag; } else if (k === 'c') o.c = t.value;
       else { const raw = String(t.value).trim(); if (raw === '') delete o[k]; else { const v = parseFloat(raw.replace(',', '.')); if (isFinite(v)) o[k] = v; } } }); openOptim(); }
   });
+  $('#dlg').addEventListener('change', e => { if (e.target.dataset.un) { setUnit(e.target.dataset.un, e.target.value); return; } });
+  $('#dlg').addEventListener('click', e => { if (e.target.closest('[data-d="unreset"]')) { App.units = { ...UDEF }; save(); renderSide(); renderPanes(); openUnits(); } });
   $('#dlg').addEventListener('change', e => { if (e.target.dataset.dw != null || e.target.dataset.dws != null) drwEvent(e.target); if (e.target.dataset.sd) sdChange(e.target); if (e.target.closest('#mcw')) mcEvent(e); });
   $('#dlg').addEventListener('click', e => { const b = e.target.closest('#mcw [data-mcact]'); if (b) mcAction(b); const h = e.target.closest('#hw [data-hgo]'); if (h) histGo(+h.dataset.hgo); const ha = e.target.closest('#hw [data-hact]'); if (ha) histAction(ha); });
   $('#dlg').addEventListener('click', e => { const t = e.target.closest('[data-sdt]'); if (t) { SD.tab = t.dataset.sdt; renderSD(); return; } const b = e.target.closest('[data-sda]'); if (b) sdAction(b); });
@@ -2686,14 +2725,14 @@ async function runGlobal() {
   OPT.running = false; pushHist('Recherche globale'); refresh({ fast: true }); optLive();
 }
 /** libellé de la sélection de longueurs d'onde du quick focus */
-function qfWlLabel() { const s = App.sys, k = App.qf.wl, W = s.wavelengths; if (k === 'all') return 'toutes les λ'; const i = OE.wlSel(s, k)[0]; return `${k === 'central' ? 'λ centrale' : k === 'primary' ? 'λ primaire' : 'λ' + (i + 1)} ${fmt(W[i].um * 1000, 5)} nm`; }
+function qfWlLabel() { const s = App.sys, k = App.qf.wl, W = s.wavelengths; if (k === 'all') return 'toutes les λ'; const i = OE.wlSel(s, k)[0]; return `${k === 'central' ? 'λ centrale' : k === 'primary' ? 'λ primaire' : 'λ' + (i + 1)} ${sL(W[i].um, 5)}`; }
 /** Quick focus : ajuste l'épaisseur avant l'image au meilleur foyer (critère et λ choisis dans ▾) */
 function quickFocusUI() {
   if (!App.M || !App.M.ok) return toast('Système invalide');
-  const N = App.sys.surfaces.length - 1, had = App.sys.surfaces[N - 1].tsolve === 'M', q = OE.quickFocus(App.sys, App.qf), u = q.kind === 'WFE' ? 'λ' : 'µm', k = 1;
+  const N = App.sys.surfaces.length - 1, had = App.sys.surfaces[N - 1].tsolve === 'M', q = OE.quickFocus(App.sys, App.qf), lq = App.qf.wl === 'all' || !App.M || !App.M.ok ? (App.M && App.M.ok ? App.M.wls[App.M.pw] : 0.55) : App.sys.wavelengths[OE.wlSel(App.sys, App.qf.wl)[0]].um, u = q.kind === 'WFE' ? uW() : uT(), k = q.kind === 'WFE' ? kW(lq) : kT() / 1e3, dq = q.kind === 'WFE' ? dW(3) : dT(3);
   if (!isFinite(q.t)) return toast('Quick focus impossible (système invalide)');
   commit(s => { const x = s.surfaces[q.j]; x.t = q.t; x.tsolve = ''; });
-  toast(`Quick focus (${q.kind === 'WFE' ? 'front d\'onde' : 'spot'} RMS, ${qfWlLabel()}) : Δ ${q.dt >= 0 ? '+' : ''}${fx(q.dt * 1e3, 1)} µm · ${fx(q.before * k, 3)} → ${fx(q.after * k, 3)} ${u}${had ? ` · solve M de S${q.j} retiré` : ''}`, 4500);
+  toast(`Quick focus (${q.kind === 'WFE' ? 'front d\'onde' : 'spot'} RMS, ${qfWlLabel()}) : Δ ${q.dt >= 0 ? '+' : ''}${sT(q.dt, 1)} · ${fx(q.before * k, dq)} → ${fx(q.after * k, dq)} ${u}${had ? ` · solve M de S${q.j} retiré` : ''}`, 4500);
   if ($('#ovars')) optLive();
 }
 /** menu des options du quick focus */
@@ -2703,8 +2742,8 @@ function qfMenu(btn) {
     window.addEventListener('mousedown', e => { if (!e.target.closest('#qfm') && !e.target.closest('[data-act="qfopt"]')) m.classList.remove('open'); }, true); }
   const s = App.sys, W = s.wavelengths, cen = OE.wlSel(s, 'central')[0], it = (key, l, on) => `<button data-qf="${key}">${on ? '● ' : '○ '}${l}</button>`;
   m.innerHTML = `<div class="hint" style="padding:4px 10px">Critère</div>${it('crit:SPOT', 'Spot RMS (barycentre)', App.qf.crit !== 'WFE')}${it('crit:WFE', 'Front d\'onde RMS', App.qf.crit === 'WFE')}<hr>
-    <div class="hint" style="padding:4px 10px">Longueur d'onde</div>${it('wl:central', `Centrale (${fmt(W[cen].um * 1000, 5)} nm)`, App.qf.wl === 'central')}${it('wl:primary', `Primaire (${fmt(W[s.primary | 0].um * 1000, 5)} nm)`, App.qf.wl === 'primary')}${it('wl:all', 'Toutes (pondérées)', App.qf.wl === 'all')}
-    ${W.map((w, i) => it('wl:' + i, `λ${i + 1} = ${fmt(w.um * 1000, 5)} nm`, App.qf.wl === i)).join('')}<hr><button data-qf="go:1"><b>⌖ Mettre au point</b><span class="kb">Ctrl+Maj+F</span></button>`;
+    <div class="hint" style="padding:4px 10px">Longueur d'onde</div>${it('wl:central', `Centrale (${sL(W[cen].um, 5)})`, App.qf.wl === 'central')}${it('wl:primary', `Primaire (${sL(W[s.primary | 0].um, 5)})`, App.qf.wl === 'primary')}${it('wl:all', 'Toutes (pondérées)', App.qf.wl === 'all')}
+    ${W.map((w, i) => it('wl:' + i, `λ${i + 1} = ${sL(w.um, 5)}`, App.qf.wl === i)).join('')}<hr><button data-qf="go:1"><b>⌖ Mettre au point</b><span class="kb">Ctrl+Maj+F</span></button>`;
   m.classList.add('open'); const r = btn.getBoundingClientRect(); m.style.left = '0px'; m.style.top = '0px'; const mr = m.getBoundingClientRect();
   m.style.left = Math.min(r.left, innerWidth - mr.width - 6) + 'px'; m.style.top = Math.min(r.bottom + 4, innerHeight - mr.height - 6) + 'px';
 }
@@ -2774,7 +2813,7 @@ function renderMC() {
   const nS = s.surfaces.length - 1, T = OE.MCT;
   const idxOpts = (type, i) => { const D = T[type]; let L = [];
     if (D.s) L = s.surfaces.map((x, j) => [j, `S${j}${x.comment ? ' · ' + x.comment : ''}`]).filter(([j]) => j > 0 && (type !== 'THI' || j < nS) || (type === 'THI' && j === 0));
-    else if (D.f) L = s.fields.map((_, j) => [j, `Champ ${j + 1}`]); else if (D.w) L = s.wavelengths.map((w, j) => [j, `λ${j + 1} (${fmt(w.um * 1000, 5)} nm)`]); else return '<span class="hint">—</span>';
+    else if (D.f) L = s.fields.map((_, j) => [j, `Champ ${j + 1}`]); else if (D.w) L = s.wavelengths.map((w, j) => [j, `λ${j + 1} (${sL(w.um, 5)})`]); else return '<span class="hint">—</span>';
     return `<select data-mca="i" data-mco="__O__">${L.map(([j, l]) => `<option value="${j}" ${j === i ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`; };
   const typeSel = (t, o) => `<select data-mca="type" data-mco="${o}">${Object.entries(T).map(([k, d]) => `<option value="${k}" ${k === t ? 'selected' : ''}>${esc(d.l)}${d.u ? ' (' + d.u + ')' : ''}</option>`).join('')}</select>`;
   const cell = (op, oi, k) => { const D = T[op.type], v = op.v ? op.v[k] : '', vs = v === Infinity ? 'Infini' : v == null ? '' : D.num ? fmt(+v, 8) : String(v);
@@ -3391,6 +3430,7 @@ function init() {
       case 'newpane': newFloatPane(); break;
       case 'qfocus': quickFocusUI(); break;
       case 'qfopt': qfMenu(a); break;
+      case 'units': openUnits(); break;
       case 'theme': { const d = document.documentElement; d.dataset.theme = d.dataset.theme === 'dark' ? '' : 'dark'; save(); readTheme(); drawLayout(); renderPanes(); break; }
       case 'help': openHelp(); break;
       case 'fit': fitView(); break;

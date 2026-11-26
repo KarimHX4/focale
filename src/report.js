@@ -214,31 +214,32 @@ async function genReport(ov) {
       await step('Layout…'); h1('Layout');
       App.view = { ...App.view, auto: true }; App.mode = '2d';
       const cv = rptCanvas((c, w, h) => { drawLayout({ c, w, h }); legend(c, 10, h - 10, sys.fields.map((_, i) => ({ col: fcol(i), l: `champ ${fl(i)}` }))); }, 780, 360);
-      image(cv, `Coupe méridienne (plan YZ) — rayons de chaque champ à λ = ${fmt(M.wls[M.pw] * 1000, 5)} nm.`);
+      image(cv, `Coupe méridienne (plan YZ) — rayons de chaque champ à λ = ${sL(M.wls[M.pw], 5)}.`);
     }
     // ---------------- performances ----------------
     if (cf.sec.perf) {
       await step('Performances…'); h1('Performances');
       const V = sys.fields.map((_, i) => ({ sp: OE.spot(M, i, 21), wf: OE.wavefront(M, i, M.pw, 48), st: OE.psf(M, i, M.pw, 64, 256).strehl }));
-      const rows = V.map((o, i) => [fl(i), fx(o.sp.rms * 1e3, 2), fx(o.sp.geo * 1e3, 2), fx(o.wf.rms, 4), fx(o.wf.pv, 3), fx(o.st, 3), o.sp.nv ? `${Math.round(100 * o.sp.nv / o.sp.ntot)} %` : '0 %']);
+      const kt = kT(), kw = kW(M.wls[M.pw]), uT0 = uT(), uW0 = uW();
+      const rows = V.map((o, i) => [fl(i), fx(o.sp.rms * kt, dT(2)), fx(o.sp.geo * kt, dT(2)), fx(o.wf.rms * kw, dW(4)), fx(o.wf.pv * kw, dW(3)), fx(o.st, 3), o.sp.nv ? `${Math.round(100 * o.sp.nv / o.sp.ntot)} %` : '0 %']);
       const mx = f => Math.max(...V.map(f)), mn = f => Math.min(...V.map(f)), ra = 1.22 * M.ctxs[M.pw].lmm * p.wfno * 1e3, wmax = mx(o => o.wf.rms);
-      cards([{ l: 'Spot RMS max', v: fx(mx(o => o.sp.rms * 1e3), 2), u: 'µm' }, { l: 'Rayon d\'Airy', v: fx(ra, 2), u: 'µm' }, { l: 'WFE RMS max', v: fx(wmax, 3), u: 'λ', c: wmax <= 0.0714 ? '#16a34a' : '#f59e0b' }, { l: 'Strehl min', v: fx(mn(o => o.st), 3), c: mn(o => o.st) >= 0.8 ? '#16a34a' : '#f59e0b' }]);
-      const w7 = CW / 7; table(['Champ', 'Spot RMS (µm)', 'Spot GEO (µm)', 'WFE RMS (λ)', 'WFE PV (λ)', 'Strehl (FFT)', 'Vignetage'].map((t, k) => ({ t, w: w7, a: k ? 'right' : 'left', mono: k > 0 })), rows);
-      note(`Front d'onde à λ = ${fmt(M.wls[M.pw] * 1000, 5)} nm, tilt retiré ; spot polychromatique par rapport au barycentre. Critère de Maréchal : WFE RMS ≤ 0,0714 λ (Strehl ≥ 0,8) — repère vert sur les cartes.`);
+      cards([{ l: 'Spot RMS max', v: fx(mx(o => o.sp.rms * kt), dT(2)), u: uT0 }, { l: 'Rayon d\'Airy', v: fx(ra * kt / 1e3, dT(2)), u: uT0 }, { l: 'WFE RMS max', v: fx(wmax * kw, dW(3)), u: uW0, c: wmax <= 0.0714 ? '#16a34a' : '#f59e0b' }, { l: 'Strehl min', v: fx(mn(o => o.st), 3), c: mn(o => o.st) >= 0.8 ? '#16a34a' : '#f59e0b' }]);
+      const w7 = CW / 7; table(['Champ', `Spot RMS (${uT0})`, `Spot GEO (${uT0})`, `WFE RMS (${uW0})`, `WFE PV (${uW0})`, 'Strehl (FFT)', 'Vignetage'].map((t, k) => ({ t, w: w7, a: k ? 'right' : 'left', mono: k > 0 })), rows);
+      note(`Front d'onde à λ = ${sL(M.wls[M.pw], 5)}, tilt retiré ; spot polychromatique par rapport au barycentre. Critère de Maréchal : WFE RMS ≤ 0,0714 λ${un('wfe') === 'wv' ? '' : ` = ${sW(0.0714, M.wls[M.pw], 3)}`} (Strehl ≥ 0,8) — repère vert sur les cartes.`);
     }
     if (cf.sec.seidel) {
       await step('Seidel…'); h1('Aberrations du 3ᵉ ordre (Seidel)');
       const sd = OE.seidel(M), keys = ['SI', 'SII', 'SIII', 'SIV', 'SV', 'CL', 'CT'], w8 = (CW - 40) / 7;
       table([{ t: 'Surf.', w: 40 }, ...['Sphérique', 'Coma', 'Astigm.', 'Petzval', 'Distorsion', 'Chrom. ax.', 'Chrom. lat.'].map(t => ({ t, w: w8, a: 'right', mono: true }))],
         [...sd.rows.map(r => [r.j, ...keys.map(k => r[k].toExponential(3))]), ['Σ', ...keys.map(k => sd.sum[k].toExponential(3))]], { size: 8, total: true });
-      const lm = sd.lmm; note(`Équivalents en front d'onde : W040 = ${fx(sd.sum.SI / 8 / lm, 3)} λ · W131 = ${fx(sd.sum.SII / 2 / lm, 3)} λ · W222 = ${fx(sd.sum.SIII / 2 / lm, 3)} λ · W220 = ${fx(sd.sum.SIV / 4 / lm, 3)} λ · W311 = ${fx(sd.sum.SV / 2 / lm, 3)} λ.`);
+      const lm = sd.lmm, lu = lm * 1e3; note(`Équivalents en front d'onde : W040 = ${sW(sd.sum.SI / 8 / lm, lu, 3)} · W131 = ${sW(sd.sum.SII / 2 / lm, lu, 3)} · W222 = ${sW(sd.sum.SIII / 2 / lm, lu, 3)} · W220 = ${sW(sd.sum.SIV / 4 / lm, lu, 3)} · W311 = ${sW(sd.sum.SV / 2 / lm, lu, 3)}.`);
     }
     // ---------------- analyses ----------------
     const renderAn = async (pp, title) => {
       await step(`Analyse : ${title}…`);
-      if (pp.type === 'zern') { const wf = OE.wavefront(M, pp.fi || 0, pp.wi ?? M.pw, 64, false), z = OE.zernFit(wf, +pp.nz || 16); h2(title, 80, true);
-        table([{ t: 'Terme', w: 50 }, { t: 'n', w: 30, a: 'right' }, { t: 'Aberration', w: CW - 260 }, { t: 'Coef. (λ)', w: 90, a: 'right', mono: true }, { t: 'RMS (λ)', w: 90, a: 'right', mono: true }], z.c.map((v, i) => [`Z${i + 1}`, z.order[i], z.names[i], (v >= 0 ? '+' : '') + v.toFixed(5), i ? z.rmsTerm[i].toFixed(5) : '—']));
-        kv([['RMS total (piston retiré)', `${fx(z.rmsTot, 5)} λ`], [`Résidu au-delà de Z${z.nz} (RMS / PV)`, `${fx(z.rmsRes, 5)} λ / ${fx(z.pvRes, 4)} λ`]]); return; }
+      if (pp.type === 'zern') { const wf = OE.wavefront(M, pp.fi || 0, pp.wi ?? M.pw, 64, false), z = OE.zernFit(wf, +pp.nz || 16), lw = M.wls[pp.wi ?? M.pw], kw = kW(lw), d5 = dW(5); h2(title, 80, true);
+        table([{ t: 'Terme', w: 50 }, { t: 'n', w: 30, a: 'right' }, { t: 'Aberration', w: CW - 260 }, { t: `Coef. (${uW()})`, w: 90, a: 'right', mono: true }, { t: `RMS (${uW()})`, w: 90, a: 'right', mono: true }], z.c.map((v, i) => [`Z${i + 1}`, z.order[i], z.names[i], (v >= 0 ? '+' : '') + (v * kw).toFixed(d5), i ? (z.rmsTerm[i] * kw).toFixed(d5) : '—']));
+        kv([['RMS total (piston retiré)', sW(z.rmsTot, lw, 5)], [`Résidu au-delà de Z${z.nz} (RMS / PV)`, `${sW(z.rmsRes, lw, 5)} / ${sW(z.pvRes, lw, 4)}`]]); return; }
       if (PT[pp.type].html) return;
       if (pp.type === 'imgsim') simSync(pp, M);
       let data;
@@ -257,7 +258,7 @@ async function genReport(ov) {
     }
     if (cf.sec.panes) {
       h1('Fenêtres d\'analyse');
-      for (const pp of App.panes.slice(0, App.grid)) await renderAn({ ...pp }, PT[pp.type].l + (PT[pp.type].f ? ` — champ ${fl(pp.fi || 0)}` : '') + (PT[pp.type].w ? `, ${fmt(M.wls[pp.wi ?? M.pw] * 1000, 5)} nm` : ''));
+      for (const pp of App.panes.slice(0, App.grid)) await renderAn({ ...pp }, PT[pp.type].l + (PT[pp.type].f ? ` — champ ${fl(pp.fi || 0)}` : '') + (PT[pp.type].w ? `, ${sL(M.wls[pp.wi ?? M.pw], 5)}` : ''));
     }
     // ---------------- détecteur, source ----------------
     const d = det();
@@ -265,7 +266,7 @@ async function genReport(ov) {
       await step('Détecteur…'); h1('Détecteur');
       const pm = d.p * 1e-3, lF = M.ctxs[M.pw].lmm * p.wfno;
       kv([['Pas des pixels', `${d.p} µm`], ['Format', `${d.nx} × ${d.ny} px`], ['Taille du capteur', `${fx(d.nx * pm, 2)} × ${fx(d.ny * pm, 2)} mm`], ['Facteur de remplissage', `${d.ff} %`],
-        ['Nyquist', `${fx(1 / (2 * pm), 1)} cy/mm`], ['Coupure optique', `${fx(1 / lF, 1)} cy/mm`], ['Q = λF/p', fx(lF / pm, 2)], ['Ø Airy', `${fx(2.44 * lF / pm, 2)} px`],
+        ['Nyquist', `${fx(1 / (2 * pm), 1)} ${uF()}`], ['Coupure optique', `${fx(1 / lF, 1)} ${uF()}`], ['Q = λF/p', fx(lF / pm, 2)], ['Ø Airy', `${fx(2.44 * lF / pm, 2)} px`],
         ['Puits / bruit de lecture', `${d.fw} e⁻ / ${d.rn} e⁻`], ['Numérisation', `${d.bits} bits (LSB ${fx(detStats(d).lsb, 3)} e⁻)`], ['Dynamique', `${fx(detStats(d).dr, 1)} dB`],
         ['Rendement quantique / pose / obscurité', `${d.qe} % / ${d.texp} ms / ${d.dark} e⁻/s/px`], ['RSB à ' + d.lvl + ' % du puits', fx(detStats(d).snr, 1)], ['FTM pixel à Nyquist', fx(OE.detMTF(1 / (2 * pm), pm, (d.ff || 100) / 100), 3)]]);
       const rows = sys.fields.map((_, i) => { const ps = OE.psf(M, i, M.pw, 64, 256), b = OE.binPSF(ps.I, ps.P, ps.dx, pm, 'centre', 3, (d.ff || 100) / 100), sp = OE.spot(M, i, 21); return [fl(i), fx(b.G[4] * 100, 1) + ' %', fx(b.G.reduce((a, v) => a + v, 0) * 100, 1) + ' %', fx(sp.rms / pm, 2) + ' px', fx(ps.strehl, 3)]; });
@@ -278,7 +279,7 @@ async function genReport(ov) {
       if (S.type === 'fiber') {
         const l = S.lc0 > 0 ? S.lc0 / 1000 : M.wls[M.pw], fi = OE.fiberInfo(S, l);
         rows.push(['Fibre', ({ si: 'multimode à saut d\'indice', gi: 'multimode à gradient d\'indice', sm: 'monomode' })[S.fib]], ['Ø cœur / gaine', `${fmt(S.core, 5)} / ${fmt(S.clad, 5)} µm`], ['Ouverture numérique', fmt(S.na, 4)],
-          ['V à λ', `${fx(fi.V, 3)} (λ = ${fmt(l * 1000, 5)} nm)`], ['Longueur d\'onde de coupure', `${fx(fi.lc * 1000, 0)} nm`], ['Régime', fi.single ? 'monomode' : `multimode (~${fi.modes} modes)`]);
+          ['V à λ', `${fx(fi.V, 3)} (λ = ${sL(l, 5)})`], ['Longueur d\'onde de coupure', `${sL(fi.lc, 4)}`], ['Régime', fi.single ? 'monomode' : `multimode (~${fi.modes} modes)`]);
         if (S.fib === 'sm') rows.push(['Diamètre de mode', `${fx(fi.mfd, 2)} µm`]);
         if (S.len > 0 && S.att > 0) rows.push(['Transmission de la fibre', `${fx(100 * Math.pow(10, -S.att * S.len / 1e4), 2)} %`]);
       }
