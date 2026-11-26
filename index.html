@@ -130,6 +130,7 @@ table.sdt td.ro,table.sdt th.ro{font-family:var(--mono);font-size:11.5px;color:v
 .fwin .wb:hover{background:var(--acc2);color:var(--fg)}
 body.wdrag .fwin .fwb{pointer-events:none}
 .fwin button[data-fw]{display:none}
+table.ht.gl td:first-child{white-space:normal;width:200px}table.ht.gl td:first-child .hint{font-weight:400;font-size:11px;line-height:1.35;margin-top:2px}table.ht.gl td:last-child{white-space:nowrap;font-size:11.5px}table.ht.gl a,.glidx a{color:var(--acc);text-decoration:none}table.ht.gl a:hover{text-decoration:underline}.glidx{display:flex;flex-wrap:wrap;gap:2px 6px;margin:4px 0 8px}.glidx a{min-width:18px;text-align:center;font-weight:600}
 .help .hflash,.help tr.hflash td{background:var(--acc2)!important;transition:background .4s}
 button.x.hb{font-weight:700;font-size:12.5px}
 .nrc{display:inline-flex;align-items:center;gap:2px}
@@ -419,7 +420,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 <div class="toast" id="toast"></div>
 <input type="file" id="fileIn" accept=".json,.zmx,.seq,.txt,.agf" style="display:none">
 <div class="drop" id="drop">Déposez un fichier .zmx, .seq, .json ou .agf</div>
-<script>const FOCALE_VERSION = 'e0f03c0b';</script>
+<script>const FOCALE_VERSION = 'f20625c2';</script>
 <script id="js-engine">
 'use strict';
 /* =====================================================================
@@ -4235,6 +4236,212 @@ function helpOps() {
     OE.OPG.map(([g, gl]) => { const L = Object.entries(OE.OPS).filter(([k, d]) => d.g === g && !d.hide); if (!L.length) return '';
       return `<h4>${e(gl)}</h4><table class="ht"><tr><th>Code</th><th>Grandeur</th><th>Colonnes</th><th>Zemax / CODE V</th></tr>` + L.map(([k, d]) => `<tr><td>${k}</td><td>${e(d.label)}${d.u ? ` <span class="hint">(${e(d.u)})</span>` : ''} <span class="hint">${K[d.kind]}</span></td><td>${(d.cols || []).map(c => COL[c] || c).join(', ') || '—'}</td><td class="hint">${e(d.aka || '')}</td></tr>`).join('') + '</table>'; }).join('');
 }
+/** glossaire : [terme, anglais / sigles, définition (HTML), rubrique d'aide liée] — trié alphabétiquement à l'affichage */
+const GLOSS = [
+  ['Abbe (nombre d\')', 'Abbe number, constringence, νd, Vd', 'Mesure de la dispersion d\'un verre : ν<sub>d</sub> = (n<sub>d</sub> − 1)/(n<sub>F</sub> − n<sub>C</sub>). Grand ν : verre peu dispersif (crowns, ν &gt; 50) ; petit ν : verre dispersif (flints, ν &lt; 50). Variante ν<sub>e</sub> avec n<sub>e</sub>, n<sub>F′</sub>, n<sub>C′</sub>.', 'verres'],
+  ['Aberration', 'aberration', 'Écart entre l\'image réelle et l\'image idéale (paraxiale) : sphérique, coma, astigmatisme, courbure de champ, distorsion (Seidel), chromatisme axial et latéral, et ordres supérieurs.', 'lecture'],
+  ['Aberration chromatique axiale', 'longitudinal / axial color, LONA', 'Variation de la position du foyer avec la longueur d\'onde (le bleu focalise en général plus près pour une lentille simple). Se corrige avec deux verres de dispersions différentes (achromat).', 'lecture'],
+  ['Aberration chromatique latérale', 'lateral / transverse color, TCO', 'Variation du grandissement (de la hauteur d\'image) avec la longueur d\'onde : franges colorées au bord du champ. Dépend de la position du diaphragme.', 'lecture'],
+  ['Aberration transverse', 'transverse ray aberration, TRA', 'Écart, dans le plan image, entre le point d\'impact d\'un rayon et celui du rayon principal (ε<sub>x</sub>, ε<sub>y</sub>) ; tracée en fonction de la pupille dans le ray fan.', 'lecture'],
+  ['Achromat / apochromat', 'achromat, apochromat, APO', 'Système corrigé du chromatisme axial pour deux longueurs d\'onde (F et C) / pour trois (g, F, C), avec un spectre secondaire réduit grâce à des verres à dispersion partielle anormale.', 'verres'],
+  ['Afocal', 'afocal', 'Système sans puissance (focale infinie) : un faisceau parallèle en sort parallèle (lunette de Galilée ou de Kepler, expanseur de faisceau). Caractérisé par son grossissement angulaire.', ''],
+  ['Airy (tache d\')', 'Airy disk', 'Image d\'un point par une pupille circulaire parfaite : disque central entouré d\'anneaux. Rayon du premier zéro 1,22 λ F/# ; il contient 83,8 % de l\'énergie.', 'lecture'],
+  ['Angle de champ', 'field angle, half field of view, HFOV', 'Angle entre l\'axe et la direction d\'un point objet à l\'infini (demi-champ). Focale et angle de champ fixent la hauteur d\'image : y′ ≈ f·tan θ.', 'systeme'],
+  ['Anneau de pupille (GQ)', 'Gaussian quadrature rings and arms', 'Échantillonnage de la pupille par quadrature de Gauss (anneaux × bras), comme la fonction de mérite par défaut de Zemax : peu de rayons pour une intégrale RMS précise.', 'optimisation'],
+  ['Aplanétique', 'aplanatic', 'Corrigé de la sphérique et de la coma (condition des sinus respectée) ; exemple : télescope Ritchey-Chrétien.', ''],
+  ['Apodisation', 'apodization, pupil apodization, PUI, GFAC', 'Variation volontaire ou subie de l\'amplitude (de l\'éclairement) sur la pupille. Une pupille uniforme donne la tache d\'Airy ; une pupille gaussienne (faisceau laser, fibre monomode) donne une PSF sans anneaux mais plus large. Focale propose une apodisation gaussienne (intensité au bord, CODE V PUI, Zemax GFAC) ou « selon la source ».', 'source'],
+  ['Asphérique', 'asphere, even asphere, ASP', 'Surface de révolution non sphérique : conique + polynôme A<sub>4</sub>r⁴ + A<sub>6</sub>r⁶ + … Corrige la sphérique et réduit le nombre de lentilles.', 'formes'],
+  ['Astigmatisme', 'astigmatism, SIII, W222', 'Aberration hors axe : les faisceaux tangentiel et sagittal focalisent à des distances différentes ; un point devient deux focales linéaires perpendiculaires.', 'lecture'],
+  ['Atténuation (fibre)', 'fiber attenuation, dB/km', 'Pertes de propagation d\'une fibre, en dB/km ; transmission = 10<sup>−α·L/10</sup>.', 'source'],
+  ['Axe optique', 'optical axis', 'Axe de symétrie de révolution du système (z dans Focale) ; la lumière part vers +z.', 'conventions'],
+  ['Bande passante modale', 'modal bandwidth, MHz·km', 'Débit maximal d\'une fibre multimode limité par la dispersion entre modes ; inversement proportionnel à la longueur.', 'source'],
+  ['Barycentre (spot)', 'centroid', 'Centre de gravité des impacts de rayons pondérés ; référence du spot RMS et du critère d\'optimisation par défaut (Zemax « centroid »).', 'lecture'],
+  ['Biconique / torique', 'biconic, toroidal, TOR', 'Surface de courbures différentes en X et en Y (avec coniques séparées) : verres de lunettes cylindriques, anamorphoseurs, compensation d\'astigmatisme.', 'formes'],
+  ['BFL / tirage', 'back focal length, BFL', 'Distance entre la dernière surface et le foyer image (ou le plan image).', 'systeme'],
+  ['Bruit de grenaille (photons)', 'shot noise, photon noise', 'Fluctuation statistique du nombre de photo-électrons : écart type √N. Domine aux forts signaux ; RSB maximal √(puits).', 'detecteur'],
+  ['Bruit de lecture', 'read noise, e⁻ rms', 'Bruit ajouté par l\'électronique à chaque lecture d\'un pixel, indépendant du signal ; fixe le plancher de bruit avec le courant d\'obscurité.', 'detecteur'],
+  ['Bruit de quantification', 'quantization noise', 'Erreur de numérisation : LSB/√12, LSB = puits / 2<sup>bits</sup>.', 'detecteur'],
+  ['Cardinaux (points)', 'cardinal points', 'Foyers, points principaux et points nodaux : ils suffisent à décrire un système en optique paraxiale.', 'formules'],
+  ['Champ (point de)', 'field point, YAN, YOB, YIM', 'Point objet où l\'on évalue le système : angle (objet à l\'infini), hauteur objet, hauteur image paraxiale ou réelle. Focale les définit comme CODE V (types de champ).', 'systeme'],
+  ['Chemin optique', 'optical path length, OPL', 'Somme des n × distance parcourue par un rayon. Deux rayons d\'un même point image parfait ont le même chemin optique (Fermat, Malus).', 'conventions'],
+  ['Coma', 'coma, SII, W131', 'Aberration hors axe en forme de comète : le grandissement varie avec la zone de pupille. Proportionnelle au champ et au carré de l\'ouverture.', 'lecture'],
+  ['Compensateur', 'compensator', 'Paramètre réajusté après fabrication pour rattraper les défauts (le plus souvent la mise au point) ; utilisé dans le tolérancement.', 'tolerancement'],
+  ['Condition des sinus', 'Abbe sine condition, OSC', 'n y sin u = n′ y′ sin u′ pour toutes les zones de la pupille : absence de coma au voisinage de l\'axe.', ''],
+  ['Conique (constante)', 'conic constant, k, K', 'Paramètre de forme d\'une surface de révolution : k = 0 sphère, −1 &lt; k &lt; 0 ellipse allongée, k = −1 parabole, k &lt; −1 hyperbole, k &gt; 0 ellipse aplatie.', 'formes'],
+  ['Conjugués', 'conjugates', 'Couple objet / image reliés par le système. Conjugué infini : objet à l\'infini ; conjugué fini : objet à distance finie (fibre, microscope).', ''],
+  ['Contrainte exacte', 'exact constraint, Lagrange multiplier', 'Opérande imposé à chaque cycle d\'optimisation par multiplicateurs de Lagrange (comme les contraintes de CODE V), au lieu d\'être seulement pondéré.', 'optimisation'],
+  ['Couplage (fibre)', 'coupling efficiency', 'Fraction de la puissance d\'une source qui entre dans un système ou une fibre. Multimode : limité par l\'ON et l\'étendue ; monomode : recouvrement des modes (désadaptation, aberrations, troncature).', 'source'],
+  ['Courant d\'obscurité', 'dark current, e⁻/s/px', 'Électrons générés thermiquement dans un pixel sans lumière ; s\'accumule pendant la pose et ajoute un bruit √(obscurité × pose). Diminue fortement en refroidissant le capteur.', 'detecteur'],
+  ['Courbure de champ', 'field curvature, Petzval, W220', 'L\'image d\'un plan est une surface courbe : le meilleur foyer dépend du champ. Tracée avec l\'astigmatisme dans « Courbure de champ & distorsion ».', 'lecture'],
+  ['Crown / flint', 'crown, flint', 'Verres peu dispersifs (ν &gt; 50, crown) ou dispersifs (ν &lt; 50, flint). Un doublet achromatique associe un crown convergent et un flint divergent.', 'verres'],
+  ['Décentrement', 'decenter, tilt, DAR, BEN', 'Déplacement latéral (DX, DY) ou bascule (ADE, BDE, CDE) d\'une surface ou d\'un groupe ; DAR : décentrement-retour, BEN : bascule qui change l\'axe (miroir de renvoi).', 'decentrements'],
+  ['Défocalisation', 'defocus, W020', 'Écart entre le plan image et le meilleur foyer ; en front d\'onde, terme quadratique W<sub>020</sub>ρ² (Zernike Z4).', 'lecture'],
+  ['Diamètre de mode (MFD)', 'mode field diameter, MFD', 'Diamètre à 1/e² en intensité du mode gaussien d\'une fibre monomode (≈ 10,4 µm pour une SMF-28 à 1550 nm). Fixe la divergence θ₀ = λ/(π w₀) et le couplage.', 'source'],
+  ['Diaphragme d\'ouverture', 'aperture stop, STO', 'Surface qui limite le faisceau sur l\'axe. Ses images à travers les parties avant et arrière du système sont les pupilles d\'entrée et de sortie.', 'systeme'],
+  ['Diaphragme de champ', 'field stop', 'Surface qui limite l\'étendue du champ (souvent au foyer d\'un oculaire ou au capteur).', ''],
+  ['Diffraction (limite de)', 'diffraction limit, DL', 'Performance d\'un système sans aberration, limitée par la taille finie de la pupille. Critère de Maréchal : WFE RMS ≤ λ/14 (Strehl ≥ 0,8).', 'lecture'],
+  ['Dioptre', 'refracting surface', 'Surface séparant deux milieux d\'indices différents.', 'elements'],
+  ['Dispersion', 'dispersion', 'Variation de l\'indice avec la longueur d\'onde ; décrite par une formule (Sellmeier, Schott, Cauchy…) et résumée par n<sub>d</sub> et ν<sub>d</sub>.', 'verres'],
+  ['Dispersion partielle relative', 'partial dispersion, P<sub>g,F</sub>', 'P<sub>g,F</sub> = (n<sub>g</sub> − n<sub>F</sub>)/(n<sub>F</sub> − n<sub>C</sub>). Les verres hors de la « droite normale » (ΔP<sub>g,F</sub> ≠ 0) réduisent le spectre secondaire (apochromats).', 'verres'],
+  ['Distorsion', 'distortion, SV, W311', 'Variation du grandissement avec le champ : l\'image d\'un carré est en barillet (distorsion négative) ou en coussinet (positive). Ne dégrade pas la netteté.', 'lecture'],
+  ['DLS (moindres carrés amortis)', 'damped least squares, DLS', 'Méthode d\'optimisation locale de CODE V et Zemax : itérations de Gauss-Newton stabilisées par un facteur d\'amortissement.', 'optimisation'],
+  ['DOE (élément diffractif)', 'diffractive optical element, kinoform, Binary 2', 'Surface gravée qui ajoute une phase φ(r) ; puissance proportionnelle à λ et dispersion opposée à celle des verres (ν ≈ −3,45) : correction chromatique et athermalisation.', 'elements'],
+  ['Dynamique', 'dynamic range', 'Rapport entre le plus grand signal (puits) et le plancher de bruit, en dB : 20 log(puits / bruit).', 'detecteur'],
+  ['EFL', 'effective focal length, EFL, EFFL', 'Focale effective : distance du plan principal image au foyer image (pour n′ = 1).', 'systeme'],
+  ['Énergie encerclée', 'encircled energy, EE', 'Fraction de l\'énergie de la PSF contenue dans un cercle de rayon donné ; diamètres à 50/80 % (d80…) utiles pour spécifier une image ou un couplage.', 'lecture'],
+  ['Énergie ensquarée', 'ensquared energy', 'Fraction de l\'énergie tombant dans un carré (pixel, 2×2, 3×3) : critère naturel pour un détecteur.', 'detecteur'],
+  ['EPD', 'entrance pupil diameter, EPD', 'Diamètre de la pupille d\'entrée ; définition d\'ouverture la plus courante.', 'systeme'],
+  ['Étendue géométrique', 'étendue, throughput, AΩ', 'Produit surface × angle solide (× n²) d\'un faisceau ; se conserve ou croît dans un système. Borne le couplage : une source d\'étendue plus grande que celle acceptée par le système perd du flux.', 'formules'],
+  ['Expanseur de faisceau', 'beam expander', 'Système afocal qui agrandit le diamètre d\'un faisceau et en réduit la divergence d\'autant.', ''],
+  ['F/#, nombre d\'ouverture', 'f-number, F/#, N, FNO', 'f′/D. F/# de travail (CODE V FNO, Zemax « Working F/# ») : 1/(2 n′ sin u′) aux conjugués réels ; diffère du F/# à l\'infini en conjugué fini.', 'systeme'],
+  ['Facteur de remplissage', 'fill factor', 'Fraction de la surface d\'un pixel sensible à la lumière (sans microlentilles). Réduit le signal mais élargit la FTM du pixel (zone active plus petite).', 'detecteur'],
+  ['Facteur de vignetage', 'vignetting factors, VUY, VLY, VUX, VLX', 'Fractions de la pupille coupées en haut, en bas et sur les côtés pour un champ donné ; redéfinissent la pupille vue par ce champ (CODE V).', 'systeme'],
+  ['Fantôme (image)', 'ghost image', 'Image parasite créée par une double réflexion sur deux dioptres ; gênante quand elle est focalisée près du plan image.', 'analyses'],
+  ['Fibre monomode / multimode', 'single-mode / multimode fiber, SMF, MMF', 'Une fibre ne guide qu\'un mode si V = 2π a ON/λ &lt; 2,405 (longueur d\'onde de coupure) ; au-delà, environ V²/2 modes (saut d\'indice) ou V²/4 (gradient d\'indice).', 'source'],
+  ['Fonction de mérite', 'merit function, MF, MFE', 'Somme pondérée des carrés des écarts aux cibles (opérandes + critère image) que l\'optimisation minimise.', 'optimisation'],
+  ['Footprint', 'footprint, beam footprint', 'Empreinte du faisceau sur une surface pour tous les champs : sert à dimensionner les diamètres utiles et à repérer le vignetage.', 'analyses'],
+  ['Foyer', 'focus, focal point', 'Point où convergent les rayons parallèles à l\'axe (foyer image) ou d\'où partent les rayons qui ressortent parallèles (foyer objet).', ''],
+  ['Fréquence de coupure', 'cutoff frequency', 'Fréquence au-delà de laquelle la FTM est nulle : 1/(λ F/#) pour une pupille circulaire.', 'lecture'],
+  ['Fréquence spatiale', 'spatial frequency, cy/mm, lp/mm', 'Nombre de périodes (cycles ou paires de lignes) par millimètre dans le plan image.', 'lecture'],
+  ['Fresnel (pertes de)', 'Fresnel reflection', 'Réflexion à un dioptre nu : R = ((n₁ − n₂)/(n₁ + n₂))² en incidence normale, soit 4 % pour n = 1,5 ; à supprimer par traitement antireflet.', 'polarisation'],
+  ['Front d\'onde', 'wavefront, OPD, WFE', 'Surface d\'égale phase. L\'écart de front d\'onde (OPD) est mesuré sur la sphère de référence centrée sur l\'image du rayon principal ; WFE RMS et PV résument la qualité.', 'lecture'],
+  ['FTM (MTF)', 'modulation transfer function, MTF', 'Fonction de transfert de modulation : contraste transmis en fonction de la fréquence spatiale, en tangentiel (T) et sagittal (S). Module de la FTO, transformée de Fourier de la PSF.', 'lecture'],
+  ['FTO (OTF)', 'optical transfer function, OTF', 'Fonction de transfert optique : FTM (module) et FTP (phase) ; autocorrélation de la pupille complexe.', 'lecture'],
+  ['Gaussien (faisceau)', 'Gaussian beam', 'Faisceau d\'éclairement exp(−2r²/w²) ; col w₀, divergence θ₀ = λ/(π w₀), longueur de Rayleigh π w₀²/λ.', 'formules'],
+  ['Gradient d\'indice', 'graded index, GRIN, GI', 'Milieu dont l\'indice varie continûment ; fibre GI : profil parabolique, ON locale ON·√(1 − r²/a²).', 'source'],
+  ['Grandissement', 'magnification, RED', 'Rapport taille image / taille objet (transversal) ; négatif pour une image renversée. Grandissement angulaire pour un afocal.', 'systeme'],
+  ['Hauteur image', 'image height, IMH', 'Distance de l\'image d\'un point de champ à l\'axe, paraxiale (y′ = f tan θ) ou réelle (rayon principal).', 'systeme'],
+  ['Indice de réfraction', 'refractive index, n', 'Rapport c/v ; n<sub>d</sub> à 587,6 nm (raie d), n<sub>e</sub> à 546,1 nm.', 'verres'],
+  ['Invariant de Lagrange', 'Lagrange invariant, optical invariant, H', 'H = n(ū y − u ȳ) : conservé à travers le système ; fixe l\'étendue et lie ouverture et champ.', 'formules'],
+  ['Raies spectrales', 'Fraunhofer lines, d, e, F, C, g', 'Longueurs d\'onde de référence : g 435,8 · F 486,1 · e 546,1 · d 587,6 · C 656,3 nm (F′ 480,0, C′ 643,8).', 'verres'],
+  ['Longueur d\'onde primaire', 'primary / reference wavelength', 'Longueur d\'onde utilisée pour le paraxial, le rayon principal, la WFE et la PSF monochromatiques.', 'systeme'],
+  ['Longueur d\'onde de coupure', 'cutoff wavelength, λc', 'λ au-dessous de laquelle une fibre devient multimode : λc = 2π a ON / 2,405.', 'source'],
+  ['Maréchal (critère de)', 'Maréchal criterion', 'WFE RMS ≤ λ/14 ≈ 0,0714 λ, équivalent à un Strehl ≥ 0,8 : système « limité par la diffraction ».', 'lecture'],
+  ['Méridien / sagittal', 'tangential / sagittal plane', 'Plan contenant l\'axe et le point de champ (tangentiel, Y) / plan perpendiculaire passant par le rayon principal (X).', 'conventions'],
+  ['Mise au point', 'focus, Quick focus', 'Réglage du plan image (dernière épaisseur) au meilleur foyer selon un critère (spot ou front d\'onde RMS).', 'lde'],
+  ['Monte-Carlo', 'Monte Carlo tolerancing', 'Tirage aléatoire de toutes les tolérances à la fois sur de nombreux systèmes virtuels ; donne la distribution réaliste des performances et le rendement.', 'tolerancement'],
+  ['Multi-configuration', 'multi-configuration, zoom, MCE', 'Plusieurs états d\'un même système (positions de zoom, mises au point, longueurs d\'onde…) optimisés ensemble.', 'multiconfig'],
+  ['Nyquist (fréquence de)', 'Nyquist frequency', 'Fréquence spatiale maximale échantillonnée par un capteur sans repliement : 1/(2p) pour un pas p.', 'detecteur'],
+  ['Obstruction centrale', 'central obscuration, CIR OBS', 'Partie centrale de la pupille masquée (miroir secondaire d\'un télescope) ; change la PSF (plus d\'énergie dans les anneaux) et la FTM.', 'systeme'],
+  ['ON (NA)', 'numerical aperture, NA, NAO', 'Ouverture numérique n sin u : demi-angle du cône de lumière accepté (ON objet) ou délivré (ON image). Fibre : ON = √(n<sub>cœur</sub>² − n<sub>gaine</sub>²).', 'systeme'],
+  ['Opérande', 'operand', 'Ligne de la fonction de mérite : une grandeur calculée (focale, aberration, épaisseur…), une cible, un poids et un sens (=, ≥, ≤).', 'operandes'],
+  ['OPD', 'optical path difference', 'Différence de chemin optique entre un rayon et le rayon principal, ramenée à la sphère de référence, en ondes ou en nm ; OPD &gt; 0 : front d\'onde en avance.', 'conventions'],
+  ['Ouverture', 'aperture, system aperture', 'Grandeur qui fixe la taille du faisceau : EPD, F/#, ON objet ou image, ou taille du diaphragme.', 'systeme'],
+  ['Paraxial', 'paraxial, first-order', 'Approximation des petits angles (sin u ≈ u) : premier ordre, sans aberrations ; donne focales, positions des pupilles, grandissements.', 'formules'],
+  ['Petzval (somme de)', 'Petzval sum, SIV', 'Σ φ/(n n′) : fixe la courbure du champ image d\'un système corrigé de l\'astigmatisme ; ne dépend que des puissances et des indices.', 'lecture'],
+  ['Pickup', 'pickup, PIK', 'Paramètre recopié d\'une autre surface (× facteur + décalage) : symétries, épaisseurs liées.', 'lde'],
+  ['Plan principal', 'principal plane', 'Plan conjugué de lui-même avec un grandissement +1 ; la focale se mesure à partir de lui.', 'formules'],
+  ['Point source', 'point source', 'Source infiniment petite : son image est la PSF.', 'source'],
+  ['Polarisation', 'polarization, Jones, Stokes', 'Orientation du champ électrique ; modifiée par les réflexions de Fresnel, les polariseurs et les lames d\'onde. Décrite par les vecteurs de Jones ou de Stokes.', 'polarisation'],
+  ['PSF', 'point spread function, PSF', 'Réponse impulsionnelle : image d\'un point, calculée par transformée de Fourier de la pupille complexe (amplitude × e<sup>i2πW</sup>).', 'lecture'],
+  ['Puits (capacité)', 'full well capacity, e⁻', 'Nombre maximal d\'électrons qu\'un pixel peut stocker avant saturation.', 'detecteur'],
+  ['Pupille d\'entrée / de sortie', 'entrance / exit pupil, ENP, EXP', 'Images du diaphragme d\'ouverture vues depuis l\'objet / depuis l\'image. Le front d\'onde est évalué sur la pupille de sortie.', 'systeme'],
+  ['Pupille normalisée', 'normalized pupil coordinates, Px, Py', 'Coordonnées dans la pupille ramenées à [−1, 1] (bord du faisceau) ; obstruction exclue.', 'conventions'],
+  ['PV', 'peak-to-valley', 'Écart crête-à-creux d\'une grandeur (front d\'onde, surface) ; plus sensible aux défauts locaux que le RMS.', 'lecture'],
+  ['Q (facteur d\'échantillonnage)', 'sampling factor Q = λF/p', 'Rapport λF/# sur le pas des pixels ; Q ≥ 2 : PSF échantillonnée au critère de Nyquist.', 'detecteur'],
+  ['Rayleigh (critère de)', 'Rayleigh criterion', 'Deux points sont résolus si leur séparation dépasse le rayon d\'Airy, 1,22 λ F/# ; WFE PV ≤ λ/4.', 'formules'],
+  ['Rayon marginal', 'marginal ray', 'Rayon issu du point objet sur l\'axe passant au bord du diaphragme ; fixe l\'ouverture.', 'formules'],
+  ['Rayon principal', 'chief ray, principal ray', 'Rayon issu d\'un point de champ passant au centre du diaphragme ; fixe la hauteur d\'image et sert de référence aux aberrations.', 'formules'],
+  ['Ray fan', 'ray fan, ray aberration curves', 'Courbes d\'aberration transverse en fonction de la coordonnée de pupille, en tangentiel et en sagittal ; leur forme identifie les aberrations.', 'lecture'],
+  ['Rendement (fabrication)', 'yield', 'Proportion des systèmes fabriqués qui respectent la spécification, estimée par Monte-Carlo.', 'tolerancement'],
+  ['Rendement quantique', 'quantum efficiency, QE', 'Probabilité qu\'un photon incident produise un photo-électron dans le pixel ; dépend de λ.', 'detecteur'],
+  ['Réseau de diffraction', 'diffraction grating', 'Surface striée qui dévie la lumière selon sin θ<sub>m</sub> = sin θ<sub>i</sub> + m λ/d.', 'elements'],
+  ['RMS', 'root mean square', 'Écart quadratique moyen ; spot RMS (par rapport au barycentre), WFE RMS (piston et basculement retirés).', 'lecture'],
+  ['RSB', 'signal-to-noise ratio, SNR', 'Rapport signal sur bruit : S / √(S + obscurité + lecture² + quantification²) pour un pixel.', 'detecteur'],
+  ['RSS', 'root sum square', 'Racine de la somme des carrés : cumul statistique des dégradations indépendantes dues aux tolérances.', 'tolerancement'],
+  ['Sagittal', 'sagittal', 'Voir Méridien / sagittal.', 'conventions'],
+  ['Seidel (aberrations de)', 'Seidel aberrations, third-order', 'Aberrations du 3ᵉ ordre : sphérique S<sub>I</sub>, coma S<sub>II</sub>, astigmatisme S<sub>III</sub>, Petzval S<sub>IV</sub>, distorsion S<sub>V</sub>, plus chromatismes C<sub>L</sub> et C<sub>T</sub> ; sommes de contributions par surface.', 'lecture'],
+  ['Sellmeier (formule de)', 'Sellmeier equation', 'n² − 1 = Σ B<sub>i</sub> λ²/(λ² − C<sub>i</sub>) : formule de dispersion des catalogues Schott, Ohara, CDGM, Hoya.', 'verres'],
+  ['Sensibilité', 'sensitivity analysis', 'Dégradation du critère pour chaque tolérance prise seule ; repère les paramètres critiques.', 'tolerancement'],
+  ['Solve', 'solve', 'Paramètre calculé automatiquement : M (épaisseur au foyer paraxial), F (rayon donnant un F/#), U (angle marginal), P (pickup).', 'lde'],
+  ['Source étendue', 'extended source', 'Source de taille finie (cœur de fibre, fente, LED) : son image est la source projetée convoluée par la PSF.', 'source'],
+  ['Spectre secondaire', 'secondary spectrum', 'Chromatisme axial résiduel d\'un achromat entre la λ centrale et les λ corrigées ; lié à la dispersion partielle des verres.', 'verres'],
+  ['Sphérique (aberration)', 'spherical aberration, SI, W040', 'Les zones de la pupille focalisent à des distances différentes, même sur l\'axe ; varie comme la puissance 4 de l\'ouverture en front d\'onde.', 'lecture'],
+  ['Sphère de référence', 'reference sphere', 'Sphère centrée sur l\'image du rayon principal, passant par la pupille de sortie ; le front d\'onde est mesuré par rapport à elle.', 'conventions'],
+  ['Spot (diagramme de)', 'spot diagram', 'Points d\'impact des rayons sur l\'image ; RMS (écart quadratique au barycentre) et GEO (rayon maximal).', 'lecture'],
+  ['Strehl (rapport de)', 'Strehl ratio', 'Maximum de la PSF rapporté à celui d\'un système parfait de même pupille ; ≈ exp(−(2π WFE<sub>RMS</sub>)²) pour de faibles aberrations.', 'lecture'],
+  ['Surface image', 'image surface, IMG', 'Dernière surface du système, où l\'on évalue l\'image (capteur).', 'lde'],
+  ['Surface objet', 'object surface, OBJ', 'Surface 0 ; son épaisseur est la distance objet (infinie pour un objet à l\'infini).', 'lde'],
+  ['Tangentiel', 'tangential, meridional', 'Voir Méridien / sagittal.', 'conventions'],
+  ['Télécentrique', 'telecentric', 'Pupille (d\'entrée ou de sortie) à l\'infini : rayons principaux parallèles à l\'axe, grandissement insensible à la mise au point (métrologie, couplage de capteurs).', ''],
+  ['Tolérance', 'tolerance', 'Écart de fabrication ou de montage admis sur un paramètre (rayon, épaisseur, indice, décentrement, bascule, irrégularité…).', 'tolerancement'],
+  ['Traitement antireflet', 'anti-reflection coating, AR', 'Couche(s) mince(s) qui annulent la réflexion d\'un dioptre à certaines longueurs d\'onde ; non modélisées couche par couche dans Focale.', 'limites'],
+  ['Transmission interne', 'internal transmittance, τi', 'Fraction de lumière non absorbée par un verre d\'épaisseur donnée (catalogue : pour 10 ou 25 mm).', 'verres'],
+  ['TTL / OAL', 'total track length, OAL', 'Longueur totale de la 1<sup>re</sup> surface à l\'image / longueur de la 1<sup>re</sup> à la dernière surface (CODE V OAL).', 'systeme'],
+  ['V (fréquence normalisée)', 'normalized frequency, V-number', 'V = 2π a ON/λ (a : rayon du cœur) ; V &lt; 2,405 : fibre monomode.', 'source'],
+  ['Variable', 'variable', 'Paramètre que l\'optimisation peut modifier (rayon, épaisseur, conique, asphérique, verre…).', 'optimisation'],
+  ['Verre fictif', 'fictitious glass, model glass, MODP', 'Verre défini par n<sub>d</sub> et ν<sub>d</sub> seulement (modèle de Buchdahl, comme les verres modèles de CODE V) ; utile en optimisation avant de choisir un vrai verre.', 'verres'],
+  ['Vignetage', 'vignetting', 'Réduction du faisceau hors axe par des ouvertures autres que le diaphragme ; diminue l\'éclairement en bord de champ.', 'systeme'],
+  ['Visée des rayons', 'ray aiming', 'Recherche itérative du point de départ des rayons pour qu\'ils passent exactement au bon endroit du diaphragme réel (aberrations de pupille).', 'donnees'],
+  ['W (coefficients de front d\'onde)', 'wavefront aberration coefficients, W040, W131…', 'Coefficients W<sub>klm</sub> du développement du front d\'onde en champ et en pupille : W<sub>040</sub> = S<sub>I</sub>/8 (sphérique), W<sub>131</sub> (coma), W<sub>222</sub> (astigmatisme)…', 'lecture'],
+  ['WFE', 'wavefront error', 'Erreur de front d\'onde, en RMS ou PV, en ondes (λ), milli-ondes ou nanomètres selon les unités choisies.', 'lecture'],
+  ['Zernike (polynômes de)', 'Zernike polynomials, Fringe, Standard', 'Base orthogonale sur le disque unité pour décomposer un front d\'onde : piston, basculements, défocalisation, astigmatisme, coma, sphérique… Focale utilise l\'ordre « Fringe » (Z1…Z37).', 'lecture'],
+  ['Anamorphose', 'anamorphic', 'Grandissements différents en X et en Y (prismes, lentilles cylindriques ou biconiques) ; la jacobienne locale de l\'analyse Source étendue la mesure.', 'formes'],
+  ['Angle d\'incidence', 'angle of incidence, AOI, RAID', 'Angle entre un rayon et la normale à la surface au point d\'impact ; de grands angles augmentent les aberrations et les pertes de Fresnel.', 'operandes'],
+  ['Athermalisation', 'athermalization', 'Conception qui garde la mise au point et la qualité stables en température, en équilibrant dn/dT des verres et dilatation des montures.', 'donnees'],
+  ['Biréfringence', 'birefringence', 'Indice qui dépend de la polarisation (cristaux, contraintes) ; à la base des lames d\'onde.', 'polarisation'],
+  ['Brewster (angle de)', 'Brewster angle', 'Incidence tan θ<sub>B</sub> = n₂/n₁ pour laquelle la polarisation p n\'est pas réfléchie.', 'polarisation'],
+  ['Cercle de moindre confusion', 'circle of least confusion', 'Section la plus petite d\'un faisceau aberrant, entre les foyers paraxial et marginal ; position du meilleur foyer au sens du spot.', 'lecture'],
+  ['Champ proche / champ lointain', 'near field / far field', 'Répartition de la lumière sur la face de sortie d\'une fibre (champ proche : taille du cœur) / en fonction de l\'angle (champ lointain : ON, divergence).', 'source'],
+  ['Collimateur', 'collimator', 'Système qui rend parallèle la lumière issue d\'un point (source au foyer).', ''],
+  ['Col du faisceau', 'beam waist, w₀', 'Rayon minimal (à 1/e²) d\'un faisceau gaussien ; pour une fibre monomode, w₀ = MFD/2 sur la face de sortie.', 'source'],
+  ['Condenseur', 'condenser', 'Optique d\'éclairage qui collecte le flux d\'une source pour éclairer un objet ou remplir une pupille.', ''],
+  ['Courbure', 'curvature, CUY, c', 'Inverse du rayon de courbure (c = 1/R, mm⁻¹) ; nulle pour une surface plane.', 'lde'],
+  ['CTE (dilatation)', 'coefficient of thermal expansion, α', 'Coefficient de dilatation thermique (10⁻⁶/K) des verres et des entretoises ; avec dn/dT, il fixe la dérive thermique.', 'donnees'],
+  ['Demi-diamètre', 'semi-diameter, clear aperture, CA', 'Rayon utile d\'une surface (½Ø) : calculé pour laisser passer tous les faisceaux, ou fixé (ouverture qui peut vignetter).', 'lde'],
+  ['dn/dT', 'thermo-optic coefficient', 'Variation de l\'indice avec la température (formule de Schott, coefficients D₀…E₀, λ<sub>TK</sub>).', 'donnees'],
+  ['Doublet', 'doublet, cemented doublet', 'Association de deux lentilles (souvent collées) : crown et flint pour corriger le chromatisme et la sphérique.', 'methode'],
+  ['Échantillonnage', 'sampling', 'Nombre et répartition des rayons ou des points de calcul (grille de pupille, FFT) ; un échantillonnage insuffisant fausse spot, PSF et FTM.', 'analyses'],
+  ['Éclairement', 'irradiance, illuminance, W/m², lux', 'Flux reçu par unité de surface.', 'formules'],
+  ['Éclairement relatif', 'relative illumination, RI', 'Éclairement au bord du champ rapporté au centre ; suit approximativement la loi en cos⁴ θ, modifiée par le vignetage et les aberrations de pupille.', 'analyses'],
+  ['Épaisseur au bord', 'edge thickness, ET', 'Épaisseur d\'une lentille au bord de son diamètre ; doit rester positive et fabricable (opérandes MNEG / MNET).', 'operandes'],
+  ['Épaisseur centrale', 'center thickness, CT', 'Épaisseur sur l\'axe d\'une lentille ou d\'un espace d\'air (colonne Épaisseur).', 'lde'],
+  ['Fermat (principe de)', 'Fermat\'s principle', 'La lumière suit un chemin optique stationnaire ; fondement du tracé de rayons et de l\'OPD.', 'formules'],
+  ['Flèche (sag)', 'sag, sagitta', 'Écart en z entre une surface et le plan tangent au sommet, à la hauteur r : z = c r²/(1 + √(1 − (1+k) c² r²)) + termes asphériques.', 'formes'],
+  ['Franges (puissance, irrégularité)', 'fringes, power, irregularity, ISO 10110 3/', 'Écarts de forme d\'une surface mesurés en franges d\'interférence (λ/2 à 632,8 nm) : puissance (rayon) et irrégularité (forme).', 'plans'],
+  ['Hauteur marginale', 'marginal ray height, y', 'Hauteur du rayon marginal paraxial sur une surface ; avec l\'angle, elle sert aux formules de Seidel et aux solves.', 'formules'],
+  ['Image réelle / virtuelle', 'real / virtual image', 'Image où les rayons convergent effectivement (projetable sur un écran) / d\'où ils semblent diverger.', ''],
+  ['ISO 10110', 'ISO 10110', 'Norme des dessins d\'éléments optiques : tolérances de forme (3/), centrage (4/), défauts de surface (5/), contraintes, bulles, matériau.', 'plans'],
+  ['Lambertien', 'Lambertian', 'Émetteur ou diffuseur de luminance identique dans toutes les directions (intensité ∝ cos θ) ; couplage dans une ON : sin²u.', 'source'],
+  ['Lentille de champ', 'field lens', 'Lentille placée près d\'une image intermédiaire : elle repositionne la pupille sans changer le grandissement, réduit le vignetage.', ''],
+  ['Lentille idéale', 'ideal lens, paraxial lens, PARAXIAL', 'Lentille mince parfaite de focale donnée (surface « paraxiale » de Zemax), parfaite à son conjugué de travail.', 'elements'],
+  ['Longueur de Rayleigh', 'Rayleigh range, z<sub>R</sub>', 'Distance π w₀²/λ sur laquelle un faisceau gaussien reste à peu près collimaté (section ×2).', 'formules'],
+  ['Luminance', 'radiance, luminance', 'Flux par unité de surface et d\'angle solide ; se conserve dans un système sans pertes (comme l\'étendue).', 'formules'],
+  ['M² (facteur de qualité)', 'beam quality factor, M²', 'Rapport de la divergence d\'un faisceau réel à celle d\'un faisceau gaussien de même col ; 1 pour un mode gaussien parfait.', ''],
+  ['Malus (théorème de)', 'Malus–Dupin theorem', 'Les rayons restent normaux aux fronts d\'onde après réfractions et réflexions ; relie tracé de rayons et OPD.', 'formules'],
+  ['Ménisque', 'meniscus', 'Lentille dont les deux faces sont courbées dans le même sens ; réduit la sphérique et aplatit le champ.', ''],
+  ['Meilleur foyer', 'best focus', 'Position du plan image qui optimise un critère (spot RMS, front d\'onde RMS ou FTM) ; elle dépend du critère choisi.', 'lde'],
+  ['Minimum local / optimisation globale', 'local minimum, global optimization, GS, Hammer', 'L\'optimisation locale descend vers le minimum le plus proche ; la recherche globale explore d\'autres formes pour en trouver de meilleurs.', 'optimisation'],
+  ['Mode (de fibre)', 'fiber mode, LP01', 'Répartition de champ qui se propage sans se déformer ; une fibre monomode ne guide que le mode fondamental, quasi gaussien.', 'source'],
+  ['Montage 4f', '4f system, relay', 'Deux lentilles de focale f séparées de 2f : image ×(−1) au bout de 4f, plan de Fourier au milieu ; relais d\'image ou de pupille.', 'elements'],
+  ['Objectif / oculaire', 'objective, eyepiece', 'Optique qui forme l\'image de l\'objet / qui permet à l\'œil d\'observer une image intermédiaire (système afocal avec l\'œil).', ''],
+  ['Piston / basculement', 'piston, tilt', 'Termes du front d\'onde constant et linéaire : sans effet sur la netteté (le basculement déplace seulement l\'image) ; retirés du WFE RMS.', 'lecture'],
+  ['Pixel (pas)', 'pixel pitch', 'Distance entre centres de pixels voisins ; fixe la fréquence de Nyquist et le facteur Q.', 'detecteur'],
+  ['Plan focal', 'focal plane', 'Plan perpendiculaire à l\'axe passant par le foyer ; image d\'un objet à l\'infini.', ''],
+  ['Point nodal', 'nodal point', 'Couple de points conjugués de grandissement angulaire +1 ; confondus avec les points principaux dans l\'air.', 'formules'],
+  ['Poids (champs, λ)', 'field / wavelength weights', 'Importance relative d\'un champ ou d\'une longueur d\'onde dans les analyses polychromatiques et l\'optimisation.', 'systeme'],
+  ['Profondeur de champ / de foyer', 'depth of field / depth of focus, DOF', 'Tolérance de position de l\'objet / du plan image qui garde l\'image nette ; profondeur de foyer ≈ ±2 λ (F/#)² au critère de Rayleigh.', 'formules'],
+  ['Réflexion totale interne', 'total internal reflection, TIR', 'Au-delà de l\'angle critique sin θ<sub>c</sub> = n₂/n₁, la lumière est entièrement réfléchie ; le rayon est arrêté dans le tracé réfractif.', ''],
+  ['Repliement', 'aliasing', 'Fréquences supérieures à Nyquist reproduites comme de fausses basses fréquences (moiré) par l\'échantillonnage du capteur.', 'detecteur'],
+  ['Saturation', 'saturation', 'Pixel dont le puits est plein : le signal n\'augmente plus avec la lumière.', 'detecteur'],
+  ['Snell-Descartes (loi de)', 'Snell\'s law', 'n₁ sin θ₁ = n₂ sin θ₂ : loi de la réfraction utilisée par le tracé de rayons réels.', 'formules'],
+  ['Stigmatisme', 'stigmatism', 'Propriété d\'un système qui donne d\'un point une image ponctuelle (sans aberration) ; rigoureuse seulement pour des couples particuliers (miroir parabolique et objet à l\'infini).', ''],
+  ['Through-focus', 'through-focus MTF', 'FTM (ou autre critère) tracée en fonction de la défocalisation ; donne meilleur foyer et profondeur de foyer.', 'lecture'],
+  ['Triplet de Cooke', 'Cooke triplet', 'Objectif à trois lentilles (positive, négative, positive) qui corrige les sept aberrations de Seidel avec un minimum d\'éléments ; exemple classique de Focale.', 'demarrage'],
+  ['Verre (catalogue)', 'glass catalog, AGF', 'Liste de verres d\'un fabricant avec leurs coefficients de dispersion, transmission et données thermiques ; format AGF de Zemax importable.', 'verres'],
+  ['Zone (de pupille)', 'pupil zone', 'Anneau de la pupille à une hauteur relative donnée (ρ = 0,7 : zone dite « 0,7 ») ; la sphérique zonale varie selon les zones.', 'lecture'],
+];
+/** glossaire HTML : index alphabétique, filtre facultatif (recherche de l'aide), liens vers les rubriques */
+function helpGloss(q) {
+  const e = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;'), norm = t => String(t).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const T = (typeof HELP !== 'undefined' ? HELP : []).reduce((m, x) => (m[x.id] = x.t, m), {});
+  let L = [...GLOSS].sort((a, b) => norm(a[0]).localeCompare(norm(b[0])));
+  if (q) { const k = norm(q); L = L.filter(g => norm(g[0] + ' ' + g[1] + ' ' + g[2].replace(/<[^>]+>/g, '')).includes(k)); }
+  const letter = g => norm(g[0])[0].toUpperCase(), letters = [...new Set(L.map(letter))];
+  const idx = q ? '' : `<p class="glidx">${letters.map(c => `<a href="#" data-gl="${c}">${c}</a>`).join(' ')}</p>`;
+  return `<p class="hint">${L.length} terme${L.length > 1 ? 's' : ''}${q ? ' correspondant à la recherche' : ''} ; sous chaque terme, en gris : noms anglais et sigles (CODE V, Zemax), eux aussi trouvés par la recherche de l'aide. Le lien de la dernière colonne ouvre la rubrique d'aide correspondante.</p>${idx}
+<table class="ht gl"><tr><th>Terme</th><th>Définition</th><th></th></tr>${L.map((g, i) => `<tr${!i || letter(L[i - 1]) !== letter(g) ? ` id="gl-${letter(g)}"` : ''}><td><b>${g[0]}</b><div class="hint">${g[1]}</div></td><td>${g[2]}</td><td>${g[3] && T[g[3]] ? `<a href="#" data-h="${g[3]}" title="Ouvrir la rubrique « ${e(T[g[3]])} »">→ ${e(T[g[3]])}</a>` : ''}</td></tr>`).join('')}</table>`;
+}
 const HELP = [
   { id: 'demarrage', t: 'Démarrage rapide', h: `
 <p>Focale est un logiciel de <b>conception optique séquentielle</b> : la lumière traverse les surfaces dans l'ordre de l'éditeur de lentilles, de l'objet (surface 0) à l'image (dernière surface).</p>
@@ -4844,34 +5051,7 @@ Les combinaisons ont été optimisées dans Focale (spot, front d'onde) : ce son
 <tr><td>Champ couvert</td><td class="fm">θ = arctan(h / f′)</td><td>h : demi-diagonale du capteur ; capteur 24 × 36 : h = 21,6 mm.</td></tr>
 </table>` },
 
-  { id: 'glossaire', t: 'Glossaire', h: `
-<table class="ht"><tr><th>Terme</th><th>Définition</th></tr>
-<tr><td>Aberration</td><td>Écart entre l'image réelle et l'image idéale (paraxiale) : sphérique, coma, astigmatisme, courbure de champ, distorsion (Seidel), chromatisme axial et latéral.</td></tr>
-<tr><td>Achromat / apochromat</td><td>Système corrigé du chromatisme axial pour deux longueurs d'onde (F et C) / pour trois (g, F, C), avec un spectre secondaire réduit.</td></tr>
-<tr><td>Afocal</td><td>Système sans puissance (focale infinie) : un faisceau parallèle en sort parallèle (lunette de Galilée, expanseur de faisceau).</td></tr>
-<tr><td>Aplanétique</td><td>Corrigé de la sphérique et de la coma (Ritchey-Chrétien, condition des sinus respectée).</td></tr>
-<tr><td>BFL / tirage</td><td>Distance entre la dernière surface et le foyer (ou le plan image).</td></tr>
-<tr><td>Diaphragme d'ouverture</td><td>Surface qui limite le faisceau sur l'axe (STO). Ses images sont les pupilles d'entrée et de sortie.</td></tr>
-<tr><td>Diaphragme de champ</td><td>Surface qui limite l'étendue du champ (souvent au foyer d'un oculaire ou au capteur).</td></tr>
-<tr><td>EFL</td><td>Focale effective (distance du plan principal image au foyer image).</td></tr>
-<tr><td>EPD</td><td>Diamètre de la pupille d'entrée.</td></tr>
-<tr><td>F/#, N</td><td>Nombre d'ouverture f′/D ; F/# de travail : 1/(2 n′u′) aux conjugués utilisés.</td></tr>
-<tr><td>FTM (MTF)</td><td>Fonction de transfert de modulation : contraste transmis en fonction de la fréquence spatiale (cycles/mm), en tangentiel (T) et sagittal (S).</td></tr>
-<tr><td>Front d'onde, OPD</td><td>Différence de chemin optique entre un rayon et le rayon principal, sur la sphère de référence ; en ondes (λ). RMS et crête-à-crête (PV).</td></tr>
-<tr><td>Invariant de Lagrange</td><td>Produit hauteur × angle × indice conservé à travers le système ; fixe l'étendue.</td></tr>
-<tr><td>Méridien / sagittal</td><td>Plan contenant l'axe et le point de champ (tangentiel, Y) / plan perpendiculaire (X).</td></tr>
-<tr><td>ON (NA)</td><td>Ouverture numérique n sin u.</td></tr>
-<tr><td>Paraxial</td><td>Approximation des petits angles (sin u ≈ u) : premier ordre, sans aberrations.</td></tr>
-<tr><td>Petzval (surface de)</td><td>Surface image courbe naturelle d'un système sans astigmatisme ; sa courbure ne dépend que des puissances et des indices.</td></tr>
-<tr><td>PSF</td><td>Réponse impulsionnelle : image d'un point. Strehl : son maximum rapporté à celui d'un système parfait.</td></tr>
-<tr><td>Pupille d'entrée / de sortie</td><td>Images du diaphragme d'ouverture vues depuis l'objet / depuis l'image.</td></tr>
-<tr><td>Rayon marginal / principal</td><td>Rayon issu du point objet sur l'axe passant au bord du diaphragme / rayon issu du bord du champ passant au centre du diaphragme.</td></tr>
-<tr><td>Solve</td><td>Paramètre calculé automatiquement (ex. M : épaisseur qui place l'image au foyer paraxial).</td></tr>
-<tr><td>Spot (diagramme de)</td><td>Points d'impact des rayons sur l'image ; RMS (écart quadratique au barycentre) et GEO (rayon maximal).</td></tr>
-<tr><td>Télécentrique</td><td>Pupille (d'entrée ou de sortie) à l'infini : rayons principaux parallèles à l'axe, grandissement insensible à la mise au point.</td></tr>
-<tr><td>TTL / OAL</td><td>Longueur totale de la 1<sup>re</sup> surface à l'image / longueur de la 1<sup>re</sup> à la dernière surface (CODE V OAL).</td></tr>
-<tr><td>Vignetage</td><td>Réduction du faisceau hors axe par des ouvertures autres que le diaphragme (facteurs VUY, VLY, VUX, VLX).</td></tr>
-</table>` },
+  { id: 'glossaire', t: 'Glossaire', get h() { return helpGloss(); } },
 
   { id: 'limites', t: 'Limites connues', h: `
 <ul><li>Tracé séquentiel uniquement (pas de lumière parasite ni de chemins multiples).</li>
@@ -9245,12 +9425,15 @@ function openHelp(id, anchor) {
   const show = hid => {
     const q = $('#hq').value.trim().toLowerCase(), items = q ? HELP.filter(x => (x.t + ' ' + x.h.replace(/<[^>]+>/g, ' ')).toLowerCase().includes(q)) : HELP.filter(x => x.id === (hid || 'demarrage'));
     $$('#hnav .hn').forEach(b => { b.classList.toggle('on', !q && b.dataset.h === (hid || 'demarrage')); b.style.display = !q || items.some(x => x.id === b.dataset.h) ? '' : 'none'; });
-    let html = items.map(x => `<h3>${x.t}</h3>${x.h}`).join('<hr>') || '<p class="hint">Aucun résultat.</p>';
+    let html = items.map(x => `<h3>${x.t}</h3>${q && x.id === 'glossaire' ? helpGloss(q) : x.h}`).join('<hr>') || '<p class="hint">Aucun résultat.</p>';
     if (q) { const re = new RegExp('(' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi'); html = html.replace(/>([^<]+)</g, (m, t) => '>' + t.replace(re, '<mark>$1</mark>') + '<'); }
     $('#hbody').innerHTML = html; $('#hbody').scrollTop = 0;
   };
   $('#hnav').addEventListener('click', e => { const b = e.target.closest('[data-h]'); if (b) { $('#hq').value = ''; show(b.dataset.h); } });
   $('#hq').addEventListener('input', () => show());
+  // liens internes : rubrique (data-h) et index alphabétique du glossaire (data-gl)
+  $('#hbody').addEventListener('click', e => { const b = e.target.closest('[data-h]'); if (b) { e.preventDefault(); $('#hq').value = ''; show(b.dataset.h); return; }
+    const g = e.target.closest('[data-gl]'); if (g) { e.preventDefault(); const r = $('#gl-' + g.dataset.gl); if (r) { r.scrollIntoView({ block: 'start' }); r.classList.add('hflash'); setTimeout(() => r.classList.remove('hflash'), 1500); } } });
   show(id);
   if (anchor) { const a = anchor.toLowerCase(), el = [...$$('#hbody td:first-child, #hbody h4, #hbody b')].find(e => e.textContent.trim().toLowerCase().startsWith(a));
     if (el) { const row = el.closest('tr, li') || el; row.scrollIntoView({ block: 'center' }); row.classList.add('hflash'); setTimeout(() => row.classList.remove('hflash'), 2200); } }
