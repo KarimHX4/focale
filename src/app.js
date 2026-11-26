@@ -60,12 +60,12 @@ const App = {
   panes: [{ type: 'spot' }, { type: 'wfe', fi: 0 }, { type: 'mtf' }, { type: 'psf', fi: 0 }, { type: 'rayfan' }, { type: 'footprint' }],
   grid: 4, mode: '2d', view: { auto: true, s: 1, ox: 0, oy: 0, yaw: 0.55, pitch: 0.32 }, nRays: 7, ray3: 'xy', showAsph: false, qf: { crit: 'SPOT', wl: 'central' }, asst: true, fw: {},
 };
-function save() { try { localStorage.setItem('focale.sys', toJSON(App.sys)); localStorage.setItem('focale.ui', JSON.stringify({ panes: App.panes, grid: App.grid, qf: App.qf, asst: App.asst, fw: App.fw, nRays: App.nRays, ray3: App.ray3, th: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light' })); } catch (e) { } }
+function save() { try { localStorage.setItem('focale.sys', toJSON(App.sys)); localStorage.setItem('focale.ui', JSON.stringify({ panes: App.panes, grid: App.grid, qf: App.qf, asst: App.asst, fw: App.fw, nRays: App.nRays, ray3: App.ray3, cardOrder: App.cardOrder || null, cardClosed: [...closedCards], th: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light' })); } catch (e) { } }
 function load() {
   try {
     const s = localStorage.getItem('focale.sys'); if (s) App.sys = normalize(fromJSON(s));
     const u = JSON.parse(localStorage.getItem('focale.ui') || 'null');
-    if (u) { if (Array.isArray(u.panes) && u.panes.length >= 6) App.panes = u.panes; if (u.grid) App.grid = u.grid; if (u.qf) App.qf = { ...App.qf, ...u.qf }; if (u.asst === false) App.asst = false; if (u.fw && typeof u.fw === 'object') App.fw = u.fw; if (Number.isInteger(u.nRays) && u.nRays >= 3 && u.nRays <= 100) App.nRays = u.nRays; if (RAY3.some(o => o[0] === u.ray3)) App.ray3 = u.ray3; }
+    if (u) { if (Array.isArray(u.panes) && u.panes.length >= 6) App.panes = u.panes; if (u.grid) App.grid = u.grid; if (u.qf) App.qf = { ...App.qf, ...u.qf }; if (u.asst === false) App.asst = false; if (u.fw && typeof u.fw === 'object') App.fw = u.fw; if (Number.isInteger(u.nRays) && u.nRays >= 3 && u.nRays <= 100) App.nRays = u.nRays; if (RAY3.some(o => o[0] === u.ray3)) App.ray3 = u.ray3; if (Array.isArray(u.cardOrder)) App.cardOrder = u.cardOrder; if (Array.isArray(u.cardClosed)) { closedCards.clear(); for (const k of u.cardClosed) closedCards.add(k); } }
     // thème : sombre par défaut (premier lancement) ; ensuite le dernier choix de l'utilisateur
     document.documentElement.dataset.theme = u && u.th === 'light' ? '' : 'dark';
   } catch (e) { App.sys = null; }
@@ -391,8 +391,12 @@ function setFieldType(to, convert) {
   commit(S => { S.ftype = to; if (v) S.fields = S.fields.map((f, i) => ({ ...f, x: r(v[i].x), y: r(v[i].y) })); });
   toast(`Champs : ${OE.FTYPES[to].l.toLowerCase()}${v ? ' (mêmes points de champ)' : ' (valeurs inchangées)'}`);
 }
-const closedCards = new Set();
-function card(id, title, body) { return `<div class="card ${closedCards.has(id) ? 'closed' : ''}" data-card="${id}"><h3>${title}<span class="chev">▾</span></h3><div class="cb">${body}</div></div>`; }
+/** cartes du panneau Système : ordre et repli (mémorisés). Par défaut, seules les cartes essentielles sont ouvertes. */
+const CARD_DEF = ['gen', 'surf', 'ap', 'fi', 'wl', 'src', 'det', 'par'], CARD_CLOSED0 = ['surf', 'wl', 'src', 'det', 'par'];
+const closedCards = new Set(CARD_CLOSED0);
+function cardOrder() { const o = (App.cardOrder || []).filter(k => CARD_DEF.includes(k)); for (const k of CARD_DEF) if (!o.includes(k)) o.splice(Math.min(o.length, CARD_DEF.indexOf(k)), 0, k); return o; }
+function card(id, title, body) { return `<div class="card ${closedCards.has(id) ? 'closed' : ''}" data-card="${id}"><h3><span class="cgrip" draggable="true" title="Glisser pour déplacer la carte">⠿</span>${title}<span class="chev">▾</span></h3><div class="cb">${body}</div></div>`; }
+function cardsSave() { App.cardClosed = [...closedCards]; save(); }
 function renderSide() {
   const s = App.sys, M = App.M, ap = s.aperture;
   const objInf = !isFinite(s.surfaces[0].t) || Math.abs(s.surfaces[0].t) > 1e10;
@@ -400,31 +404,32 @@ function renderSide() {
   if (!apOpts.find(o => o[0] === ap.type)) ap.type = 'EPD';
   const ft = ftypeOf(s), fu = OE.FTYPES[ft].u;
   const el = document.activeElement; const keep = el && el.closest && el.closest('#side') && el.dataset.f ? `[data-f="${el.dataset.f}"]${el.dataset.k ? `[data-k="${el.dataset.k}"]` : ''}${el.dataset.i != null ? `[data-i="${el.dataset.i}"]` : ''}` : null;
-  let h = `<div class="sidebar-h"><button class="bt" data-act="sysdata" title="Données système façon CODE V : pupille, longueurs d'onde, champs et vignetage, température et pression, dn/dT, avancé (Ctrl+Maj+D)">⚙ Données système</button><span class="grow"></span><button class="x" data-help="systeme" title="Aide : ouverture, champs, longueurs d'onde">?</button>${App.fw.side ? '' : '<button class="x" data-fw="side" title="Détacher ce panneau dans une fenêtre flottante">⧉</button>'}</div>`;
-  h += card('gen', 'Système', `
+  let h = `<div class="sidebar-h"><button class="bt" data-act="sysdata" title="Données système façon CODE V : pupille, longueurs d'onde, champs et vignetage, température et pression, dn/dT, avancé (Ctrl+Maj+D)">⚙ Données système</button><span class="grow"></span><button class="x" data-act="cardsReset" title="Remet les cartes dans l'ordre et l'état replié par défaut">⟲</button><button class="x" data-help="systeme" title="Aide : ouverture, champs, longueurs d'onde">?</button>${App.fw.side ? '' : '<button class="x" data-fw="side" title="Détacher ce panneau dans une fenêtre flottante">⧉</button>'}</div>`;
+  const C = {};
+  C.gen = card('gen', 'Système', `
     <div class="row"><input class="in" style="flex:1" data-f="title" value="${esc(s.title)}" placeholder="Titre du système"></div>`);
-  h += inspector();
-  h += card('ap', 'Ouverture', `
+  C.surf = inspector();
+  C.ap = card('ap', 'Ouverture', `
     <div class="row"><select class="in" style="flex:1" data-f="apType">${apOpts.map(o => `<option value="${o[0]}" ${o[0] === ap.type ? 'selected' : ''}>${o[1]}</option>`).join('')}</select></div>
     <div class="row"><label>Valeur</label><input class="in mini" data-f="apVal" value="${fmt(ap.value, 6)}"></div>
     <div class="row"><label>Obstruction centrale (rayon rel.)</label><input class="in mini" data-f="obs" value="${fmt(ap.obscuration || 0, 4)}"></div>
     <div class="row"><label title="Visée des rayons : pupille d'entrée paraxiale, rayon principal itéré au centre du diaphragme (défaut de CODE V), ou chaque rayon itéré sur le diaphragme">Visée</label><select class="in" data-f="aimSel" style="flex:1">${AIMOPTS.map(([k, l]) => `<option value="${k}" ${OE.aimMode(s) === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`);
-  h += card('fi', `Champs — ${OE.FTYPES[ft].l.toLowerCase()} (${fu})`, `
+  C.fi = card('fi', `Champs — ${OE.FTYPES[ft].l.toLowerCase()} (${fu})`, `
     <div class="row"><select class="in" style="flex:1" data-f="ftype" title="Type de champ (CODE V : YAN, YOB, YIM, YRI). Les valeurs sont converties pour garder les mêmes points de champ.">${Object.entries(OE.FTYPES).filter(([k]) => !(objInf && k === 'obj')).map(([k, v]) => `<option value="${k}" ${k === ft ? 'selected' : ''}>${v.l} (${v.cv})</option>`).join('')}</select></div>
     <table class="mt"><tr><th></th><th>X (${fu})</th><th>Y (${fu})</th><th>Poids</th><th></th></tr>
     ${s.fields.map((f, i) => `<tr><td><button class="cpk" data-cpk="f" data-i="${i}" style="background:${hexCol(fcol(i))}" title="Couleur du champ ${i + 1} (clic pour la changer)" aria-label="Couleur du champ ${i + 1}"></button></td><td><input class="in" data-f="fx" data-i="${i}" value="${fmt(f.x || 0, 6)}"></td><td><input class="in" data-f="fy" data-i="${i}" value="${fmt(f.y, 6)}"></td><td><input class="in" data-f="fw" style="width:44px" data-i="${i}" value="${fmt(f.w ?? 1, 4)}"></td><td><button class="x" data-a="fdel" data-i="${i}" title="Supprimer">✕</button></td></tr>`).join('')}
     </table><button class="add" data-a="fadd">+ Ajouter un champ</button>
     <div class="chips"><button class="chip" data-a="fspread">Répartir 0 · 0.7 · 1</button><button class="chip" data-a="sdfld" title="Vignetage (VUY, VLY, VUX, VLX), génération et conversion des champs">Vignetage</button></div>${s.fields.some(f => +f.vuy || +f.vly || +f.vux || +f.vlx) ? '<div class="hint">Facteurs de vignetage actifs (voir Données système).</div>' : ''}`);
-  h += card('wl', 'Longueurs d\'onde (µm)', `
+  C.wl = card('wl', 'Longueurs d\'onde (µm)', `
     <table class="mt"><tr><th></th><th>λ (µm)</th><th>Poids</th><th title="Primaire">Prim.</th><th></th></tr>
     ${s.wavelengths.map((w, i) => `<tr><td><button class="cpk" data-cpk="w" data-i="${i}" style="background:${hexCol(wlCol(w.um))}" title="Couleur de λ${i + 1} (clic pour la changer)" aria-label="Couleur de la longueur d'onde ${i + 1}"></button></td><td><input class="in" data-f="wum" data-i="${i}" value="${fmt(w.um, 7)}"></td><td><input class="in" data-f="ww" style="width:48px" data-i="${i}" value="${fmt(w.w ?? 1, 4)}"></td><td style="text-align:center"><input type="radio" name="prim" data-f="wp" data-i="${i}" ${i === s.primary ? 'checked' : ''}></td><td><button class="x" data-a="wdel" data-i="${i}">✕</button></td></tr>`).join('')}
     </table><button class="add" data-a="wadd">+ Ajouter une longueur d'onde</button>
     <div class="chips"><button class="chip" data-a="wpre" data-v="FdC">F, d, C</button><button class="chip" data-a="wpre" data-v="vis">Visible</button><button class="chip" data-a="wpre" data-v="hene">632,8 nm</button><button class="chip" data-a="wpre" data-v="nir">NIR</button><button class="chip" data-a="wpre" data-v="d">d seule</button></div>`);
-  h += srcCard();
-  h += detCard();
+  C.src = srcCard();
+  C.det = detCard();
   if (M && M.ok) {
     const p = M.par;
-    h += card('par', 'Données paraxiales', `<div class="kv">
+    C.par = card('par', 'Données paraxiales', `<div class="kv">
       <span>Focale (EFL)</span><span>${fx(p.efl, 4)}</span>
       <span>Tirage (BFL)</span><span>${fx(p.bfl, 4)}</span>
       <span>Distance image parax.</span><span>${fx(p.imgDist, 4)}</span>
@@ -444,6 +449,7 @@ function renderSide() {
       <span>λ primaire</span><span>${fx(M.wls[M.pw] * 1000, 2)} nm</span></div>
       <div class="hint" style="margin-top:6px">Positions relatives : PE / 1ʳᵉ surface, PS / plan image. Hauteur image et grandissement au plan image paraxial (comme CODE V).</div>`);
   }
+  h += cardOrder().map(k => C[k] || '').join('');
   $('#side').innerHTML = h;
   if (keep) { const e = $('#side ' + keep); if (e) e.focus(); }
   status();
@@ -695,8 +701,17 @@ function inspector() {
 }
 function setupSide() {
   const side = $('#side');
+  // déplacement des cartes par glisser-déposer (poignée ⠿ du titre)
+  let dragId = null;
+  const clearMarks = () => side.querySelectorAll('.card.dropB,.card.dropA').forEach(c => c.classList.remove('dropB', 'dropA'));
+  side.addEventListener('dragstart', e => { const g = e.target.closest && e.target.closest('.cgrip'); if (!g) return; const c = g.closest('.card'); dragId = c.dataset.card; c.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', dragId); e.dataTransfer.setDragImage(c, 20, 14); } catch (er) { } });
+  side.addEventListener('dragover', e => { if (!dragId) return; const c = e.target.closest('.card'); if (!c || c.dataset.card === dragId) { clearMarks(); return; } e.preventDefault(); e.dataTransfer.dropEffect = 'move'; const r = c.getBoundingClientRect(), after = e.clientY > r.top + r.height / 2; clearMarks(); c.classList.add(after ? 'dropA' : 'dropB'); });
+  side.addEventListener('drop', e => { if (!dragId) return; e.preventDefault(); const c = e.target.closest('.card'); const tgt = c && c.dataset.card, after = c && c.classList.contains('dropA'); clearMarks();
+    if (tgt && tgt !== dragId) { const o = cardOrder().filter(k => k !== dragId); o.splice(o.indexOf(tgt) + (after ? 1 : 0), 0, dragId); App.cardOrder = o; save(); renderSide(); } dragId = null; });
+  side.addEventListener('dragend', () => { clearMarks(); side.querySelectorAll('.card.dragging').forEach(c => c.classList.remove('dragging')); dragId = null; });
   side.addEventListener('click', e => {
-    const h3 = e.target.closest('h3'); if (h3) { const c = h3.parentElement; c.classList.toggle('closed'); c.classList.contains('closed') ? closedCards.add(c.dataset.card) : closedCards.delete(c.dataset.card); return; }
+    if (e.target.closest('.cgrip')) return;
+    const h3 = e.target.closest('h3'); if (h3) { const c = h3.parentElement; c.classList.toggle('closed'); c.classList.contains('closed') ? closedCards.add(c.dataset.card) : closedCards.delete(c.dataset.card); cardsSave(); return; }
     const b = e.target.closest('[data-a]'); if (!b) return; const i = +b.dataset.i;
     switch (b.dataset.a) {
       case 'fadd': commit(s => { const m = Math.max(...s.fields.map(f => f.y)); s.fields.push({ x: 0, y: +(m * 1.2 || 1).toFixed(4), w: 1 }); }); break;
@@ -3292,6 +3307,7 @@ function init() {
       case 'asstShow': App.asst = !App.asst; applyAsstPref(); save(); toast(App.asst ? 'Bouton Assistant affiché' : 'Bouton Assistant masqué (Fichier pour le réafficher)'); break;
       case 'glasses': openGlasses(); break;
       case 'sysdata': openSysData(); break;
+      case 'cardsReset': App.cardOrder = null; closedCards.clear(); for (const k of CARD_CLOSED0) closedCards.add(k); save(); renderSide(); toast('Cartes remises dans l\'ordre et l\'état par défaut'); break;
       case 'mconf': openMC(); break;
       case 'hist': openHist(); break;
       case 'drawings': openDrawings(); break;
