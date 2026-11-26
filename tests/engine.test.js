@@ -287,6 +287,20 @@ const P = []; OE.ray(M, 1, 20, 0, 1, { pts: P }); near('Visée réelle sur diaph
     // migration des anciens fichiers
     const old = { merit: { image: 'SPOT', ops: [{ type: 'MNCT', target: 1, weight: 10 }, { type: 'CTHK', p: 3, target: 2, weight: 2 }] } }; OE.meritUpgrade(old);
     near('Ancienne fonction de mérite : MNCT → MNCG (verre), CTHK → CTGT S3, poids au carré', old.merit.ops[0].type === 'MNCG' && old.merit.ops[0].weight === 100 && old.merit.ops[1].type === 'CTGT' && old.merit.ops[1].s1 === 3 && old.merit.ops[1].weight === 4 ? 1 : 0, 1, 0); }
+  { // Solves : F/# et angle marginal sur un rayon, pickups rayon / épaisseur, combinés au solve M ; export de la fonction de mérite
+    const c = S['Triplet de Cooke f=50 F/5'](); c.surfaces[6].rsolve = 'F'; c.surfaces[6].rsv = 4; let M = OE.prepare(c);
+    near('Solve F/# sur R6 : F/# de travail = 4 (EFL = 40 à EPD 10)', M.par.efl, 40, 1e-9);
+    c.surfaces[6].rsolve = 'U'; c.surfaces[6].rsv = -0.1; M = OE.prepare(c); near('Solve angle marginal u′ = −0,1 : EFL = 50', M.par.efl, 50, 1e-9);
+    c.surfaces[6].rsolve = ''; c.surfaces[5].rsolve = 'P'; c.surfaces[5].rpk = 6; c.surfaces[5].rps = -1; M = OE.prepare(c); near('Pickup de rayon R5 = −R6', M.S[5].r, -c.surfaces[6].r, 1e-9);
+    c.surfaces[4].tsolve = 'P'; c.surfaces[4].tpk = 2; c.surfaces[4].tps = 1; c.surfaces[4].tpo = 0.5; M = OE.prepare(c); near('Pickup d\'épaisseur T4 = T2 + 0,5', M.S[4].t, M.S[2].t + 0.5, 1e-12);
+    c.surfaces[6].rsolve = 'F'; c.surfaces[6].rsv = 5; M = OE.prepare(c); near('Solve F + solve M : EFL 50 et image au foyer paraxial', Math.abs(M.par.efl - 50) + Math.abs(M.S[6].t - M.par.imgDist), 0, 1e-8);
+    c.surfaces.forEach(s => { s.vr = s.vt = true; }); const kinds = OE.getVars(c).map(v => v.kind + v.si);
+    near('Valeurs pilotées par un solve exclues des variables', kinds.includes('c5') || kinds.includes('c6') || kinds.includes('t4') || kinds.includes('t6') ? 1 : 0, 0, 0);
+    const T = IO.toSeq(c); near('Export CODE V : solves F/P en valeurs fixes (signalé)', T.warnings.some(w => /Solves exportés/.test(w)) && T.text.includes(` ${(+M.S[6].r.toPrecision(7))}`.slice(0, 6)) ? 1 : 0, 1, 0);
+    const d = S['Triplet de Cooke f=50 F/5'](); d.merit.ops.push({ type: 'TTL', target: 62, weight: 1, cmp: 'le' }, { type: 'SPOT', target: 10, weight: 1, fi: 2 });
+    const z = IO.meritToZemax(d).rows, cv = IO.meritToCodeV(d).text;
+    near('Export Zemax : EFL → EFFL, TTL ≤ → TOTR (poids 0) + OPLT, SPOT µm → RSCE mm', z.some(r => r.type === 'EFFL' && r.t === 50) && z.some((r, k) => r.type === 'OPLT' && z[r.i1 - 1].type === 'TOTR' && z[r.i1 - 1].w === 0 && r.t === 62) && z.some(r => r.type === 'OPLT' && z[r.i1 - 1].type === 'RSCE' && Math.abs(r.t - 0.01) < 1e-12) ? 1 : 0, 1, 0);
+    near('Export CODE V : macro AUT avec EFL = 50, MNT et GO', /^AUT$/m.test(cv) && /^EFL = 50/m.test(cv) && /^MNT 1/m.test(cv) && /^GO$/m.test(cv) ? 1 : 0, 1, 0); }
   // Validation CODE V 2024.03 : objectif « DigCamera » (tutoriel CODE V), sorties FIR / REFRACTIVE INDICES / RSI fournies par l'utilisateur
   { const seq = `FNO 3.5\nDIM M\nWL 656.0 589.0 430.0\nREF 2\nWTW 1 2 1\nYAN 0.0 11.0 19.0 26.5\nVUX 0 0.007419823242190038 0.02280626025389998 0\nVLX 0 0.007419823242190038 0.02280626025389998 0\nVUY 0 0.0007207686245109812 0.20273532916 0\nVLY 0 0.04668488625860001 0.111177974441 0\nSO 0.0 750.0
 S 1.822175677212961 1.085816541265434 743972.448504\nS -21.29932312571177 0.1000000000000001\nS -3.057770039270196 0.2 736020.283993\nS 1.441367391070061 0.1244741047468973\nSTO\nS 2.884653512995602 0.9708074408810998 743972.448504\nS -2.08834100754463 1.95119372571215\nSI 0.0 -0.02480582498015976\nGO\n`;

@@ -516,10 +516,21 @@ const OE = (() => {
     if (objInf && sys.aperture.type === 'NA') warnings.push('Ouverture « ON objet » impossible avec un objet à l\'infini : la valeur est prise comme diamètre de pupille (choisissez EPD ou F/#)');
     S.forEach((s, j) => { const r = glassRecord(s.glass); if (r && r.lmin && r.lmax) { const out = wls.filter(l => l < r.lmin - 1e-9 || l > r.lmax + 1e-9); if (out.length) warnings.push(`${r.key} (S${j}) : λ hors domaine ${r.lmin}–${r.lmax} µm`); } });
     let par;
-    const nSolve = S.filter(s => s.tsolve === 'M').length;
-    for (let it = 0; it < nSolve + 2; it++) {
+    // solves : pickups (rayon, épaisseur), courbure par F/# ou angle marginal, épaisseur M (foyer paraxial) — résolus ensemble par itération
+    const nSolve = S.filter(s => s.tsolve || s.rsolve).length, n0 = nW[pw];
+    const pickups = () => { let ch = false;
+      for (let j = 1; j < N; j++) { const s = S[j];
+        if (s.rsolve === 'P') { const k = Math.round(+s.rpk), src = S[k]; if (src && k !== j) { const c = curv(src) / (+s.rps || 1), r = Math.abs(c) < 1e-15 ? Infinity : 1 / c; if (r !== s.r && !(Math.abs(r - s.r) < 1e-12 * Math.abs(r))) { s.r = r; ch = true; } } }
+        if (s.tsolve === 'P') { const k = Math.round(+s.tpk), src = S[k]; if (src && k !== j && isFinite(src.t)) { const t = (s.tps == null || s.tps === '' ? 1 : +s.tps) * src.t + (+s.tpo || 0); if (Math.abs(t - s.t) > 1e-12) { s.t = t; ch = true; } } } }
+      return ch; };
+    for (let it = 0; it < Math.min(40, 2 * nSolve + 2); it++) {
+      let ch = pickups();
       par = paraxial(sys, nW[pw], stopIdx, objInf);
-      let ch = false;
+      for (let j = 1; j < N; j++) { const s = S[j]; if (s.rsolve !== 'F' && s.rsolve !== 'U') continue;
+        const uT = s.rsolve === 'F' ? -1 / (2 * (+s.rsv || 1)) : +s.rsv || 0, dn = n0[j] - n0[j - 1], y = par.mar.y[j];
+        if (Math.abs(y * dn) < 1e-15) continue;
+        const c = (par.mar.nu[j - 1] - n0[j] * uT) / (y * dn), r = Math.abs(c) < 1e-15 ? Infinity : 1 / c;
+        if (r !== s.r && !(Math.abs(r - s.r) < 1e-12 * Math.abs(r))) { s.r = r; ch = true; par = paraxial(sys, nW[pw], stopIdx, objInf); } }
       for (let j = 1; j < N; j++) if (S[j].tsolve === 'M') {
         const u = par.mar.nu[j] / nW[pw][j];
         if (Math.abs(u) > 1e-15) { const t = -par.mar.y[j] / u; if (Math.abs(t - S[j].t) > 1e-12) { S[j].t = t; ch = true; } }
@@ -1682,8 +1693,8 @@ const OE = (() => {
   function getVars(sys) {
     const v = [], ctl = (k, i) => mcCtl(sys, k, i);
     sys.surfaces.forEach((s, i) => {
-      if (s.vr && !ctl('c', i)) v.push({ si: i, kind: 'c' });
-      if (s.vt && s.tsolve !== 'M' && !ctl('t', i)) v.push({ si: i, kind: 't' });
+      if (s.vr && !s.rsolve && !ctl('c', i)) v.push({ si: i, kind: 'c' });
+      if (s.vt && !s.tsolve && !ctl('t', i)) v.push({ si: i, kind: 't' });
       if (s.vk && !ctl('k', i)) v.push({ si: i, kind: 'k' });
       for (const a of ASPH) if (s['v' + a]) v.push({ si: i, kind: a });
       if (s.vg && !isMirror(s) && parseModel(s.glass)) { v.push({ si: i, kind: 'nd' }); v.push({ si: i, kind: 'vd' }); }
@@ -2047,7 +2058,7 @@ const OE = (() => {
   /** fige les solves (épaisseurs calculées) pour que le compensateur soit numérique */
   function tolFreeze(sys) {
     const M = prepare(sys), s = structuredClone(sys); delete s.mc;
-    if (M.ok) s.surfaces.forEach((x, j) => { if (x.tsolve) x.t = M.S[j].t; x.tsolve = ''; }); // épaisseurs saisies conservées (la dilatation thermique est réappliquée par prepare)
+    if (M.ok) s.surfaces.forEach((x, j) => { if (x.tsolve) x.t = M.S[j].t; x.tsolve = ''; if (x.rsolve) x.r = M.S[j].r; x.rsolve = ''; }); // épaisseurs saisies conservées (la dilatation thermique est réappliquée par prepare)
     return s;
   }
   /** la tolérance « type » a-t-elle un sens sur la surface j ? */
@@ -2287,8 +2298,8 @@ const OE = (() => {
    * Le système principal porte toujours les valeurs de la configuration courante ; mcSync les recopie dans ops[].v[cur].
    */
   const MCT = {
-    THI: { l: 'Épaisseur', u: 'mm', s: 1, get: (S, i) => S.surfaces[i] && S.surfaces[i].t, set: (S, i, x) => { const q = S.surfaces[i]; if (q) { q.t = +x; if (q.tsolve === 'M') q.tsolve = ''; } }, num: 1, zmx: 'THIC', cv: 'THI', var: 't' },
-    RAD: { l: 'Rayon', u: 'mm', s: 1, get: (S, i) => S.surfaces[i] && S.surfaces[i].r, set: (S, i, x) => { if (S.surfaces[i]) S.surfaces[i].r = +x; }, num: 1, cv: 'RDY', var: 'c' },
+    THI: { l: 'Épaisseur', u: 'mm', s: 1, get: (S, i) => S.surfaces[i] && S.surfaces[i].t, set: (S, i, x) => { const q = S.surfaces[i]; if (q) { q.t = +x; if (q.tsolve) q.tsolve = ''; } }, num: 1, zmx: 'THIC', cv: 'THI', var: 't' },
+    RAD: { l: 'Rayon', u: 'mm', s: 1, get: (S, i) => S.surfaces[i] && S.surfaces[i].r, set: (S, i, x) => { const q = S.surfaces[i]; if (q) { q.r = +x; if (q.rsolve) q.rsolve = ''; } }, num: 1, cv: 'RDY', var: 'c' },
     CNC: { l: 'Conique', s: 1, get: (S, i) => S.surfaces[i] && (S.surfaces[i].k || 0), set: (S, i, x) => { if (S.surfaces[i]) S.surfaces[i].k = +x; }, num: 1, zmx: 'CONN', cv: 'K', var: 'k' },
     GLA: { l: 'Verre', s: 1, get: (S, i) => S.surfaces[i] && (S.surfaces[i].glass || ''), set: (S, i, x) => { if (S.surfaces[i]) S.surfaces[i].glass = String(x || ''); }, zmx: 'GLSS', cv: 'GLA' },
     SD: { l: '½ diamètre', u: 'mm', s: 1, get: (S, i) => S.surfaces[i] && S.surfaces[i].sd, set: (S, i, x) => { const q = S.surfaces[i]; if (q) { q.sd = +x; q.sdFixed = true; } }, num: 1, zmx: 'SDIA', cv: 'CIR' },

@@ -273,6 +273,9 @@ tr.oauto td.onum{color:var(--acc)}tr.oimg td{background:var(--panel2)}
 .oL,.oR{display:flex;flex-direction:column;min-height:0;min-width:0}
 .oL{overflow:auto;padding-right:4px}
 .akst{font-size:11.5px;padding:2px 8px;border-radius:10px;background:var(--panel2);color:var(--mut)}.akst.ok{background:rgba(22,163,74,.15);color:#16a34a;font-weight:600}.akst.ko{background:rgba(220,38,38,.14);color:#dc2626;font-weight:600}
+.bt.vset.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.svpop{position:fixed;z-index:300;width:290px;background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 36px rgba(0,0,0,.45);padding:10px 12px;font-size:12.5px}.svpop .svh{font-weight:600;margin-bottom:6px}.svpop .ck{display:block;margin:3px 0}.svpop .svf{margin:6px 0 0 20px;display:flex;align-items:center;gap:4px}
+.tg.sv0{opacity:.35}.tg.sv0:hover{opacity:1}
 .svov{position:fixed;inset:0;z-index:400;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center}.svbox{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.4);padding:16px 18px;width:min(460px,92vw)}.svbox h3{margin:0 0 10px;font-size:15px}.svbox label{font-size:12px;opacity:.8;display:block;margin-bottom:4px}
 .pvw{position:fixed;inset:0;z-index:300;background:rgba(15,23,42,.72);display:none;flex-direction:column}.pvw.open{display:flex}.pvh{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line)}.pvb{flex:1;overflow:auto;padding:18px 0;display:flex;flex-direction:column;align-items:center;gap:16px}.pvp{position:relative;background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.35);flex:none}.pvp canvas{display:block}.pvn{position:absolute;right:8px;bottom:6px;font-size:11px;color:#6b7686;background:rgba(255,255,255,.85);padding:1px 6px;border-radius:8px}
 .gtip{position:absolute;pointer-events:none;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:11.5px;box-shadow:var(--shadow);z-index:5;max-width:230px}
@@ -321,6 +324,8 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
       <hr>
       <button data-act="dlZmx">Exporter Zemax (.zmx)</button>
       <button data-act="dlSeq">Exporter CODE V (.seq)</button>
+      <button data-act="mfSeq">Exporter la fonction de mérite → CODE V (macro AUT)</button>
+      <button data-act="mfZmx">Exporter la fonction de mérite → Zemax (tableau MFE)</button>
       <button data-act="import">Importer un système (Zemax / CODE V / JSON)</button>
       <button data-act="export">Afficher / copier le texte (JSON / .zmx / .seq)</button>
       <hr>

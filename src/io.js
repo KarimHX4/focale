@@ -326,7 +326,7 @@ const IO = (() => {
 
   const cv0 = (s, objInf) => E.FTYPES[E.FTYPES[s.ftype] ? s.ftype : (objInf ? 'ang' : 'obj')].cv;
   function toSeq(s) {
-    const W = [], S = s.surfaces, N = S.length - 1, L = [], TS = solvedT(s), ob = obsOut(s);
+    const W = [], S = s.surfaces, N = S.length - 1, L = [], TS = solvedT(s), SR = solvedR(s), ob = obsOut(s); solveWarn(s, W, 'CODE V');
     const objInf = !isFinite(S[0].t) || Math.abs(S[0].t) > 1e10;
     const wls = s.wavelengths.map(w => w.um);
     const priv = new Map();
@@ -345,7 +345,7 @@ const IO = (() => {
     const body = [];
     body.push(`SO ${r(objInf ? 0 : S[0].r)} ${objInf ? '1e+18' : r(S[0].t)}${S[0].glass && !E.isAir(S[0].glass) ? ' ' + gl(S[0].glass) : ''}`);
     for (let i = 1; i < N; i++) {
-      const x = S[i]; body.push(`S ${r(x.r)} ${r(x.tsolve === 'M' ? TS[i] : x.t)} ${gl(x.glass)}`.trim());
+      const x = S[i]; body.push(`S ${r(SR[i])} ${r(x.tsolve ? TS[i] : x.t)} ${gl(x.glass)}`.trim());
       if (x.stop) body.push('  STO');
       if (ob && ob.j === i) body.push(`  CIR OBS ${fmtN(ob.r)}`); // obstruction centrale de pupille → obstruction circulaire sur le diaphragme // qualificatif de la surface courante, comme les .seq écrits par CODE V (« STO r t » n'y crée pas de surface)
       if (x.tsolve === 'M' && i !== N - 1) W.push(`S${i} : solve de mise au point exporté comme épaisseur fixe`);
@@ -355,7 +355,7 @@ const IO = (() => {
       if (x.sdFixed) body.push(`  CIR ${r(x.sd)}`);
       if (isDec(x)) { if (x.dmode === 'DAR' || x.dmode === 'BEN') body.push('  ' + x.dmode); body.push(`  XDE ${fmtN(x.dx || 0)}; YDE ${fmtN(x.dy || 0)}; ZDE ${fmtN(x.dz || 0)}; ADE ${fmtN(x.tx || 0)}; BDE ${fmtN(x.ty || 0)}; CDE ${fmtN(x.tz || 0)}`); }
       if (x.tsolve === 'M' && i === N - 1) body.push('  PIM');
-      if (x.vr) body.push('  CCY 0'); if (x.vt && x.tsolve !== 'M') body.push('  THC 0');
+      if (x.vr && !x.rsolve) body.push('  CCY 0'); if (x.vt && !x.tsolve) body.push('  THC 0');
       if (x.elem === 'grating') { const a = (x.gang || 0) * Math.PI / 180; body.push(`  GRT; GRO ${x.gm ?? 1}; GRS ${fmtN(1 / (x.lpmm || 600))}; GRX ${fmtN(-Math.sin(a))}; GRY ${fmtN(Math.cos(a))}; GRZ 0`); W.push(`S${i} : réseau exporté en GRT/GRO/GRS (à vérifier dans CODE V)`); }
       if (x.elem === 'ideal') { body.push(`! S${i} : lentille idéale f = ${x.fid} non exportée`); W.push(`S${i} : lentille idéale non exportée (surface plane)`); }
       if (x.elem === 'polarizer' || x.elem === 'waveplate') { body.push(`! S${i} : ${x.elem === 'polarizer' ? 'polariseur' : 'lame d\'onde'} non exporté`); W.push(`S${i} : élément de polarisation non exporté`); }
@@ -514,8 +514,12 @@ const IO = (() => {
 
   /** épaisseurs résolues (solves) pour l'export en valeurs fixes */
   function solvedT(s) { try { const M = E.prepare(s); if (M.ok) return M.S.map(x => x.t); } catch (e) { } return s.surfaces.map(x => x.t); }
+  /** rayons résolus (solves F/#, angle marginal, pickup) */
+  function solvedR(s) { try { const M = E.prepare(s); if (M.ok) return s.surfaces.map((x, j) => x.rsolve ? M.S[j].r : x.r); } catch (e) { } return s.surfaces.map(x => x.r); }
+  /** avertissement pour les solves exportés en valeurs fixes */
+  function solveWarn(s, W, prog) { const L = []; s.surfaces.forEach((x, j) => { if (x.rsolve) L.push(`R${j} (${x.rsolve})`); if (x.tsolve && x.tsolve !== 'M') L.push(`T${j} (${x.tsolve})`); }); if (L.length) W.push(`Solves exportés comme valeurs fixes (${prog}) : ${L.join(', ')}`); }
   function toZMX(s) {
-    const W = [], S = s.surfaces, N = S.length - 1, objInf = !isFinite(S[0].t) || Math.abs(S[0].t) > 1e10, TS = solvedT(s);
+    const W = [], S = s.surfaces, N = S.length - 1, objInf = !isFinite(S[0].t) || Math.abs(S[0].t) > 1e10, TS = solvedT(s), SR = solvedR(s); solveWarn(s, W, 'Zemax');
     const cats = new Set(), out = [];
     const pad = (arr, n = 12) => { const a = arr.slice(0, n); while (a.length < n) a.push(0); return a.map(v => fmtN(v)).join(' '); };
     // surfaces Zemax (les décentrements deviennent des coordinate breaks)
@@ -530,7 +534,7 @@ const IO = (() => {
     S.forEach((x, i) => {
       const t = i === N ? 0 : TS[i], dec = i > 0 && i < N && isDec(x);
       zmap[i] = zs.length + (dec ? 1 : 0); ztmap[i] = zs.length + (dec ? (x.dmode === 'DEC' ? 1 : 2) : 0);
-      const surf = { type: 'STANDARD', curv: isFinite(x.r) && x.r ? 1 / x.r : 0, disz: t, glas: glasLine(x.glass), sd: x.sd, fixed: x.sdFixed, coni: x.k, parm: {}, stop: x.stop, comm: x.comment || '', obs: ob && ob.j === i ? ob.r : 0 };
+      const surf = { type: 'STANDARD', curv: isFinite(SR[i]) && SR[i] ? 1 / SR[i] : 0, disz: t, glas: glasLine(x.glass), sd: x.sd, fixed: x.sdFixed, coni: x.k, parm: {}, stop: x.stop, comm: x.comment || '', obs: ob && ob.j === i ? ob.r : 0 };
       if (E.ASPK.some(a => x[a])) { surf.type = 'EVENASPH'; surf.parm = { 1: 0, 2: x.a4 || 0, 3: x.a6 || 0, 4: x.a8 || 0, 5: x.a10 || 0, 6: x.a12 || 0, 7: x.a14 || 0, 8: x.a16 || 0 }; if (x.a18 || x.a20) W.push(`S${i} : coefficients A18, A20 non exportés (EVENASPH s'arrête à r¹⁶)`); }
       if (x.tce != null && x.tce !== '') surf.tce = +x.tce;
       if (x.type === 'TOR') { if (surf.type === 'EVENASPH') W.push(`S${i} : asphères d'une surface torique non exportées (BICONIC)`); surf.type = 'BICONIC'; surf.parm = { 1: isFinite(+x.rx) && +x.rx ? +x.rx : 0, 2: +x.kx || 0 }; }
@@ -597,6 +601,75 @@ const IO = (() => {
     return { text: out.join('\r\n') + '\r\n', warnings: W };
   }
 
-  return { decode, detect, parseSeq, toSeq, parseZMX, toZMX, fitCauchy };
+
+  /* ---------------- Export de la fonction de mérite ---------------- */
+  const fmtV = v => v == null || v === '' || !isFinite(+v) ? '' : String(+(+v).toPrecision(10));
+  const CMP = { eq: '=', ge: '>', le: '<' };
+  /** CODE V : macro AUT (contraintes exactes, comme le défaut de CODE V) ; ce qui n'a pas d'équivalent sûr est laissé en commentaire */
+  function meritToCodeV(sys) {
+    E.meritUpgrade(sys); const mf = sys.merit || {}, N = sys.surfaces.length - 1, L = [], W = [];
+    const pu = mf.pupil || { type: 'GQ', rings: 3, arms: 8 };
+    L.push(`! Fonction de mérite exportée de Focale — ${sys.title || 'système'}`, '! À lancer dans CODE V après avoir chargé le système (.seq exporté par Focale), puis vérifier et compléter.', '! Dans CODE V, une contrainte « = < > » est exacte (multiplicateurs de Lagrange) par défaut.', 'AUT');
+    L.push(`! Critère image Focale : ${({ SPOT: 'spot RMS', WFE: 'front d\'onde RMS', MTF: `contraste FTM à ${mf.mtfF || 30} cy/mm`, NONE: 'aucun' })[mf.image || 'SPOT']}, réf. ${mf.ref === 'chief' ? 'rayon principal' : 'barycentre'}, pupille ${pu.type === 'RA' ? `grille ${pu.grid || 8}×${pu.grid || 8}` : `Gauss ${pu.rings || 3}×${pu.arms || 8}`}`);
+    if (mf.image === 'WFE') L.push('! → choisir la fonction d\'erreur « front d\'onde » dans la boîte AUT de CODE V');
+    if (mf.image === 'MTF') L.push('! → choisir la fonction d\'erreur FTM dans la boîte AUT de CODE V');
+    const direct = { EFL: 'EFL', BFL: 'BFL' }, bound = { MNCG: 'MNT', MXCG: 'MXT', MNEG: 'MNE', MNCA: 'MNA' };
+    (mf.ops || []).forEach((o, i) => {
+      const d = E.OPS[o.type] || {}, cmp = CMP[o.cmp || d.kind] || '=', t = fmtV(o.target), note = `${o.lag ? 'exacte' : `pondérée W=${o.weight}`} dans Focale`;
+      if (o.type === 'BLNK') { L.push(`! ${o.c || ''}`); return; }
+      if (+o.weight === 0 && !o.lag) { L.push(`! ligne ${i + 1} : ${o.type} (poids 0, calcul seul) — non exportée`); return; }
+      if (direct[o.type]) { L.push(`${direct[o.type]} ${cmp} ${t}${o.w ? ` W${o.w}` : ''}   ! ${note}`); return; }
+      if (bound[o.type] && !+o.s1 && !+o.s2) { L.push(`${bound[o.type]} ${t}   ! ${d.label} — ${note}`); return; }
+      L.push(`! ligne ${i + 1} : ${o.type} ${cmp} ${t} (${d.label}${o.s1 ? `, S${o.s1}` : ''}${o.s2 ? `…S${o.s2}` : ''}${o.hy ? `, Hy ${o.hy}` : ''}${o.py ? `, Py ${o.py}` : ''}) — équivalent CODE V à saisir${d.aka ? ` (${d.aka})` : ''}`);
+      W.push(o.type);
+    });
+    L.push('GO');
+    return { text: L.join('\n') + '\n', warnings: W.length ? [`Sans équivalent direct (laissés en commentaires) : ${[...new Set(W)].join(', ')}`] : [] };
+  }
+  /** Zemax : tableau de l'éditeur de fonction de mérite (colonnes Type, Int1, Int2, Hx, Hy, Px, Py, Cible, Poids), ≥ / ≤ traduits par OPGT / OPLT */
+  function meritToZemax(sys) {
+    E.meritUpgrade(sys); const mf = sys.merit || {}, N = sys.surfaces.length - 1, nW = (sys.wavelengths || []).length, rows = [], W = [];
+    const ws = (sys.wavelengths || []).map(w => w.um), wmin = ws.indexOf(Math.min(...ws)) + 1, wmax = ws.indexOf(Math.max(...ws)) + 1;
+    const nf = (sys.fields || []).length, fR = Math.max(1e-12, ...(sys.fields || []).map(f => Math.hypot(+f.x || 0, +f.y || 0))), fh = k => { const f = sys.fields[Math.max(0, k - 1)] || {}; return [(+f.x || 0) / fR, (+f.y || 0) / fR]; };
+    const R = (type, o = {}) => ({ type, i1: '', i2: '', hx: '', hy: '', px: '', py: '', t: '', w: '', c: '', ...o });
+    const map = o => {
+      const d = E.OPS[o.type] || {}, w = +o.w || 0;
+      switch (o.type) {
+        case 'EFL': return R('EFFL', { i2: w || '' }); case 'TTL': return R('TOTR'); case 'IMGH': return R('PIMH', { i2: w || '' });
+        case 'OAL': return R('TTHI', { i1: 1, i2: N - 2 }); case 'RIMH': return R('REAY', { i1: 0, hy: 1 });
+        case 'DIST': return R('DISG', { hy: 1 }); case 'DISM': return R('DIMX');
+        case 'AXCL': case 'LACL': return R(o.type, { i1: wmin, i2: wmax });
+        case 'SPOT': case 'WFER': { const F = +o.fi > 0 ? [+o.fi] : Array.from({ length: nf }, (_, k) => k + 1); return F.map(k => { const [hx, hy] = fh(k); return R(o.type === 'SPOT' ? 'RSCE' : 'RWCE', { i1: 3, i2: o.type === 'SPOT' ? 0 : '', hx, hy, c: `champ ${k}` }); }); }
+        case 'MTFT': case 'MTFS': { const F = +o.fi > 0 ? [+o.fi] : Array.from({ length: nf }, (_, k) => k + 1); return F.map(k => R(o.type, { i1: 1, i2: 0, hx: k, hy: +o.p || 30, c: 'Samp, Wave, Field, Freq' })); }
+        case 'CTHK': return R('CTGT', { i1: Math.round(+o.p || 1) }); case 'ETHK': return R('ETGT', { i1: Math.round(+o.p || 1) });
+        case 'BFL': case 'ENPD': case 'MTFA': case 'RELI': case 'GLTR': case 'LONA': return null;
+        default: { const c = d.cols || [], r = R(o.type);
+          if (c.includes('s1')) r.i1 = o.s1 ?? ''; if (c.includes('s2')) r.i2 = o.s2 ?? '';
+          if (c.includes('w')) { if (['RSCE', 'RSCH', 'RWCE', 'RWCH'].includes(o.type)) { r.i1 = o.p ?? 3; r.i2 = w || 0; } else if (['ZERN'].includes(o.type)) { r.i1 = o.p ?? 9; r.i2 = w || ''; } else if (!c.includes('s2')) r.i2 = w || ''; }
+          for (const k of ['hx', 'hy', 'px', 'py']) if (c.includes(k)) r[k] = o[k] ?? 0;
+          if (d.list && c.includes('s1') && !+o.s1 && !+o.s2) { r.i1 = 1; r.i2 = N - 1; }
+          if (o.type === 'CONS') r.t = o.p; return r; }
+      }
+    };
+    const idx = new Map(); // ligne Focale → ligne Zemax (pour les opérations)
+    rows.push(R('BLNK', { c: `Fonction de mérite exportée de Focale — ${sys.title || ''}` }));
+    rows.push(R('BLNK', { c: `Critère image : ${({ SPOT: 'RMS Spot Radius', WFE: 'RMS Wavefront', MTF: 'Contrast', NONE: 'aucun' })[mf.image || 'SPOT']}, ${mf.ref === 'chief' ? 'Chief ray' : 'Centroid'}, ${(mf.pupil || {}).type === 'RA' ? 'Rectangular array' : `Gaussian quadrature ${(mf.pupil || {}).rings || 3} rings ${(mf.pupil || {}).arms || 8} arms`} — à générer avec l'Optimization Wizard de Zemax` }));
+    (mf.ops || []).forEach((o, i) => {
+      const d = E.OPS[o.type] || {}; if (o.type === 'BLNK') { rows.push(R('BLNK', { c: o.c || '' })); idx.set(i + 1, rows.length); return; }
+      let m = map(o); if (!m) { rows.push(R('BLNK', { c: `${o.type} (${d.label}) : pas d'opérande Zemax équivalent` })); W.push(o.type); idx.set(i + 1, rows.length); return; }
+      const list = Array.isArray(m) ? m : [m], cmp = o.cmp || d.kind, isGL = /GT$|LT$|^MN|^MX|^OPGT|^OPLT/.test(list[0].type);
+      for (const r of list) {
+        if (d.math) { r.i1 = o.s1 != null ? idx.get(+o.s1) ?? '' : r.i1; if (d.cols.includes('s2')) r.i2 = o.s2 != null ? idx.get(+o.s2) ?? '' : r.i2; }
+        const wt = o.lag ? 1000 : (o.weight ?? 1), tg = o.type === 'SPOT' ? +o.target / 1000 : o.target; // SPOT en µm → RSCE en mm
+        if (cmp === 'eq' || isGL || ['MNCG', 'MXCG'].includes(o.type)) { r.t = r.t !== '' ? r.t : tg; r.w = wt; if (o.lag) r.c = (r.c ? r.c + ' · ' : '') + 'exacte dans Focale (poids élevé)'; rows.push(r); }
+        else { r.w = 0; rows.push(r); const k = rows.length; rows.push(R(cmp === 'ge' ? 'OPGT' : 'OPLT', { i1: k, t: tg, w: wt, c: o.lag ? 'exacte dans Focale (poids élevé)' : '' })); }
+      }
+      idx.set(i + 1, rows.length - (cmp !== 'eq' && !isGL && !['MNCG', 'MXCG'].includes(o.type) ? 1 : 0));
+    });
+    const head = ['#', 'Type', 'Int1', 'Int2', 'Hx', 'Hy', 'Px', 'Py', 'Target', 'Weight', 'Comment'];
+    const text = [head.join('\t'), ...rows.map((r, k) => [k + 1, r.type, r.i1, r.i2, fmtV(r.hx), fmtV(r.hy), fmtV(r.px), fmtV(r.py), fmtV(r.t), fmtV(r.w), r.c].join('\t'))].join('\r\n') + '\r\n';
+    return { text, rows, warnings: W.length ? [`Sans équivalent Zemax : ${[...new Set(W)].join(', ')}`] : [] };
+  }
+  return { decode, detect, parseSeq, toSeq, parseZMX, toZMX, fitCauchy, meritToCodeV, meritToZemax };
 })();
 if (typeof module !== 'undefined') module.exports = IO;

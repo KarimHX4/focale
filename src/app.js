@@ -42,6 +42,12 @@ const toJSON = o => JSON.stringify(o, rep, 1);
 const fromJSON = s => JSON.parse(s, rev);
 function toast(msg, ms = 2200) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('on'), ms); }
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+/** renumérote les références de surfaces (pickups, colonnes S1/S2 des opérandes) après insertion (n > 0) ou suppression (n < 0) à l'indice at */
+function shiftRefs(sys, at, n) {
+  const map = k => { k = Math.round(+k); if (!(k >= at)) return k; if (n > 0) return k + n; return k < at - n ? null : k + n; };
+  for (const x of sys.surfaces) { for (const [kk, sk] of [['rpk', 'rsolve'], ['tpk', 'tsolve']]) if (x[sk] === 'P' && x[kk] != null) { const m = map(x[kk]); if (m == null) { x[sk] = ''; } else x[kk] = m; } }
+  for (const o of (sys.merit && sys.merit.ops) || []) { const d = OE.OPS[o.type]; if (!d || d.math) continue; for (const c of ['s1', 's2']) if ((d.cols || []).includes(c) && +o[c] > 0) { const m = map(o[c]); if (m != null) o[c] = m; } }
+}
 const newSurf = (o = {}) => ({ r: Infinity, t: 5, glass: '', sd: 0, sdFixed: false, k: 0, a4: 0, a6: 0, a8: 0, a10: 0, a12: 0, a14: 0, a16: 0, a18: 0, a20: 0, stop: false, comment: '', vr: false, vt: false, vk: false, tsolve: '',
   dx: 0, dy: 0, dz: 0, tx: 0, ty: 0, tz: 0, dmode: 'DEC', ...o });
 const isDec = s => !!(s.dx || s.dy || s.dz || s.tx || s.ty || s.tz);
@@ -173,6 +179,36 @@ function status(extra) {
 }
 
 /* ---------------- Éditeur de lentilles ---------------- */
+/** bouton de solve d'une cellule rayon (r) ou épaisseur (t) : lettre du solve actif, ou « S » discret */
+const SOLVES = { r: { F: 'F/# image (angle marginal u′ = −1/2F)', U: 'Angle marginal u′ après la surface', P: 'Pickup du rayon d\'une autre surface' }, t: { M: 'Hauteur marginale nulle à la surface suivante (foyer paraxial)', P: 'Pickup de l\'épaisseur d\'une autre surface' } };
+function solveBtn(i, k, s) {
+  const v = k === 'r' ? s.rsolve : s.tsolve, d = v ? SOLVES[k][v] + (v === 'F' ? ` = ${s.rsv}` : v === 'U' ? ` = ${s.rsv}` : v === 'P' ? ` : S${k === 'r' ? s.rpk : s.tpk} × ${k === 'r' ? (s.rps ?? 1) : (s.tps ?? 1)}${k === 't' && +s.tpo ? ` + ${s.tpo}` : ''}` : '') : '';
+  return `<button class="tg m ${v ? 'on' : 'sv0'}" data-solve="${k}" data-i="${i}" title="${v ? 'Solve : ' + esc(d) + ' — clic pour modifier' : 'Solve (F/#, angle marginal, pickup' + (k === 't' ? ', foyer paraxial M' : '') + ')'}">${v || 'S'}</button>`;
+}
+/** fenêtre de choix du solve (comme la cellule « solve » de Zemax / les solves de CODE V) */
+function solvePop(btn, i, k) {
+  $('#svpop')?.remove(); const s = App.sys.surfaces[i], cur = k === 'r' ? s.rsolve || '' : s.tsolve || '', el = document.createElement('div'); el.id = 'svpop'; el.className = 'svpop';
+  const wf = App.M && App.M.ok ? +App.M.par.wfno.toFixed(3) : 4;
+  const opts = k === 'r' ? [['', 'Aucun (valeur fixe)'], ['F', 'F/# image'], ['U', 'Angle marginal u′'], ['P', 'Pickup']] : [['', 'Aucun (valeur fixe)'], ['M', 'Foyer paraxial (hauteur marginale nulle)'], ['P', 'Pickup']];
+  el.innerHTML = `<div class="svh">Solve sur ${k === 'r' ? 'le rayon' : 'l\'épaisseur'} de S${i}</div>${opts.map(([v, l]) => `<label class="ck"><input type="radio" name="svk" value="${v}" ${cur === v ? 'checked' : ''}> ${l}</label>`).join('')}
+    <div class="svf" data-for="F">F/# <input class="in" id="svF" value="${s.rsolve === 'F' ? s.rsv : wf}" style="width:70px"></div>
+    <div class="svf" data-for="U">u′ <input class="in" id="svU" value="${s.rsolve === 'U' ? s.rsv : 0}" style="width:70px"> <span class="hint">(rad, &lt; 0 : convergent)</span></div>
+    <div class="svf" data-for="P">depuis S <input class="in" id="svK" value="${(k === 'r' ? s.rpk : s.tpk) ?? Math.max(1, i - 1)}" style="width:44px"> × <input class="in" id="svS" value="${(k === 'r' ? s.rps : s.tps) ?? (k === 'r' ? -1 : 1)}" style="width:52px">${k === 't' ? ` + <input class="in" id="svO" value="${s.tpo ?? 0}" style="width:52px">` : ''}</div>
+    <div class="row" style="justify-content:flex-end;gap:6px;margin-top:6px"><button class="bt" data-sv="0">Annuler</button><button class="tb pri" data-sv="1">Appliquer</button></div>`;
+  document.body.appendChild(el); const r = btn.getBoundingClientRect(); el.style.left = Math.min(r.left, innerWidth - 300) + 'px'; el.style.top = Math.min(r.bottom + 4, innerHeight - 260) + 'px';
+  const sync = () => { const v = el.querySelector('[name=svk]:checked')?.value || ''; el.querySelectorAll('.svf').forEach(d => d.style.display = d.dataset.for === v ? '' : 'none'); };
+  el.addEventListener('change', sync); sync();
+  const close = () => { el.remove(); document.removeEventListener('mousedown', off, true); }, off = e => { if (!el.contains(e.target)) close(); };
+  setTimeout(() => document.addEventListener('mousedown', off, true), 0);
+  el.addEventListener('click', e => { const b = e.target.closest('[data-sv]'); if (!b) return; if (b.dataset.sv === '0') return close();
+    const v = el.querySelector('[name=svk]:checked')?.value || '', num = id => parseFloat(String($('#' + id)?.value ?? '').replace(',', '.'));
+    if (v === 'F' && !(num('svF') > 0)) return toast('F/# invalide'); if (v === 'U' && !isFinite(num('svU'))) return toast('Angle invalide');
+    if (v === 'P') { const j = Math.round(num('svK')); if (!(j >= 1 && j < App.sys.surfaces.length - (k === 't' ? 1 : 0)) || j === i) return toast('Surface source invalide'); if (!isFinite(num('svS')) || (k === 'r' && !num('svS'))) return toast('Facteur invalide'); }
+    commit(S => { const x = S.surfaces[i];
+      if (k === 'r') { if (!v && x.rsolve && App.M && App.M.ok) x.r = App.M.S[i].r; x.rsolve = v; if (v === 'F') x.rsv = num('svF'); if (v === 'U') x.rsv = num('svU'); if (v === 'P') { x.rpk = Math.round(num('svK')); x.rps = num('svS'); } if (v) x.vr = false; }
+      else { if (!v && x.tsolve && App.M && App.M.ok) x.t = App.M.S[i].t; x.tsolve = v; if (v === 'P') { x.tpk = Math.round(num('svK')); x.tps = num('svS'); x.tpo = num('svO') || 0; } if (v) x.vt = false; } });
+    close(); toast(v ? `Solve ${v} sur ${k === 'r' ? 'R' : 'T'}${i}` : `Solve retiré : ${k === 'r' ? 'R' : 'T'}${i} fixé à sa valeur actuelle`); });
+}
 function renderLDE() {
   const S = App.sys.surfaces, N = S.length - 1, MS = App.M && App.M.ok ? App.M.S : null;
   const asph = App.showAsph, AK = asphKeys();
@@ -185,14 +221,14 @@ function renderLDE() {
     if (s.type && s.type !== 'STD') badge += `<span class="b fr">${s.type === 'XY' ? 'XY' : s.type === 'TOR' ? (isFinite(+s.rx) && +s.rx ? 'TOR' : 'CYL') : 'ZRN'}</span>`;
     if (s.elem === 'doe') badge += '<span class="b fr" title="Surface diffractive">DOE</span>';
     // valeurs de la prescription ; seules les grandeurs calculées (solve M, demi-diamètre automatique) viennent du modèle préparé
-    const tVal = MS && s.tsolve === 'M' ? MS[i].t : s.t, sdVal = MS && !s.sdFixed ? MS[i].sd : s.sd;
+    const tVal = MS && s.tsolve ? MS[i].t : s.t, rVal = MS && s.rsolve ? MS[i].r : s.r, sdVal = MS && !s.sdFixed ? MS[i].sd : s.sd;
     const gOK = mir || OE.isAir(s.glass) || isFinite(OE.glassN(s.glass, 0.5876));
     h += `<tr data-i="${i}" class="${i === App.sel ? 'sel' : ''}">
       <td class="n">${i}</td><td class="ty">${badge}</td>
       <td>${obj || img ? '' : `<select class="el" data-i="${i}" data-k="elem">${ELEM.map(([k, l]) => `<option value="${k}" ${elemOf(s) === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`}</td>
       <td><div class="cell"><input class="c" data-i="${i}" data-k="comment" value="${esc(s.comment)}"></div></td>
-      <td><div class="cell"><input data-i="${i}" data-k="r" value="${obj ? '' : fmt(s.r, 7)}" ${obj ? 'disabled' : ''}>${obj || img ? '' : tg(i, 'vr', 'V', s.vr, '', 'Variable (optimisation)')}</div></td>
-      <td><div class="cell"><input data-i="${i}" data-k="t" class="${s.tsolve === 'M' ? 'auto' : ''}" value="${img ? '' : fmt(tVal, 7)}" ${img ? 'disabled' : ''}>${img || obj ? '' : tg(i, 'vt', 'V', s.vt, '', 'Variable (optimisation)') + tg(i, 'tsolve', 'M', s.tsolve === 'M', 'm', 'Solve : hauteur marginale nulle à la surface suivante (focalisation paraxiale)')}</div></td>
+      <td><div class="cell"><input data-i="${i}" data-k="r" class="${s.rsolve ? 'auto' : ''}" value="${obj ? '' : fmt(rVal, 7)}" ${obj ? 'disabled' : ''}>${obj || img ? '' : tg(i, 'vr', 'V', s.vr && !s.rsolve, '', 'Variable (optimisation)') + solveBtn(i, 'r', s)}</div></td>
+      <td><div class="cell"><input data-i="${i}" data-k="t" class="${s.tsolve ? 'auto' : ''}" value="${img ? '' : fmt(tVal, 7)}" ${img ? 'disabled' : ''}>${img || obj ? '' : tg(i, 'vt', 'V', s.vt && !s.tsolve, '', 'Variable (optimisation)') + solveBtn(i, 't', s)}</div></td>
       <td><div class="cell"><input class="g ${gOK ? '' : 'bad'} ${s.vg && OE.parseModel(s.glass) ? 'model' : ''}" list="glassList" data-i="${i}" data-k="glass" value="${esc(s.glass)}" ${img ? 'disabled' : ''} placeholder="${img ? '' : 'air'}" title="${s.vg ? (OE.parseModel(s.glass) ? 'Verre modèle variable (nd/νd) — à substituer par un verre réel dans la fenêtre d\'optimisation' : 'Verre réel substituable (substitution dans la fenêtre d\'optimisation)') : ''}">${obj || img || mir ? '' : tg(i, 'vg', 'V', s.vg, '', 'Verre variable : nd et νd deviennent des variables (verre modèle), puis substitution par un verre réel')}</div></td>
       <td><div class="cell"><input data-i="${i}" data-k="sd" class="${s.sdFixed ? '' : 'auto'}" value="${obj ? '' : fmt(sdVal, 5)}" ${obj ? 'disabled' : ''}>${obj ? '' : tg(i, 'sdFixed', '🔒', s.sdFixed, 'l', 'Demi-diamètre fixe (vignetage des rayons au-delà)')}</div></td>
       <td><div class="cell"><input data-i="${i}" data-k="k" value="${obj ? '' : fmt(s.k, 6)}" ${obj ? 'disabled' : ''}>${obj || img ? '' : tg(i, 'vk', 'V', s.vk, '', 'Variable (optimisation)')}</div></td>
@@ -240,8 +276,8 @@ function commitCell(i, k, raw) {
       commit(S => { S.surfaces[i].sd = v; S.surfaces[i].sdFixed = true; }); return true;
     case 'r':
       v = parseNum(raw); if (isNaN(v)) { toast('Rayon invalide'); refresh(); return false; }
-      if (v === 0) v = Infinity; if (v === s.r) return false;
-      commit(S => S.surfaces[i].r = v); return true;
+      if (v === 0) v = Infinity; { const cur = s.rsolve && App.M && App.M.ok ? App.M.S[i].r : s.r; if (v === cur || (isFinite(v) && Math.abs(v - cur) < 1e-12 * Math.abs(v))) return false; }
+      commit(S => { S.surfaces[i].r = v; S.surfaces[i].rsolve = ''; }); return true;
     case 't': {
       v = parseNum(raw, i === 0); if (isNaN(v)) { toast('Épaisseur invalide'); refresh(); return false; }
       const cur = App.M && App.M.ok ? App.M.S[i].t : s.t;
@@ -273,6 +309,7 @@ function setupLDE() {
   });
   tb.addEventListener('focusin', e => { const t = e.target; if (t.dataset && t.dataset.i != null) selectRow(+t.dataset.i, false); });
   tb.addEventListener('click', e => {
+    const sb = e.target.closest('[data-solve]'); if (sb) { solvePop(sb, +sb.dataset.i, sb.dataset.solve); return; }
     const b = e.target.closest('[data-tog]');
     if (b) {
       const i = +b.dataset.i, k = b.dataset.tog;
@@ -318,14 +355,14 @@ function setStop(i) { commit(S => S.surfaces.forEach((s, j) => s.stop = j === i)
 function lde(act) {
   const S = App.sys.surfaces, N = S.length - 1; let i = App.sel;
   switch (act) {
-    case 'insB': if (i < 1) i = 1; commit(s => s.surfaces.splice(i, 0, newSurf())); break;
-    case 'insA': { const j = Math.min(i + 1, N); commit(s => s.surfaces.splice(j, 0, newSurf())); App.sel = j; refresh(); break; }
-    case 'addLens': { const j = Math.min(i + 1, N); commit(s => s.surfaces.splice(j, 0, newSurf({ r: 50, t: 4, glass: 'N-BK7', comment: 'Lentille' }), newSurf({ r: -50, t: 10 }))); App.sel = j; refresh(); break; }
+    case 'insB': if (i < 1) i = 1; commit(s => { s.surfaces.splice(i, 0, newSurf()); shiftRefs(s, i, 1); }); break;
+    case 'insA': { const j = Math.min(i + 1, N); commit(s => { s.surfaces.splice(j, 0, newSurf()); shiftRefs(s, j, 1); }); App.sel = j; refresh(); break; }
+    case 'addLens': { const j = Math.min(i + 1, N); commit(s => { s.surfaces.splice(j, 0, newSurf({ r: 50, t: 4, glass: 'N-BK7', comment: 'Lentille' }), newSurf({ r: -50, t: 10 })); shiftRefs(s, j, 2); }); App.sel = j; refresh(); break; }
     case 'del': if (i < 1 || i >= N) return toast('Impossible de supprimer l\'objet ou l\'image'); if (N <= 2) return toast('Il faut au moins une surface');
-      commit(s => { const wasStop = s.surfaces[i].stop; s.surfaces.splice(i, 1); if (wasStop) s.surfaces[Math.min(i, s.surfaces.length - 2)].stop = true; });
+      commit(s => { const wasStop = s.surfaces[i].stop; s.surfaces.splice(i, 1); shiftRefs(s, i, -1); if (wasStop) s.surfaces[Math.min(i, s.surfaces.length - 2)].stop = true; });
       App.sel = Math.min(i, App.sys.surfaces.length - 1); refresh(); toast(`Surface ${i} supprimée — Ctrl+Z pour annuler`, 3000); break;
     case 'delEl': { if (i < 1 || i + 1 >= N) return toast('Sélectionnez la première surface d\'une lentille'); if (N <= 3) return toast('Il faut au moins une surface');
-      commit(s => { const wasStop = s.surfaces[i].stop || s.surfaces[i + 1].stop; s.surfaces.splice(i, 2); if (wasStop) s.surfaces[Math.min(i, s.surfaces.length - 2)].stop = true; });
+      commit(s => { const wasStop = s.surfaces[i].stop || s.surfaces[i + 1].stop; s.surfaces.splice(i, 2); shiftRefs(s, i, -2); if (wasStop) s.surfaces[Math.min(i, s.surfaces.length - 2)].stop = true; });
       App.sel = Math.min(i, App.sys.surfaces.length - 1); refresh(); toast(`Élément (surfaces ${i} et ${i + 1}) supprimé — Ctrl+Z pour annuler`, 3000); break; }
     case 'stop': if (i < 1 || i >= N) return toast('Sélectionnez une surface optique'); setStop(i); break;
     case 'mirror': if (i < 1 || i >= N) return; commit(s => { const x = s.surfaces[i]; x.glass = OE.isMirror(x) ? '' : 'MIRROR'; }); break;
@@ -1877,7 +1914,7 @@ function openOptim() {
         <tr><td>Air</td><td>${num('bamin', bnd.amin, '—', 52)}</td><td>${num('bamax', bnd.amax, '—', 52)}</td><td>${num('baemin', bnd.aemin, '—', 52)}</td></tr></table>
       <div class="row"><label class="ck" style="margin:0"><input type="checkbox" id="bLag" ${bnd.lag ? 'checked' : ''}> exactes</label><button class="bt" data-d="obnd" title="Écrit (ou remplace) les lignes de contraintes de bord dans l'éditeur de fonction de mérite">Écrire les contraintes</button></div>
       <h4 class="th4">Variables <span class="hint" id="onv"></span></h4>
-      <div class="row" style="flex-wrap:wrap;gap:4px"><span class="hint">Rendre variables :</span>${[['r', 'rayons'], ['ta', 'espaces d\'air'], ['tg', 'épaisseurs de verre'], ['k', 'coniques'], ['g', 'verres']].map(([k, l]) => `<button class="bt" data-d="ovset" data-k="${k}" style="height:22px">${l}</button>`).join('')}<button class="bt" data-d="ovclear" style="height:22px" title="Retire toutes les variables (V) du système">tout libérer</button></div>
+      <div class="row" style="flex-wrap:wrap;gap:4px"><span class="hint">Variables en bloc :</span>${[['r', 'rayons'], ['ta', 'espaces d\'air'], ['tg', 'épaisseurs de verre'], ['k', 'coniques'], ['g', 'verres']].map(([k, l]) => { const on = varAllOn(s, k), n = varCands(s, k).length; return `<button class="bt vset ${on ? 'on' : ''}" data-d="ovset" data-k="${k}" style="height:22px" ${n ? '' : 'disabled'} aria-pressed="${on}" title="${on ? `Tous variables (${n}) — clic pour les retirer` : `Rendre variables : ${l} (${n} surface${n > 1 ? 's' : ''})`}">${on ? '✓ ' : ''}${l}</button>`; }).join('')}<button class="bt" data-d="ovclear" style="height:22px" title="Retire toutes les variables (V) du système">tout libérer</button></div>
       <div class="oscroll" id="ovars"></div>
       ${optGlassHTML()}
       <h4 class="th4">Mise au point</h4>
@@ -1898,10 +1935,12 @@ function openOptim() {
     </div>
   </div>
   <div class="orow"><span>Cycles</span>${sel('oCyc', cyc, [['auto', 'Automatique'], ['1', '1'], ['5', '5'], ['10', '10'], ['50', '50'], ['200', '200']], 'style="width:auto"')}
-    <span style="margin-left:10px">Dérivées</span>${sel('oDer', OPT.central ? 'cen' : 'fwd', [['fwd', 'différences avant'], ['cen', 'différences centrées (×2 calculs)']], 'style="width:auto"')}
+    <span style="margin-left:10px">Dérivées</span>${sel('oDer', OPT.central ? 'cen' : 'fwd', [['fwd', 'avant'], ['cen', 'centrées (×2)']], 'style="width:auto"')}
     <span style="margin-left:18px">Recherche globale :</span>${sel('gMode', OPT.gMode || 'hammer', [['hammer', 'Perturbation du meilleur (Hammer)'], ['anneal', 'Recuit simulé'], ['multi', 'Départs multiples']], 'style="width:auto"')}<span class="hint">essais</span><input class="in" id="gCyc" value="${OPT.gCyc || 10}" style="width:50px"><span class="hint">amplitude</span><input class="in" id="gAmp" value="${OPT.gAmp || 20}" style="width:46px"><span class="hint">%</span></div>
   </div>
   <div class="df"><span class="hint grow" id="omsg"></span>
+    <button class="bt" data-d="omfx" data-k="seq" title="Macro AUT de CODE V : contraintes (exactes, comme le défaut de CODE V) et commentaires pour le reste">Exporter → CODE V</button>
+    <button class="bt" data-d="omfx" data-k="zmx" title="Tableau de l'éditeur de fonction de mérite de Zemax (texte tabulé : Type, Int1, Int2, Hx, Hy, Px, Py, Target, Weight)">Exporter → Zemax</button>
     <button class="bt" data-d="revert" title="Revient au système d'avant la dernière optimisation">Restaurer l'état initial</button>
     <button class="bt" data-d="stop">Arrêter</button>
     <button class="bt" data-d="glob" title="Perturbe aléatoirement les variables puis optimise, plusieurs fois, et garde le meilleur résultat">Recherche globale</button>
@@ -1937,18 +1976,24 @@ function optWriteBounds() {
   commit(s => { s.merit.bnd = b; s.merit.ops = s.merit.ops.filter(o => o.auto !== 'bnd'); for (const [t, v] of rows) s.merit.ops.push({ type: t, target: v, weight: 1, auto: 'bnd', ...(b.lag ? { lag: true } : {}) }); });
   toast(rows.length ? `${rows.length} contrainte(s) de bord écrite(s)` : 'Contraintes de bord retirées'); openOptim();
 }
-/** rend variables en bloc : r rayons, ta espaces d'air, tg épaisseurs de verre, k coniques, g verres */
+/** variables « en bloc » : surfaces concernées pour r rayons, ta espaces d'air, tg épaisseurs de verre, k coniques, g verres → [[j, drapeau]] */
+function varCands(sys, k) {
+  const L = sys.surfaces, N = L.length - 1, out = [];
+  for (let j = 1; j < N; j++) { const s = L[j], prev = L[j - 1], glass = !OE.isAir(s.glass) && !OE.isMirror(s), boundary = OE.isMirror(s) || glass || (!OE.isAir(prev.glass) && !OE.isMirror(prev));
+    const fold = OE.isMirror(s) && !(isFinite(s.r) && s.r) && (+s.tx || +s.ty); if (s.elem === 'ideal' || s.elem === 'grating') continue;
+    if (k === 'r' && boundary && !fold && !s.rsolve) out.push([j, 'vr']);
+    if (k === 'k' && boundary && isFinite(s.r) && s.r) out.push([j, 'vk']);
+    if (k === 'ta' && OE.isAir(s.glass) && !OE.isMirror(s) && !s.tsolve) out.push([j, 'vt']);
+    if (k === 'tg' && glass && !s.tsolve) out.push([j, 'vt']);
+    if (k === 'g' && glass && (OE.parseModel(s.glass) || OE.toModel(s.glass))) out.push([j, 'vg']); }
+  return out;
+}
+const varAllOn = (sys, k) => { const c = varCands(sys, k); return c.length > 0 && c.every(([j, f]) => sys.surfaces[j][f]); };
+/** bascule une famille de variables : toutes actives → retirées ; sinon toutes ajoutées */
 function optSetVars(k) {
-  let n = 0;
-  commit(S => { const L = S.surfaces, N = L.length - 1;
-    for (let j = 1; j < N; j++) { const s = L[j], prev = L[j - 1], glass = !OE.isAir(s.glass) && !OE.isMirror(s), boundary = OE.isMirror(s) || glass || (!OE.isAir(prev.glass) && !OE.isMirror(prev));
-      const fold = OE.isMirror(s) && !(isFinite(s.r) && s.r) && (+s.tx || +s.ty); if (s.elem === 'ideal' || s.elem === 'grating') continue;
-      if (k === 'r' && boundary && !fold && !s.vr) { s.vr = true; n++; }
-      if (k === 'k' && boundary && isFinite(s.r) && s.r && !s.vk) { s.vk = true; n++; }
-      if (k === 'ta' && OE.isAir(s.glass) && !OE.isMirror(s) && s.tsolve !== 'M' && !s.vt) { s.vt = true; n++; }
-      if (k === 'tg' && glass && !s.vt) { s.vt = true; n++; }
-      if (k === 'g' && glass && !s.vg) { const mg = OE.parseModel(s.glass) ? s.glass : OE.toModel(s.glass); if (mg) { s.vg = true; s.glass = mg; n++; } } } });
-  toast(n ? `${n} variable(s) ajoutée(s)` : 'Aucune nouvelle variable'); OPT.x0 = null; openOptim();
+  const on = varAllOn(App.sys, k), lab = { r: 'rayons', ta: 'espaces d\'air', tg: 'épaisseurs de verre', k: 'coniques', g: 'verres' }[k]; let n = 0;
+  commit(S => { for (const [j, f] of varCands(S, k)) { const s = S.surfaces[j]; if (on) { if (s[f]) { s[f] = false; n++; } } else if (!s[f]) { if (f === 'vg') { const mg = OE.parseModel(s.glass) ? s.glass : OE.toModel(s.glass); if (!mg) continue; s.glass = mg; } s[f] = true; n++; } } });
+  toast(on ? `Variables retirées : ${lab} (${n})` : n ? `Variables ajoutées : ${lab} (${n})` : `Aucune surface concernée (${lab})`); OPT.x0 = null; openOptim();
 }
 /** section « verres variables » de la fenêtre d'optimisation */
 function optGlassHTML() {
@@ -2313,11 +2358,32 @@ function sdAction(b) {
 /* Fenêtres : flottantes et non modales (on peut continuer à travailler derrière), déplaçables par la barre de titre,
    réductibles, agrandissables et redimensionnables (poignée en bas à droite). La géométrie est mémorisée par fenêtre. */
 const WIN = { key: null, geo: new Map(), state: new Map() };
+/** clé stable d'un élément de fenêtre : id, ou attributs data-* (data-o + data-i…), ou classe + rang */
+function dlgKey(el, d) {
+  if (el.id) return '#' + el.id;
+  const a = [...el.attributes].filter(x => x.name.startsWith('data-') || x.name === 'name').map(x => `[${x.name}="${CSS.escape(x.value)}"]`).join('');
+  if (a) return el.tagName.toLowerCase() + a;
+  const c = el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).map(x => CSS.escape(x)).join('.') : '';
+  const sel = el.tagName.toLowerCase() + c, all = [...d.querySelectorAll(sel)]; return { sel, k: all.indexOf(el) };
+}
+function dlgFind(d, k) { if (!k) return null; if (typeof k === 'string') { try { return d.querySelector(k); } catch (e) { return null; } } try { return d.querySelectorAll(k.sel)[k.k] || null; } catch (e) { return null; } }
+function dlgState(d) {
+  const sc = []; for (const el of d.querySelectorAll('*')) if (el.scrollTop || el.scrollLeft) sc.push([dlgKey(el, d), el.scrollTop, el.scrollLeft]);
+  const a = document.activeElement, f = a && d.contains(a) && a !== d ? { k: dlgKey(a, d), s: a.selectionStart, e: a.selectionEnd } : null;
+  return { sc, f };
+}
+function dlgRestore(d, st) {
+  for (const [k, t, l] of st.sc) { const el = dlgFind(d, k); if (el) { el.scrollTop = t; el.scrollLeft = l; } }
+  if (st.f) { const el = dlgFind(d, st.f.k); if (el && el.focus) { el.focus({ preventScroll: true }); try { if (st.f.s != null && el.setSelectionRange) el.setSelectionRange(st.f.s, st.f.e); } catch (e) { } } }
+}
 function dlg(html, wide, o = {}) {
   const d = $('#dlg'), m = $('#modal'), h2t = (html.match(/<h2>([^<]*)/) || [])[1] || '', key = h2t.trim();
   const same = m.classList.contains('open') && WIN.key === key;
   if (!same && m.classList.contains('open')) winSave();
+  // même fenêtre redessinée (après une modification) : on garde les défilements et le champ actif, sinon la vue « saute » en haut
+  const keep = same ? dlgState(d) : null;
   d.innerHTML = html; d.classList.toggle('wide', !!wide);
+  if (keep) dlgRestore(d, keep);
   const h2 = d.querySelector(':scope > h2');
   if (h2) {
     const x = h2.querySelector('.x'), c = document.createElement('span'); c.className = 'wctl';
@@ -2430,6 +2496,7 @@ function setupDlg() {
     if (a === 'opick') opPicker(b, +b.dataset.i);
     if (a === 'oup' || a === 'odn') { const i = +b.dataset.i, j = a === 'oup' ? i - 1 : i + 1; if (j < 0 || j >= App.sys.merit.ops.length) return; commit(s => { const L = s.merit.ops; [L[i], L[j]] = [L[j], L[i]]; }); openOptim(); }
     if (a === 'obnd') optWriteBounds();
+    if (a === 'omfx') exportMerit(b.dataset.k);
     if (a === 'ovset') optSetVars(b.dataset.k);
     if (a === 'odel') { commit(s => s.merit.ops.splice(+b.dataset.i, 1)); openOptim(); }
     if (a === 'run') runOpt();
@@ -3024,6 +3091,12 @@ function exportAs(kind, dl = true) {
   if (r.warnings.length) ioReport(`Export ${kind === 'zmx' ? 'Zemax (.zmx)' : 'CODE V (.seq)'}`, r.warnings, dl ? '' : '');
   return r.text;
 }
+/** exporte la fonction de mérite : CODE V (macro AUT .seq) ou Zemax (tableau de l'éditeur de fonction de mérite, texte tabulé) */
+function exportMerit(kind) {
+  const r = kind === 'zmx' ? IO.meritToZemax(structuredClone(App.sys)) : IO.meritToCodeV(structuredClone(App.sys));
+  download(fileBase() + (kind === 'zmx' ? '_MFE_zemax.txt' : '_AUT.seq'), r.text, 'text/plain');
+  if (r.warnings.length) toast(r.warnings.join(' · '), 7000);
+}
 function openExport() {
   const seg = (k, l, on) => `<button ${on ? 'class="on"' : ''} data-d="fmt${k}" onclick="this.parentNode.querySelectorAll('button').forEach(b=>b.classList.remove('on'));this.classList.add('on')">${l}</button>`;
   dlg(`<h2>Exporter <button class="x" data-d="close">✕</button></h2><div class="db">
@@ -3206,6 +3279,8 @@ function init() {
       case 'save': saveFile(false); break;
       case 'saveAs': saveFile(true); break;
       case 'dlSeq': exportAs('seq'); break;
+      case 'mfSeq': exportMerit('seq'); break;
+      case 'mfZmx': exportMerit('zmx'); break;
       case 'dlZmx': exportAs('zmx'); break;
       case 'about': openAbout(); break;
       case 'install': if (deferredInstall) { deferredInstall.prompt(); deferredInstall.userChoice.finally(() => { deferredInstall = null; $('#btnInstall').style.display = 'none'; }); } break;
