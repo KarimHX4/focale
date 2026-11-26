@@ -345,6 +345,23 @@ S 1.822175677212961 1.085816541265434 743972.448504\nS -21.29932312571177 0.1000
     { const P = 64, I = new Float64Array(P * P).fill(1), b = OE.binPSF(I, P, 1, 8, 'coin', 8, 0.25); near('Pixel à 25 % de remplissage : 25 % du flux uniforme collecté', b.G.reduce((a, v) => a + v, 0), 0.25, 1e-9); }
     near('FTM pixel ff = 25 % : sinc(π f p/2) à Nyquist', OE.detMTF(1 / 0.006, 0.003, 0.25), Math.sin(Math.PI / 4) / (Math.PI / 4), 1e-9);
   }
+  { // lentille idéale parfaite à distance finie ; apodisation de la pupille par la source
+    const Sf = (r, t, o = {}) => ({ r, t, glass: '', sd: 0, k: 0, ...o });
+    const mk = (surf, extra = {}) => OE.prepare({ title: '', aperture: { type: 'EPD', value: 40, obscuration: 0 }, fields: [{ x: 0, y: 0, w: 1 }, { x: 0, y: 2, w: 1 }], wavelengths: [{ um: 0.55, w: 1 }], primary: 0, surfaces: surf, ...extra });
+    let M = mk([Sf(Infinity, 100), Sf(Infinity, 100, { elem: 'ideal', fid: 100 }), Sf(Infinity, 100, { stop: true }), Sf(Infinity, 100, { elem: 'ideal', fid: 100 }), Sf(Infinity, 0)]);
+    near('Lentille idéale : montage 4f, WFE hors axe (λ)', OE.wavefront(M, 1, 0, 16).rms, 0, 1e-8);
+    M = mk([Sf(Infinity, 150), Sf(Infinity, 300, { stop: true, elem: 'ideal', fid: 100 }), Sf(Infinity, 0)]);
+    near('Lentille idéale : conjugué ×(−2), WFE hors axe (λ)', OE.wavefront(M, 1, 0, 16).rms, 0, 1e-8);
+    const sys2 = { r: Infinity }, base = [Sf(Infinity, 200), Sf(Infinity, 200, { stop: true, elem: 'ideal', fid: 100 }), Sf(Infinity, 0)];
+    M = OE.prepare({ title: '', aperture: { type: 'EPD', value: 150, obscuration: 0 }, fields: [{ y: 0 }], wavelengths: [{ um: 1.55, w: 1 }], primary: 0, surfaces: base });
+    near('Monomode → monomode par lentille idéale ×(−1) : 100 %', OE.smCoupling(M, { x: 0, y: 0 }, { type: 'fiber', fib: 'sm', mfd: 10.4 }, 10.4).eta, 1, 3e-3);
+    const ap = { type: 'src' }, src = { type: 'fiber', fib: 'sm', core: 8.2, na: 0.14, mfd: 10.4 };
+    M = OE.prepare({ title: '', aperture: { type: 'EPD', value: 40, obscuration: 0 }, fields: [{ y: 0 }], wavelengths: [{ um: 1.55, w: 1 }], primary: 0, surfaces: base, apod: ap, src });
+    { const th = 1.55 / (Math.PI * 5.2), NA = M.par.objNA; near('Apodisation « source » monomode : intensité au bord exp(−2 ON²/θ₀²)', OE.apodEdgeI(M, 0), Math.exp(-2 * NA * NA / th / th), 1e-9); }
+    { const M1 = OE.prepare({ ...M.sys, src: { ...src, mfd: 20 } }), a = OE.psf(M, 0, 0, 64, 256), b = OE.psf(M1, 0, 0, 64, 256), ee = p => { let s = 0, n = 0; const h = p.P >> 1, R = 1.22 * 1.55e-3 * M.par.wfno; for (let y = 0; y < p.P; y++) for (let x = 0; x < p.P; x++) { const v = p.I[y * p.P + x]; n += v; if (Math.hypot(x - h, y - h) * p.dx <= R) s += v; } return s / n; };
+      near('PSF apodisée : MFD ×2 → pupille moins remplie → moins d\'énergie dans le rayon d\'Airy', ee(b) < ee(a) - 0.1 ? 1 : 0, 1, 0); }
+    { const s3 = { ...M.sys, apod: { type: 'gauss', I: 0.2 } }; const z = IO.toZMX(s3).text, b = IO.parseZMX(z).sys; near('Zemax GFAC : aller-retour de l\'apodisation gaussienne', b && b.apod ? b.apod.I : 0, 0.2, 1e-6); }
+  }
   console.log(fail ? `${fail} échec(s)` : 'Tous les tests passent'); process.exit(fail ? 1 : 0);
 })();
 

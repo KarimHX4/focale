@@ -678,6 +678,9 @@ function srcCard() {
   if (S.type !== 'none') {
     if (S.lc0 > 0 && S.dl > 0 && S.dl > S.lc0 * 0.5) warn.push('Δλ supérieur à la moitié de λ centrale : spectre très large, vérifiez les valeurs.');
     if (S.lc0 > 0 && ok && M.sys.wavelengths.length && !M.sys.wavelengths.some(w => Math.abs(w.um * 1000 - S.lc0) < Math.max(5, S.dl || 0))) warn.push(`λ centrale ${fmt(S.lc0, 5)} nm éloignée des longueurs d'onde du système : l'analyse de la source utilise son propre spectre, les autres analyses celles du système.`);
+    const apOn = App.sys.apod && App.sys.apod.type === 'src';
+    h += sub('Analyses de diffraction') + `<div class="row"><label title="Apodisation de la pupille par l'émission de la source (Données système → Apodisation : « Selon la source »)">Éclairer la pupille comme la source (PSF, FTM, énergie encerclée)</label><input type="checkbox" data-f="src" data-k="apod" ${apOn ? 'checked' : ''}></div>`
+      + `<div class="hint">${apOn ? apodLabel(M) : 'Non coché : PSF et FTM d\'un point source avec pupille uniforme (comme CODE V et Zemax par défaut) ; elles ne dépendent pas de la source. L\'image de la source étendue est dans l\'analyse « Source étendue ».'}</div>`;
     h += sub('Bilan de puissance') + grid(inp('pw', 'Puissance émise', 'mW', '—', 'Puissance optique sortant de la source') + `<div><div class="hint">Pertes de Fresnel</div><label class="hint" style="display:flex;gap:4px;align-items:center;height:24px"><input type="checkbox" data-f="src" data-k="fresnel" ${S.fresnel ? 'checked' : ''}>dioptres nus</label></div>`);
     h += sub('Fibre réceptrice au plan image') + `<div class="row"><select class="in" style="flex:1" data-f="src" data-k="rcv"><option value="none" ${S.rcv === 'none' ? 'selected' : ''}>Aucune</option><option value="sm" ${S.rcv === 'sm' ? 'selected' : ''}>Monomode (recouvrement de modes)</option><option value="si" ${S.rcv === 'si' ? 'selected' : ''}>Multimode saut d'indice</option><option value="gi" ${S.rcv === 'gi' ? 'selected' : ''}>Multimode gradient d'indice</option></select></div>`;
     if (S.rcv === 'sm') h += grid(inp('rmfd', 'MFD reçu', 'µm', '', 'Diamètre de mode à 1/e² de la fibre réceptrice'));
@@ -702,6 +705,16 @@ function srcPower(M, fi, S, o) {
   if (c && S.rcv === 'sm' && S.rmfd > 0) { const coh = S.type === 'gauss' || S.type === 'point' || (S.type === 'fiber' && S.fib === 'sm'), q = OE.smCoupling(M, f, coh ? o2 : { type: 'point' }, S.rmfd); if (q) { const g = S.type === 'gauss' || (S.type === 'fiber' && S.fib === 'sm'); rcv = g ? (c.eta > 0 ? Math.min(1, q.eta / c.eta) : 0) : q.eta; rcvNote = coh ? 'recouvrement de modes' : 'point central (borne sup.)'; } }
   const res = { c, tau, fres, fresnel: S.fresnel, fib, tot: c ? c.eta * tau * fres * fib : 0, rcv, rcvNote };
   if (App._srcP.size > 20) App._srcP.clear(); App._srcP.set(key, res); return res;
+}
+/** description courte de l'apodisation de pupille active (titres des analyses de diffraction) */
+function apodLabel(M) {
+  const a = App.sys.apod; if (!a || !['gauss', 'src'].includes(a.type) || !M || !M.ok) return '';
+  if (a.type === 'gauss') return `pupille apodisée (gaussienne, ${fmt(100 * (+a.I || 0.135), 3)} % au bord)`;
+  const S = src(); if (S.type === 'none') return 'apodisation « selon la source » : aucune source définie (pupille uniforme)';
+  if (M.objInf) return 'apodisation « selon la source » sans effet : objet à l\'infini';
+  const f = OE.sysApod(M, M.pw); if (!f) return 'apodisation par la source : pupille uniformément éclairée (ON de la source ≥ ON objet)';
+  const e = f(1, 0) ** 2, t = S.type === 'fiber' ? S.fib : S.type;
+  return t === 'sm' || t === 'gauss' ? `pupille éclairée par le mode gaussien de la source (${fmt(100 * e, 3)} % au bord à ${sL(M.wls[M.pw])})` : t === 'gi' ? 'pupille éclairée par la fibre à gradient d\'indice' : 'pupille tronquée par l\'ON de la source';
 }
 /** système dont les longueurs d'onde sont celles du spectre de la source */
 function srcModel() {
@@ -835,6 +848,7 @@ function setupSide() {
       case 'dec': if ((v = num()) != null) commit(s => s.surfaces[App.sel][t.dataset.k] = v); break;
       case 'src': { const k = t.dataset.k; if (k === 'type' || k === 'fib' || k === 'rcv') { commit(s => { s.src[k] = t.value; if (k === 'fib' && t.value === 'sm' && s.src.core > 12) Object.assign(s.src, { core: 8.2, na: 0.14 }); if (k === 'fib' && t.value !== 'sm' && s.src.core < 20) Object.assign(s.src, { core: 50, na: t.value === 'gi' ? 0.2 : 0.22 }); }); break; }
         if (k === 'fresnel') { commit(s => s.src.fresnel = t.checked); break; }
+        if (k === 'apod') { commit(s => s.apod = t.checked ? { type: 'src', I: (s.apod && s.apod.I) || 0.135 } : { type: 'none', I: (s.apod && s.apod.I) || 0.135 }); break; }
         const L = SRCLIM[k]; if (t.value.trim() === '') { if (['core', 'd', 'w', 'h', 'rcore', 'rna', 'rmfd'].includes(k) || (k === 'na' && App.sys.src.type === 'fiber')) { toast('Valeur requise'); renderSide(); break; } commit(s => s.src[k] = null); break; }
         if ((v = num(x => L && x >= L[0] && x <= L[1] && (L[0] > 0 || ['dl', 'len', 'att', 'bw', 'pw'].includes(k) || x > 0))) != null) commit(s => s.src[k] = v);
         else if (L) toast(`${k === 'na' || k === 'rna' ? 'ON' : 'Valeur'} hors limites : ${fmt(L[0], 4)} … ${fmt(L[1], 6)}`);
@@ -1537,7 +1551,7 @@ const R = {
     for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { const v = ps.I[(y + o) * P + x + o]; data[y * n + x] = v; mx = Math.max(mx, v); }
     const kt = kT(), ext = half * ps.dx * kt, exX = half * (ps.dxX || ps.dx) * kt, exY = half * (ps.dxY || ps.dx) * kt, ra2 = ra * kt / 1e3; // pas anisotrope hors axe (F/# réels T et S)
     if (p.log) for (let i = 0; i < data.length; i++) data[i] = Math.log10(Math.max(data[i] / mx, 1e-6));
-    const A = axes(c, { x: 0, y: 0, w: w - 70, h: h - 4 }, [-exX, exX], [-exY, exY], { equal: true, title: `PSF  Strehl ${fx(ps.strehl, 4)} · zoom ×${fmt(zoom, 2)}`, ml: 46, xl: uT(), zero: false });
+    const A = axes(c, { x: 0, y: 0, w: w - 70, h: h - 4 }, [-exX, exX], [-exY, exY], { equal: true, title: `PSF  Strehl ${fx(ps.strehl, 4)} · zoom ×${fmt(zoom, 2)}${OE.sysApod(M, wi) ? ' · pupille apodisée' : ''}`, ml: 46, xl: uT(), zero: false });
     A.xr0 = -exX; A.xr1 = exX; A.yr0 = -exY; A.yr1 = exY;
     heat(c, A, data, n, n, p.log ? -6 : 0, p.log ? 0 : mx, 'inferno', true);
     c.strokeStyle = 'rgba(255,255,255,.45)'; c.setLineDash([3, 3]); c.beginPath(); c.arc(A.X(0), A.Y(0), A.X(ra2) - A.X(0), 0, 2 * Math.PI); c.stroke(); c.setLineDash([]);
@@ -1554,7 +1568,7 @@ const R = {
   mtf(p, M, c, w, h, d) {
     const geo = p.mt === 'geo', N = +p.ns || 64, sc = d.sc, res = d.res;
     const f = res[0].f;
-    const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, [0, f[f.length - 1]], [0, 1.02], { xl: `Fréquence spatiale (${un('fq') === 'lp' ? 'paires de lignes/mm' : 'cycles/mm'})`, yl: 'Module FTM', title: geo ? `FTM polychromatique géométrique (rayons${p.gdl !== false ? ' × limite de diffraction' : ''})` : `FTM polychromatique (diffraction, autocorrélation de la pupille ${N}×${N})` });
+    const A = axes(c, { x: 0, y: 0, w, h: h - 18 }, [0, f[f.length - 1]], [0, 1.02], { xl: `Fréquence spatiale (${un('fq') === 'lp' ? 'paires de lignes/mm' : 'cycles/mm'})`, yl: 'Module FTM', title: geo ? `FTM polychromatique géométrique (rayons${p.gdl !== false ? ' × limite de diffraction' : ''})` : `FTM polychromatique (diffraction, autocorrélation de la pupille ${N}×${N})${OE.sysApod(M, M.pw) ? ' · pupille apodisée' : ''}` });
     { const pw = M.pw, fn = sc.map((a, i) => `F${i + 1} ${fx(1 / a[pw].dM, 2)}/${fx(1 / a[pw].dL, 2)}`).join(' · ');
       text(c, `F/# réels T/S (λ réf.) : ${fn}`, A.P.x + 6, A.P.y + 4, { col: TH.mut, size: 10, maxW: A.P.w - 12 }); }
     pline(c, A, f, res[0].DL, TH.fg, 1.2, [2, 2]);
@@ -2417,9 +2431,9 @@ const SDTAB = {
     const s = App.sys, ap = s.apod || { type: 'none' };
     return `<h3>Visée des rayons</h3><div class="row"><select class="in" data-sd="aimSel">${AIMOPTS.map(([k, l]) => `<option value="${k}" ${OE.aimMode(s) === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <div class="hint"><b>Pupille paraxiale</b> : rayons visés sur la pupille d'entrée paraxiale (Zemax sans « Ray Aiming »). <b>Rayon principal au diaphragme</b> : le rayon principal de chaque champ est itéré pour passer au centre du diaphragme, la pupille paraxiale étant translatée d'autant — comportement par défaut de CODE V (activé à l'import d'un .seq) ; à utiliser pour comparer avec CODE V, le vignetage VUY…VLX corrigeant le reste. <b>Réelle</b> : chaque rayon est itéré pour remplir exactement le diaphragme (grand angle, pupille très aberrante).</div>
-      <h3>Apodisation de la pupille</h3><div class="row" style="gap:6px"><select class="in" data-sd="apodT"><option value="none" ${ap.type !== 'gauss' ? 'selected' : ''}>Uniforme</option><option value="gauss" ${ap.type === 'gauss' ? 'selected' : ''}>Gaussienne</option></select>
-        ${ap.type === 'gauss' ? `<label>Intensité relative au bord de la pupille</label>${sdIn('apodI', fmt(ap.I ?? 0.135, 4), { w: 60 })}<span class="hint">0,135 = 1/e² (CODE V PUI)</span>` : ''}</div>
-      <div class="hint">S'applique aux calculs de diffraction (PSF, FTM, énergie encerclée, Strehl).</div>
+      <h3>Apodisation de la pupille</h3><div class="row" style="gap:6px"><select class="in" data-sd="apodT"><option value="none" ${!['gauss', 'src'].includes(ap.type) ? 'selected' : ''}>Uniforme</option><option value="gauss" ${ap.type === 'gauss' ? 'selected' : ''}>Gaussienne</option><option value="src" ${ap.type === 'src' ? 'selected' : ''}>Selon la source (carte Source / fibre)</option></select>
+        ${ap.type === 'gauss' ? `<label>Intensité relative au bord de la pupille</label>${sdIn('apodI', fmt(ap.I ?? 0.135, 4), { w: 60 })}<span class="hint">0,135 = 1/e² (CODE V PUI)</span>` : ''}${ap.type === 'src' ? `<span class="hint">${apodLabel(App.M)}</span>` : ''}</div>
+      <div class="hint">S'applique aux calculs de diffraction (PSF, FTM, énergie encerclée, Strehl). « Selon la source » : la pupille est éclairée comme par la source définie (fibre monomode ou tache gaussienne : profil gaussien du mode, recalculé à chaque λ ; gradient d'indice : √(1 − ρ²k²) ; saut d'indice, disque ou fente d'ON inférieure à l'ON objet : pupille tronquée).</div>
       <h3>Non pris en charge</h3><div class="hint">Mode afocal, conjugués multiples (zoom), couplage multi-environnement : signalés à l'import et ignorés.</div>`;
   },
 };
@@ -2456,7 +2470,7 @@ function sdChange(t) {
       if ((v = num()) != null) commit(s => { s.env = { ...(s.env || {}) }; s.env.mat = { ...(s.env.mat || {}) }; s.env.mat[g] = { ...(s.env.mat[g] || {}), [kk]: v }; }); break; }
     case 'aim': commit(s => s.rayAiming = t.checked); break;
     case 'aimSel': setAim(t.value); break;
-    case 'apodT': commit(s => s.apod = t.value === 'gauss' ? { type: 'gauss', I: (s.apod && s.apod.I) || 0.135 } : { type: 'none' }); break;
+    case 'apodT': commit(s => s.apod = t.value === 'gauss' ? { type: 'gauss', I: (s.apod && s.apod.I) || 0.135 } : t.value === 'src' ? { type: 'src', I: (s.apod && s.apod.I) || 0.135 } : { type: 'none' }); break;
     case 'apodI': if ((v = num(x => x > 0 && x < 1)) != null) commit(s => s.apod = { type: 'gauss', I: v }); break;
   }
 }

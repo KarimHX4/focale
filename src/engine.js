@@ -566,6 +566,11 @@ const OE = (() => {
     const M = { sys, S, N, wls, pw, stopIdx, objInf, nW, par, zg, fr, ctxs, aimCache: new Map(), ok: true, errors: [], warnings,
       t0: objInf ? 0 : S[0].t, obs: Math.max(0, Math.min(0.95, +sys.aperture.obscuration || 0)), env: E, ftype, ufields };
     M.epr = par.epd / 2;
+    // lentilles idéales : distance objet (le long de la propagation) du faisceau incident, d'après le rayon marginal paraxial (λ primaire)
+    for (let j = 1; j < N; j++) if (S[j].elem === 'ideal') {
+      const nu = par.mar.nu[j - 1], y = par.mar.y[j], nn = Math.abs(nW[pw][j - 1]), s0 = Math.abs(nu) > 1e-15 ? y * nn / nu : Infinity;
+      ctxs.forEach(c => { c.s[j].s0 = s0; });
+    }
     if (ftype === 'rim') realImageFields(M);
     else if (ftype === 'ang' && !objInf && sys.realAng !== false) realAngleFields(M);
     computeSD(M);
@@ -649,9 +654,20 @@ const OE = (() => {
       let cosT = cosI, mode = 0; // 0 réfraction, 1 miroir, 2 sans perte (réseau, lentille idéale)
       if (sf.elem === 'ideal') {
         const sg = dN >= 0 ? 1 : -1, az = Math.abs(dN) || 1e-12, tx = dL / az, ty = dM / az, f = sf.fid;
-        const tx2 = tx - lx / f, ty2 = ty - ly / f, q = Math.hypot(tx2, ty2, 1);
-        const Lq = Math.hypot(f * tx - lx, f * ty - ly, f), Lq0 = Math.abs(f) * Math.hypot(tx, ty, 1);
-        opl += n1 * (-(lx * dL + ly * dM) - Math.sign(f) * (Lq - Lq0));
+        const tx2 = tx - lx / f, ty2 = ty - ly / f, q = Math.hypot(tx2, ty2, 1), s0 = sf.s0;
+        if (isFinite(s0) && Math.abs(s0) < 1e8) {
+          // conjugué fini (distance objet s0 du rayon marginal paraxial) : lentille parfaite pour ce conjugué. Le chemin ajouté rend égaux,
+          // pour chaque point objet O, les chemins O → lentille → image O′ ; référence : le rayon passant par le centre de la lentille.
+          if (Math.abs(s0) > 1e-9) {
+            const n2 = ctx.nAbs[j], tcx = (s0 * tx - lx) / s0, tcy = (s0 * ty - ly) / s0, rc = Math.hypot(tcx, tcy, 1), s1i = 1 / f - 1 / s0;
+            let ph = n1 * s0 * (rc - Math.hypot(tx, ty, 1));
+            if (Math.abs(s1i) > 1e-8) ph += n2 / s1i * (rc - q); else ph += n2 * (lx * tcx + ly * tcy) / rc; // image à l'infini : onde plane
+            opl += ph;
+          }
+        } else {
+          const Lq = Math.hypot(f * tx - lx, f * ty - ly, f), Lq0 = Math.abs(f) * Math.hypot(tx, ty, 1);
+          opl += n1 * (-(lx * dL + ly * dM) - Math.sign(f) * (Lq - Lq0));
+        }
         dL = tx2 / q; dM = ty2 / q; dN = sg / q; mode = 2;
       } else if (sf.elem === 'grating' && sf.lpmm) {
         const fx = -nx, fy = -ny, fz = -nz; // normale dans le sens de propagation
@@ -1031,14 +1047,45 @@ const OE = (() => {
     const dM = !a.vig && !b.vig ? Math.abs(a.M - b.M) * n : NaN, dL = !c.vig && !d.vig ? Math.abs(c.L - d.L) * n : NaN;
     return { dM: dM > 1e-9 ? dM : d0, dL: dL > 1e-9 ? dL : d0 };
   }
-  /** apodisation gaussienne de la pupille (CODE V PUI) : intensité relative I au bord → amplitude I^(ρ²/2) */
-  function sysApod(M) {
-    const a = M.sys.apod; if (!a || a.type !== 'gauss') return null;
+  /**
+   * Apodisation de la pupille d'entrée par l'émission d'une source à distance finie (amplitude en fonction de la pupille normalisée) :
+   * mode gaussien (fibre monomode, tache gaussienne) exp(−ρ² ON²/θ₀²) avec θ₀ = λ/(π w₀) (MFD à la λ du calcul) ; gradient d'indice √(1 − ρ²k²), k = ON objet / ON fibre ;
+   * saut d'indice, disque ou fente d'ON inférieure à l'ON objet : pupille tronquée au rayon ON/ON objet. Émetteur lambertien ou objet à l'infini : null (uniforme).
+   */
+  function srcApod(M, src, wi) {
+    if (!src || M.objInf || !src.type || src.type === 'none') return null;
+    const NAs = M.par.objNA, l = M.wls[wi ?? M.pw]; if (!(NAs > 0) || !(l > 0)) return null;
+    const t = src.type === 'fiber' ? (src.fib || 'si') : src.type;
+    if (t === 'sm' || t === 'gauss') {
+      const d = t === 'sm' ? (+src.mfd > 0 ? +src.mfd : fiberInfo(src, l).mfd) : +src.d; if (!(d > 0)) return null;
+      const t0 = l / (Math.PI * d / 2), k = NAs * NAs / (t0 * t0); if (k < 1e-9) return null;
+      return (x, y) => Math.exp(-(x * x + y * y) * k);
+    }
+    const na = +src.na; if (!(na > 0)) return null;
+    if (t === 'gi') { const k = NAs / na; return (x, y) => Math.sqrt(Math.max(0, 1 - (x * x + y * y) * k * k)); }
+    const rm = na / NAs; if (rm >= 1) return null;
+    return (x, y) => (x * x + y * y <= rm * rm ? 1 : 0);
+  }
+  /** intensité relative au bord de la pupille d'une apodisation gaussienne (pour l'export PUI / GFAC) ; null si non gaussienne */
+  function apodEdgeI(M, wi) {
+    const a = M.sys.apod; if (!a) return null;
+    if (a.type === 'gauss') return Math.min(1, Math.max(1e-6, +a.I || 0.135));
+    if (a.type === 'src') { const s = M.sys.src || {}, t = s.type === 'fiber' ? s.fib : s.type; if (t !== 'sm' && t !== 'gauss') return null; const f = srcApod(M, s, wi); return f ? f(1, 0) ** 2 : null; }
+    return null;
+  }
+  /**
+   * apodisation de la pupille du système, à la longueur d'onde wi : gaussienne (CODE V PUI : intensité relative I au bord → amplitude I^(ρ²/2))
+   * ou « selon la source » (émission de la source définie dans la carte Source / fibre, voir srcApod)
+   */
+  function sysApod(M, wi) {
+    const a = M.sys.apod; if (!a) return null;
+    if (a.type === 'src') return srcApod(M, M.sys.src, wi);
+    if (a.type !== 'gauss') return null;
     const I = Math.min(1, Math.max(1e-6, +a.I || 0.135)); if (I >= 1) return null;
     return (x, y) => Math.pow(I, (x * x + y * y) / 2);
   }
   function psf(M, fi, wi, N = 64, P = 256, wfIn, apod) {
-    if (apod === undefined) apod = sysApod(M);
+    if (apod === undefined) apod = sysApod(M, wi);
     const wf = wfIn || wavefront(M, fi, wi, N, false);
     const re = new Float64Array(P * P), im = new Float64Array(P * P);
     const o = (P - N) >> 1; let sa = 0;
@@ -1064,7 +1111,7 @@ const OE = (() => {
    * Résolution indépendante d'une FFT : utile pour la vue 3D et les zooms.
    */
   function psfGrid(M, fi, wi, half, m, N = 128, wfIn, xsIn) {
-    const wf = wfIn || wavefront(M, fi, wi, N, false), apod = sysApod(M);
+    const wf = wfIn || wavefront(M, fi, wi, N, false), apod = sysApod(M, wi);
     const sc = pupilScale(M, typeof fi === 'object' ? fi : M.sys.fields[fi], wi), lmm = M.ctxs[wi].lmm;
     const dx = 2 * half / (m - 1), xs = xsIn || Array.from({ length: m }, (_, k) => -half + k * dx);
     const Ar = new Float64Array(N * N), Ai = new Float64Array(N * N); let sa = 0;
@@ -1111,7 +1158,7 @@ const OE = (() => {
    * fcT = ΔM/λ et fcS = ΔL/λ (ouverture réelle du champ). Renvoie aussi la limite de diffraction sur la même pupille.
    */
   function otfAC(M, fi, wi, freqs, N = 64) {
-    const f = typeof fi === 'object' ? fi : M.sys.fields[fi], wf = wavefront(M, f, wi, N, false), apod = sysApod(M);
+    const f = typeof fi === 'object' ? fi : M.sys.fields[fi], wf = wavefront(M, f, wi, N, false), apod = sysApod(M, wi);
     const A = new Float64Array(N * N), W = new Float64Array(N * N);
     let norm = 0;
     for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) { const w = wf.W[i * N + j]; if (!isFinite(w)) continue; const a = apod ? apod(-1 + (2 * j + 1) / N, -1 + (2 * i + 1) / N) : 1; if (!(a > 0)) continue; A[i * N + j] = a; W[i * N + j] = w; norm += a * a; }
@@ -2619,7 +2666,7 @@ const OE = (() => {
 
   return { ghosts, MCT, mcOn, mcSync, mcSet, mcLoad, mcApply, mcCtl, mcAddOp, mcSummary, fieldSweep, throughFocus, mtfField, beamArea, relIllum, distGrid, tolTrialD, DEG, fiberInfo, binPSF, detMTF, extSource, binImage, imageSim, polPupil, polOut, POLSTATES, TOLT, TOLC, LT, quickFocus, wlSel, opValue, parseModel, fmtModel, glassNearest, glassPool, toModel, subTry, tolBase, tolDefaults, tolFreeze, tolItems, tolGen, tolApplicable, tolLabel, tolApply, tolWorse, tolSens, tolInverse, tolTrial, tolRebuild, tolValue, niceDown, rng, mtfAt, compensate, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, glassProps, glassTau, sysTau, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
     wavefront, zernFit, ZN37, psf, psfGrid, mtf, mtfGeo, pupilScale, otfAC, mtfOne, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
-    srcCoupling, smCoupling, sysTransmission, srcModelDesc, pupilCells, OPS, OPG, meritUpgrade, meritPupil, gaussLegendre, meritR, consViol, getVars, getVal, setVal, residuals, meritOf, optStep, pupilGrid, indices, paraxial,
+    srcCoupling, smCoupling, sysTransmission, srcModelDesc, pupilCells, srcApod, sysApod, apodEdgeI, OPS, OPG, meritUpgrade, meritPupil, gaussLegendre, meritR, consViol, getVars, getVal, setVal, residuals, meritOf, optStep, pupilGrid, indices, paraxial,
     ASPK, FTYPES, vigMap, modelN, aimMode, setVignetting, convertFields, thermalScan, glassTherm, nAir, envN, envCtx, isSolid };
 })();
 if (typeof module !== 'undefined') module.exports = OE;

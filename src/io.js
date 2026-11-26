@@ -325,6 +325,14 @@ const IO = (() => {
   }
 
   const cv0 = (s, objInf) => E.FTYPES[E.FTYPES[s.ftype] ? s.ftype : (objInf ? 'ang' : 'obj')].cv;
+  /** intensité relative au bord de la pupille à exporter (PUI CODE V, GFAC 1 de Zemax : amplitude exp(−G ρ²), I = e^(−2G)) ; null : pupille uniforme */
+  function apodI(s, W) {
+    const a = s.apod; if (!a || !['gauss', 'src'].includes(a.type)) return null;
+    if (a.type === 'gauss') return Math.min(1, Math.max(1e-6, +a.I || 0.135));
+    try { const M = E.prepare(s); const I = M.ok ? E.apodEdgeI(M, M.pw) : null;
+      if (I == null) { if (M.ok && E.sysApod(M, M.pw)) W.push('Apodisation « selon la source » non gaussienne (troncature ou gradient d\'indice) non exportée : pupille uniforme dans le fichier'); return null; }
+      W.push(`Apodisation « selon la source » exportée en gaussienne équivalente à la λ primaire (intensité ${fmtN(I)} au bord)`); return Math.max(1e-6, I); } catch (e) { return null; }
+  }
   function toSeq(s) {
     const W = [], S = s.surfaces, N = S.length - 1, L = [], TS = solvedT(s), SR = solvedR(s), ob = obsOut(s); solveWarn(s, W, 'CODE V');
     const objInf = !isFinite(S[0].t) || Math.abs(S[0].t) > 1e10;
@@ -375,7 +383,7 @@ const IO = (() => {
     L.push(cv + ' ' + s.fields.map(f => f.y).join(' '), 'WTF ' + s.fields.map(f => f.w ?? 1).join(' '));
     for (const k of ['vuy', 'vly', 'vux', 'vlx']) if (s.fields.some(f => +f[k])) L.push(k.toUpperCase() + ' ' + s.fields.map(f => fmtN(+f[k] || 0)).join(' '));
     if (s.env && ((+s.env.T ?? 20) !== 20 || (+s.env.P ?? 1) !== 1)) { L.push(`TEM ${fmtN(s.env.T ?? 20)}`, `PRE ${fmtN((s.env.P ?? 1) * 760)}`); if (s.env.Tref != null && +s.env.Tref !== 20) W.push('Température de référence de la prescription ≠ 20 °C : non exportée'); }
-    if (s.apod && s.apod.type === 'gauss') L.push(`PUI ${fmtN(s.apod.I ?? 0.135)}`);
+    { const I = apodI(s, W); if (I != null) L.push(`PUI ${fmtN(I)}`); }
     if (priv.size) { L.push('PRV', 'PWL ' + wls.map(l => (l * 1000).toFixed(4)).join(' ')); for (const [nm, ns] of priv) L.push(`'${nm}' ${ns.map(v => v.toFixed(6)).join(' ')}`); L.push('END'); W.push(`${priv.size} verre(s) fictif(s) ou importé(s) exporté(s) en verres privés PRV`); }
     if (ob) W.push(`Obstruction centrale ${fmtN(ap.obscuration)} exportée en CIR OBS ${fmtN(ob.r)} mm sur le diaphragme (S${ob.j})`); else if ((ap.obscuration || 0) > 0) W.push('Obstruction centrale non exportée (système invalide)');
     if (E.mcOn(s)) { // multi-configuration → positions de zoom CODE V
@@ -442,6 +450,7 @@ const IO = (() => {
         case 'FWGN': case 'FWGT': fw = t.slice(1).map(Number); break;
         case 'VDXN': vdx = t.slice(1).map(Number); break; case 'VDYN': vdy = t.slice(1).map(Number); break;
         case 'VCXN': vcx = t.slice(1).map(Number); break; case 'VCYN': vcy = t.slice(1).map(Number); break;
+        case 'GFAC': { const ty = num(t[1]), g = num(t[2]); if (ty === 1 && g > 0) sys.apod = { type: 'gauss', I: Math.exp(-2 * g) }; else if (ty === 2) W.push('Apodisation « cosinus cube » de Zemax non reprise (pupille uniforme)'); break; }
         case 'ENVD': { const T = num(t[1]), P = num(t[2]); if ((isFinite(T) && T !== 20) || (isFinite(P) && P !== 1)) sys.env = { T: isFinite(T) ? T : 20, P: isFinite(P) ? P : 1 }; break; }
         case 'WAVM': wavm[+t[1] - 1] = { um: num(t[2]), w: num(t[3]) }; break;
         case 'WAVL': wavl = t.slice(1).map(Number); break;
@@ -557,7 +566,7 @@ const IO = (() => {
     if (ap.type === 'NAI' || ap.type === 'STOP' || ap.type === 'WFNO') { try { apz = `ENPD ${fmtN(E.prepare(s).par.epd)}`; } catch (e) { } W.push('Ouverture (ON image / F/# de travail / diaphragme) exportée en diamètre de pupille d\'entrée équivalent'); }
     out.push(apz);
     const env = s.env || {};
-    out.push(`ENVD ${fmtN(env.T ?? 20)} ${fmtN(env.P ?? 1)} 0`, 'GFAC 0 0', `GCAT ${[...new Set(['SCHOTT', ...cats])].join(' ')}`);
+    out.push(`ENVD ${fmtN(env.T ?? 20)} ${fmtN(env.P ?? 1)} 0`, (I => I != null ? `GFAC 1 ${fmtN(-Math.log(I) / 2)}` : 'GFAC 0 0')(apodI(s, W)), `GCAT ${[...new Set(['SCHOTT', ...cats])].join(' ')}`);
     const nf = s.fields.length, nw = s.wavelengths.length, ft = E.FTYPES[s.ftype] ? s.ftype : (objInf ? 'ang' : 'obj');
     out.push(`FTYP ${['ang', 'obj', 'pim', 'rim'].indexOf(ft)} 0 ${nf} ${nw} 0 0 0`, 'ROPD 2', 'PICB 1');
     out.push('XFLN ' + pad(s.fields.map(f => f.x || 0)), 'YFLN ' + pad(s.fields.map(f => f.y || 0)), 'FWGN ' + pad(s.fields.map(f => f.w ?? 1)));
