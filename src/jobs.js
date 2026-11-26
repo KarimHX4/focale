@@ -24,9 +24,11 @@ const JOBS = {
   relillum: (a, prog) => OE.relIllum(a.sys, a.o, prog),
   /** optimisation locale (moindres carrés amortis) jusqu'à convergence ou maxIt itérations */
   async optLocal(a, prog) {
-    const st = { sys: a.sys, mu: 1e-3 }; let n = 0, r;
+    const st = { sys: a.sys, mu: 1e-3, central: !!a.central }; let n = 0, r;
     do { r = OE.optStep(st); n++; if (prog && n % 4 === 0) await prog(n, a.maxIt || 100); } while (!r.done && n < (a.maxIt || 100));
-    const rr = OE.residuals(st.sys); return { sys: st.sys, merit: st.merit ?? (rr ? OE.meritOf(rr.f) : Infinity), it: n };
+    const rr = OE.residuals(st.sys), m = rr ? OE.meritR(rr) : Infinity, v = rr ? OE.consViol(rr.cons) : 0;
+    // solution qui viole des contraintes exactes : pénalisée pour le classement de la recherche globale
+    return { sys: st.sys, merit: v > 1e-10 ? m * (1 + 1e6 * v) + 1e-300 : m, viol: v, it: n };
   },
   mcsum: async a => OE.mcSummary(a.sys).map(o => { const r = { ...o }; delete r.M; return r; }),
   /** tolérancement : système nominal compensé */

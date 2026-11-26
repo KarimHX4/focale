@@ -260,6 +260,33 @@ const P = []; OE.ray(M, 1, 20, 0, 1, { pts: P }); near('Visée réelle sur diaph
     near('Exemples : tous valides et classés dans une catégorie du menu', bad, 0, 0);
     const D = OE.prepare(S['Double Gauss f=100 F/3']()); near('Exemple Double Gauss : spot RMS bord de champ < 20 µm', OE.spot(D, 2, 15).rms * 1e3 < 20 ? 1 : 0, 1, 0);
     const R = OE.prepare(S['Ritchey-Chrétien F/8']()); near('Exemple Ritchey-Chrétien : limité par la diffraction (WFE RMS < 0,07 λ)', OE.wavefront(R, 2, 0, 48).rms < 0.14 && OE.wavefront(R, 0, 0, 48).rms < 0.07 ? 1 : 0, 1, 0); }
+  { // Optimisation : fonction de mérite (convention Zemax), échantillonnage pupillaire, contraintes exactes (Lagrange), opérandes
+    const g = OE.gaussLegendre(3); near('Gauss-Legendre 3 points : nœud ±√(3/5), poids 5/9', g.x[0] * g.x[0] * 5 + g.w[0] * 9 / 5, 3 + 1, 1e-12);
+    const c = S['Triplet de Cooke f=50 F/5'](); c.merit = { v: 2, image: 'SPOT', ops: [] };
+    const a = OE.meritR(OE.residuals(c)); c.merit.sym = false; const b = OE.meritR(OE.residuals(c));
+    near('Symétrie axiale : demi-pupille = pupille entière (spot RMS)', a, b, 1e-12 * b);
+    c.merit.image = 'WFE'; const wa = OE.meritR(OE.residuals(c)); c.merit.sym = true; near('Symétrie axiale : demi-pupille = pupille entière (front d\'onde)', OE.meritR(OE.residuals(c)), wa, 1e-9 * wa);
+    const M = OE.prepare(c), one = (op, extra = []) => OE.residuals({ ...c, merit: { v: 2, image: 'NONE', ops: [...extra, { target: 0, weight: 1, ...op }] } }).parts.slice(-1)[0].val;
+    near('REAY image (Hy = 1, rayon principal) = hauteur image réelle RIMH', one({ type: 'REAY', s1: 0, hy: 1 }), one({ type: 'RIMH' }), 1e-12);
+    near('TRAY = REAY(Py = 1) − REAY(rayon principal) au champ max', one({ type: 'TRAY', hy: 1, py: 1 }), one({ type: 'REAY', s1: 0, hy: 1, py: 1 }) - one({ type: 'REAY', s1: 0, hy: 1 }), 1e-12);
+    near('CVVA de S1 = 1/R1', one({ type: 'CVVA', s1: 1 }), 1 / c.surfaces[1].r, 1e-15);
+    near('PARY (Py = 1) sur S1 = demi-EPD (objet à l\'infini)', one({ type: 'PARY', s1: 1, py: 1 }), M.par.epd / 2, 1e-9);
+    near('Opérations : DIFF des lignes 1 et 2 (TTL − OAL = tirage)', one({ type: 'DIFF', s1: 1, s2: 2 }, [{ type: 'TTL', weight: 0 }, { type: 'OAL', weight: 0 }]), M.S[M.N - 1].t, 1e-9);
+    near('Poids 0 : ligne calculée sans effet sur la fonction de mérite', OE.residuals({ ...c, merit: { v: 2, image: 'NONE', ops: [{ type: 'EFL', target: 0, weight: 0 }] } }).f.length, 0, 0);
+    const z = OE.residuals({ ...c, merit: { v: 2, image: 'NONE', ops: [{ type: 'EFL', target: 49, weight: 4 }, { type: 'TTL', target: 61, weight: 1 }] } });
+    near('Fonction de mérite = √(Σ W·r² / Σ W) (Zemax)', OE.meritR(z), Math.sqrt((4 * (M.par.efl - 49) ** 2 + (M.par.ttl - 61) ** 2) / 5), 1e-12);
+    const RMS = one({ type: 'RSCE', hy: 0, p: 3 }), sp = OE.spot(M, 0, 41).rms; near('RSCE sur l\'axe ≈ spot RMS (grille fine), écart < 5 %', Math.abs(RMS / sp - 1) < 0.05 ? 1 : 0, 1, 0);
+    // contrainte exacte : EFL = 55 tenue à 1e-6 près, même qualité d'image que la version pondérée
+    const mk = lag => { const q = S['Triplet de Cooke f=50 F/5'](); q.surfaces.forEach((s, i) => { if (i >= 1 && i <= 6) s.vr = true; }); q.merit = { v: 2, image: 'SPOT', ops: [{ type: 'EFL', target: 55, weight: 1, lag }] }; const st = { sys: q, mu: 1e-3 }; for (let i = 0; i < 80; i++) if (OE.optStep(st).done) break; return OE.residuals(st.sys); };
+    const L = mk(true), P = mk(false);
+    near('Contrainte exacte (Lagrange) : EFL = 55 tenue', L.parts[0].val, 55, 1e-5);
+    near('Contrainte exacte : spot au moins aussi bon que la version pondérée', Math.sqrt(L.img2) <= Math.sqrt(P.img2) * 1.02 ? 1 : 0, 1, 0);
+    const T = S['Triplet de Cooke f=50 F/5'](); T.surfaces.forEach((s, i) => { if (i >= 1 && i <= 6) s.vr = true; }); T.merit = { v: 2, image: 'SPOT', ops: [{ type: 'EFL', target: 55, weight: 1, lag: true }, { type: 'TTL', target: 58, weight: 1, lag: true, cmp: 'le' }] };
+    const st = { sys: T, mu: 1e-3 }; for (let i = 0; i < 80; i++) if (OE.optStep(st).done) break; const R = OE.residuals(st.sys);
+    near('Deux contraintes exactes (EFL = 55 et TTL ≤ 58) satisfaites', Math.abs(R.parts[0].val - 55) < 1e-4 && R.parts[1].val <= 58 + 1e-4 ? 1 : 0, 1, 0);
+    // migration des anciens fichiers
+    const old = { merit: { image: 'SPOT', ops: [{ type: 'MNCT', target: 1, weight: 10 }, { type: 'CTHK', p: 3, target: 2, weight: 2 }] } }; OE.meritUpgrade(old);
+    near('Ancienne fonction de mérite : MNCT → MNCG (verre), CTHK → CTGT S3, poids au carré', old.merit.ops[0].type === 'MNCG' && old.merit.ops[0].weight === 100 && old.merit.ops[1].type === 'CTGT' && old.merit.ops[1].s1 === 3 && old.merit.ops[1].weight === 4 ? 1 : 0, 1, 0); }
   // Validation CODE V 2024.03 : objectif « DigCamera » (tutoriel CODE V), sorties FIR / REFRACTIVE INDICES / RSI fournies par l'utilisateur
   { const seq = `FNO 3.5\nDIM M\nWL 656.0 589.0 430.0\nREF 2\nWTW 1 2 1\nYAN 0.0 11.0 19.0 26.5\nVUX 0 0.007419823242190038 0.02280626025389998 0\nVLX 0 0.007419823242190038 0.02280626025389998 0\nVUY 0 0.0007207686245109812 0.20273532916 0\nVLY 0 0.04668488625860001 0.111177974441 0\nSO 0.0 750.0
 S 1.822175677212961 1.085816541265434 743972.448504\nS -21.29932312571177 0.1000000000000001\nS -3.057770039270196 0.2 736020.283993\nS 1.441367391070061 0.1244741047468973\nSTO\nS 2.884653512995602 0.9708074408810998 743972.448504\nS -2.08834100754463 1.95119372571215\nSI 0.0 -0.02480582498015976\nGO\n`;

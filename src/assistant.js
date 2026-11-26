@@ -89,7 +89,7 @@
     return L.join(' ; ');
   };
   const metrics = () => { const M = OE.prepare(S()); if (!M.ok) return 'système invalide'; const sp = S().fields.map((_, i) => OE.spot(M, i, 15).rms * 1e3); return `EFL ${r2(M.par.efl, 5)} mm, F/# ${r2(M.par.wfno)}, TTL ${r2(M.par.ttl, 5)} mm, spot RMS ${sp.map(v => r2(v, 3)).join(' / ')} µm`; };
-  const merit = () => { const r = OE.residuals(S()); return r ? OE.meritOf(r.f) : NaN; };
+  const merit = () => { const r = OE.residuals(S()); return r ? OE.meritR(r) : NaN; };
   async function optimizeLoop(maxIt = 100) {
     const st = { sys: structuredClone(S()), mu: 1e-3 }, m0 = merit(); let r, n = 0, t = performance.now();
     if (!OE.getVars(st.sys).length) throw new Error('aucune variable définie (utilisez set_variables)');
@@ -112,7 +112,7 @@
     surf.push(sf({ r: Infinity, t: 0, comment: 'Image' }));
     const sys = { title: `Doublet achromatique ${c} / ${l} f=${r2(f)} mm F/${r2(fno)}`, aperture: { type: 'EPD', value: +D.toFixed(4), obscuration: 0 }, fieldType: 'angle',
       fields: field ? [{ y: 0, w: 1 }, { y: +(0.7 * field).toFixed(4), w: 1 }, { y: field, w: 1 }] : [{ y: 0, w: 1 }], wavelengths: [{ um: 0.4861327, w: 1 }, { um: 0.5875618, w: 1 }, { um: 0.6562725, w: 1 }], primary: 1, rayAiming: false,
-      merit: { image: 'SPOT', wl: 'all', ops: [{ type: 'EFL', target: f, weight: 1 }, { type: 'MNET', target: 1, weight: 1 }, { type: 'MNCT', target: 1.5, weight: 1 }] }, surfaces: surf };
+      merit: { image: 'SPOT', wl: 'all', ops: [{ type: 'EFL', target: f, weight: 1 }, { type: 'MNEG', target: 1, weight: 1 }, { type: 'MNCG', target: 1.5, weight: 1 }], v: 2 }, surfaces: surf };
     sys.surfaces.forEach((x, j) => { if (j >= 1 && j <= sys.surfaces.length - 3) x.vr = true; });
     return sys;
   }
@@ -161,11 +161,11 @@
           if (u === 'glasses' && !OE.isAir(x.glass) && !OE.isMirror(x)) { x.vg = true; if (!OE.parseModel(x.glass)) x.glass = OE.toModel(x.glass); out.push('G' + j); } }
       }
       return `variables : ${OE.getVars(s).map(v => ({ c: 'R', t: 'T', k: 'K', nd: 'nd', vd: 'νd' })[v.kind] ? `${({ c: 'R', t: 'T', k: 'K', nd: 'nd ', vd: 'νd ' })[v.kind]}${v.kind === 'nd' || v.kind === 'vd' ? 'S' : ''}${v.si}` : `${v.kind.toUpperCase()} S${v.si}`).join(' ') || 'aucune'}`; } },
-    set_merit: { d: 'Fonction de mérite : criterion SPOT|WFE|NONE, wavelength all|central|primary|n°, operands [{type,target,weight?,cmp?(eq|ge|le),p?}], replace=true remplace les opérandes', a: '{criterion?, wavelength?, operands?, replace?}', m: 1, run(a) {
+    set_merit: { d: 'Fonction de mérite : criterion SPOT|WFE|NONE, wavelength all|central|primary|n°, operands [{type,target,weight?,cmp?(eq|ge|le),p?,s1?,s2?,w?,hx?,hy?,px?,py?,exact?}], replace=true remplace les opérandes', a: '{criterion?, wavelength?, operands?, replace?}', m: 1, run(a) {
       const mf = S().merit; if (a.criterion) { const c = String(a.criterion).toUpperCase(); if (!['SPOT', 'WFE', 'NONE'].includes(c)) throw new Error('critère SPOT, WFE ou NONE'); mf.image = c; }
       if (a.wavelength != null) { const w = String(a.wavelength); mf.wl = /^\d+$/.test(w) ? Math.max(0, +w - 1) : w; }
       if (a.replace) mf.ops = [];
-      for (const o of a.operands || []) { const t = String(o.type || '').toUpperCase(); if (!OE.OPS[t]) throw new Error(`opérande inconnu ${t} (${Object.keys(OE.OPS).join(', ')})`); mf.ops.push({ type: t, target: num(o.target ?? 0, 'cible'), weight: o.weight != null ? num(o.weight, 'poids') : 1, ...(o.cmp ? { cmp: o.cmp } : {}), ...(o.p != null ? { p: num(o.p, 'paramètre') } : OE.OPS[t].p ? { p: OE.OPS[t].pdef } : {}) }); }
+      for (const o of a.operands || []) { const t = String(o.type || '').toUpperCase(); if (!OE.OPS[t]) throw new Error(`opérande inconnu ${t} (${Object.keys(OE.OPS).filter(k => !OE.OPS[k].hide).join(', ')})`); mf.ops.push({ type: t, target: num(o.target ?? 0, 'cible'), weight: o.weight != null ? num(o.weight, 'poids') : 1, ...(o.cmp ? { cmp: o.cmp } : {}), ...(o.p != null ? { p: num(o.p, 'paramètre') } : OE.OPS[t].p ? { p: OE.OPS[t].pdef } : {}), ...Object.fromEntries(['s1', 's2', 'w', 'hx', 'hy', 'px', 'py'].filter(k => o[k] != null).map(k => [k, num(o[k], k)])), ...(o.exact ? { lag: true } : {}) }); }
       return `mérite : ${mf.image}${mf.wl && mf.wl !== 'all' ? ` (λ ${mf.wl})` : ''}, ${mf.ops.map(o => `${o.type}${({ eq: '=', ge: '≥', le: '≤' })[o.cmp || OE.OPS[o.type].kind]}${r2(o.target)}`).join(' ') || 'aucun opérande'}`; } },
     optimize: { d: 'Lance l\'optimisation locale (moindres carrés amortis)', a: '{iterations?}', m: 1, async run(a) { return 'optimisation : ' + await optimizeLoop(a.iterations ? Math.max(1, Math.min(500, Math.round(num(a.iterations, 'itérations')))) : 100) + ` — ${metrics()}`; } },
     substitute_glasses: { d: 'Remplace les verres variables par les meilleurs verres réels', a: '{catalogs?, preferred?}', m: 1, async run(a) {
@@ -198,7 +198,7 @@
     set_wavelengths: [{ preset: T_('jeu prédéfini', ['FdC', 'visible', 'HeNe', 'NIR', 'd', 'e']), values_nm: { type: 'array', items: { type: 'number' }, description: 'longueurs d\'onde en nm' }, primary: I_('numéro de la λ primaire (1…)') }, []],
     set_stop: [{ s: I_('surface du diaphragme') }, ['s']],
     set_variables: [{ targets: { type: 'array', items: { type: 'string' }, description: 'mots-clés radii | thicknesses | air | glasses | all, ou paramètres précis "R1", "T2", "K3", "G2" (G = verre)' }, clear: B_('retirer d\'abord toutes les variables') }, ['targets']],
-    set_merit: [{ criterion: T_('critère image', ['SPOT', 'WFE', 'NONE']), wavelength: T_('longueurs d\'onde du critère : all, central, primary ou un numéro'), operands: { type: 'array', description: 'contraintes : EFL focale, TTL longueur totale, BFL distance image, WFNO F/#, PMAG grandissement, DIST distorsion %, AXCL chromatisme axial, LACL chromatisme latéral, SPHA/COMA/ASTI/FCUR aberrations de Seidel (λ), MNCT épaisseur MIN des verres au centre, MXCT épaisseur MAX des verres, MNET épaisseur min des verres au bord, MNCA espace d\'air min, MXCA espace d\'air max, MNEA air min au bord, MTFA FTM à une fréquence p', items: { type: 'object', properties: { type: T_('code', Object.keys(OE.OPS)), target: N_('cible'), weight: N_('poids'), cmp: T_('eq (=), ge (≥), le (≤)', ['eq', 'ge', 'le']), p: N_('paramètre (fréquence pour MTFA)') }, required: ['type', 'target'] } }, replace: B_('remplacer les opérandes existants') }, []],
+    set_merit: [{ criterion: T_('critère image', ['SPOT', 'WFE', 'NONE']), wavelength: T_('longueurs d\'onde du critère : all, central, primary ou un numéro'), operands: { type: 'array', description: 'contraintes : EFL focale, TTL longueur totale, BFL distance image, WFNO F/#, PMAG grandissement, DIST distorsion %, AXCL chromatisme axial, LACL chromatisme latéral, SPHA/COMA/ASTI/FCUR aberrations de Seidel (λ), MNCG épaisseur MIN des verres au centre, MXCG épaisseur MAX des verres, MNEG épaisseur min des verres au bord, MNCA espace d\'air min, MXCA espace d\'air max, MNEA air min au bord, MTFA FTM à une fréquence p, RSCE spot RMS au champ hy, RWCE front d\'onde RMS au champ hy, TRAY aberration transverse (hy, py), REAY hauteur réelle sur la surface s1, CTGT/CTLT épaisseur de la surface s1, DISG distorsion au champ hy (liste complète : codes Zemax de l\'aide « Opérandes »)', items: { type: 'object', properties: { type: T_('code', Object.keys(OE.OPS).filter(k => !OE.OPS[k].hide)), target: N_('cible'), weight: N_('poids'), cmp: T_('eq (=), ge (≥), le (≤)', ['eq', 'ge', 'le']), p: N_('paramètre (fréquence pour MTFA)'), s1: N_('surface 1 (ou ligne)'), s2: N_('surface 2'), w: N_('n° de λ'), hx: N_('champ normalisé x'), hy: N_('champ normalisé y'), px: N_('pupille x'), py: N_('pupille y'), exact: B_('contrainte exacte (Lagrange)') }, required: ['type', 'target'] } }, replace: B_('remplacer les opérandes existants') }, []],
     optimize: [{ iterations: I_('itérations maximum') }, []],
     substitute_glasses: [{ catalogs: { type: 'array', items: { type: 'string' }, description: 'catalogues : SCHOTT, OHARA, CDGM, HOYA' }, preferred: B_('verres préférentiels seulement') }, []],
     quick_focus: [{ criterion: T_('critère', ['SPOT', 'WFE']), wavelength: T_('central, primary, all ou un numéro') }, []],
@@ -263,7 +263,7 @@ Appelle les outils nécessaires, dans l'ordre, avec des valeurs numériques. Tu 
 - Unités : mm ; champs en degrés si l'objet est à l'infini ; longueurs d'onde en nm ; face plane = "inf".
 - « optimise » : set_variables (si aucune variable) puis éventuellement set_merit, puis optimize.
 - « focale de X mm » sur le système existant = set_merit avec l'opérande EFL ; « crée/fais un doublet » = design_doublet ; « une lentille simple » = design_singlet.
-- Contraintes (« épaisseur minimale des verres 5 mm », « longueur totale < 120 mm », « pas de chromatisme ») : set_merit avec l'opérande correspondant (MNCT ≥ 5, TTL ≤ 120, AXCL = 0) ; elles s'appliquent à toutes les lentilles. Pour fixer l'épaisseur d'une lentille précise : set_surface sur sa première surface.
+- Contraintes (« épaisseur minimale des verres 5 mm », « longueur totale < 120 mm », « pas de chromatisme ») : set_merit avec l'opérande correspondant (MNCG ≥ 5, TTL ≤ 120, AXCL = 0 ; exact=true pour une contrainte exacte) ; elles s'appliquent à toutes les lentilles. Pour fixer l'épaisseur d'une lentille précise : set_surface sur sa première surface.
 - Chaque action DOIT passer par un appel d'outil : n'écris jamais que tu fais quelque chose sans appeler l'outil.
 - Si la demande est ambiguë ou qu'il manque une valeur indispensable, appelle seulement ask_question.`;
   const SCHEMA = { type: 'object', properties: { message: { type: 'string' }, actions: { type: 'array', items: { type: 'object', properties: { tool: { type: 'string', enum: Object.keys(TOOLS) }, args: { type: 'object' } }, required: ['tool', 'args'] } }, question: { type: 'string' } }, required: ['message', 'actions', 'question'] };
@@ -466,7 +466,7 @@ Appelle les outils nécessaires, dans l'ordre, avec des valeurs numériques. Tu 
     if (/(longueur|lambda|λ)/.test(t)) { if (/visible/.test(t)) acts.push({ tool: 'set_wavelengths', args: { preset: 'visible' } }); else if (/(he-?ne|632)/.test(t)) acts.push({ tool: 'set_wavelengths', args: { preset: 'HeNe' } }); else if (/(f\s*,?\s*d\s*,?\s*c|fdc)/.test(t)) acts.push({ tool: 'set_wavelengths', args: { preset: 'FdC' } }); else if (/(infrarouge|nir|proche ir)/.test(t)) acts.push({ tool: 'set_wavelengths', args: { preset: 'NIR' } }); else if ((m = t.match(/(\d{3,4}(?:[.,]\d+)?)(?:\s*(?:,|et)\s*(\d{3,4}(?:[.,]\d+)?))*\s*nm/g))) { const v = m.join(' ').match(/\d{3,4}(?:[.,]\d+)?/g).map(toN); acts.push({ tool: 'set_wavelengths', args: { values_nm: v } }); } }
     if ((m = t.match(new RegExp(`(?:epaisseur|espace|air)s?\\s*(?:d air\\s*)?(minimum|minimale|minimales|min|maximum|maximale|maximales|max)\\b[^0-9]*${NUM}`))) && !/\blentilles?\s*(l?\d|premiere|deuxieme|troisieme|derniere)/.test(t)) {
       const mx = /^max/.test(m[1]), air = /(air|espace)/.test(t), edge = /bord/.test(t);
-      const type = air ? (edge ? 'MNEA' : mx ? 'MXCA' : 'MNCA') : (edge ? (mx ? 'MXET' : 'MNET') : (mx ? 'MXCT' : 'MNCT'));
+      const type = air ? (edge ? 'MNEA' : mx ? 'MXCA' : 'MNCA') : (edge ? (mx ? 'MXEG' : 'MNEG') : (mx ? 'MXCG' : 'MNCG'));
       acts.push({ tool: 'set_merit', args: { operands: [{ type, target: toN(m[2]), cmp: mx ? 'le' : 'ge', weight: 1 }] } });
     }
     if ((m = t.match(new RegExp(`(?:focale|efl)\\s*(?:=|de|a|:)?\\s*${NUM}`))) && !/(quelle|combien)/.test(t)) acts.push({ tool: 'set_merit', args: { operands: [{ type: 'EFL', target: toN(m[1]) }] } });

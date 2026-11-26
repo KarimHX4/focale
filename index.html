@@ -258,7 +258,18 @@ table.ht{border-collapse:collapse;width:100%;font-size:12.5px}table.ht td,table.
 .dlg textarea{width:100%;height:300px;font-family:var(--mono);font-size:11.5px;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--panel2);color:var(--fg)}
 .hint{color:var(--mut);font-size:12px}
 .vars{display:flex;flex-wrap:wrap;gap:5px;margin:4px 0 10px}
-.ogrid{display:grid;grid-template-columns:minmax(300px,360px) minmax(0,1fr);gap:18px;flex:1;min-height:0}
+.ogrid{display:grid;grid-template-columns:minmax(290px,322px) minmax(0,1fr);gap:16px;flex:1;min-height:0}
+.ofrm{display:grid;grid-template-columns:auto 1fr;gap:4px 8px;align-items:center;font-size:12.5px}.ofrm>label{color:var(--mut)}.ofrm select.in{width:100%}
+table.obnd{font-size:12px;border-collapse:collapse}table.obnd th{font-weight:500;color:var(--mut);padding:2px 4px;font-size:11px}table.obnd td{padding:1px 4px}
+table.otab td,table.otab th{padding:2px 3px}table.otab th{font-size:11px;white-space:nowrap}table.otab input.in,table.otab select.in{height:22px;font-size:12px;padding:0 3px}
+.opb{font-family:var(--mono);font-weight:600;font-size:12px;height:22px;min-width:52px;border:1px solid var(--line);background:var(--panel2);color:var(--fg);border-radius:5px;cursor:pointer}.opb:hover{border-color:var(--acc)}
+td.odc{max-width:170px}.odesc{display:inline-block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;font-size:11.5px;color:var(--mut)}td.odc select{margin-left:4px}
+td.onum{color:var(--mut);font-family:var(--mono);font-size:11px;text-align:right}td.oact{white-space:nowrap}td.oact .x{width:18px;height:20px;font-size:11px}
+tr.oauto td.onum{color:var(--acc)}tr.oimg td{background:var(--panel2)}
+.orow select.in{width:auto}.opick{position:absolute;z-index:50;width:450px;max-height:410px;display:flex;flex-direction:column;gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 36px rgba(0,0,0,.45);padding:8px}
+.opick #opl{overflow:auto;flex:1}.opick .opg{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);padding:6px 4px 2px}
+.opick button{display:grid;grid-template-columns:54px 1fr;gap:0 8px;width:100%;text-align:left;background:none;border:0;color:var(--fg);padding:3px 6px;border-radius:6px;cursor:pointer;font-size:12.5px}.opick button:hover{background:var(--panel2)}
+.opick button b{font-family:var(--mono)}.opick button i{grid-column:2;font-style:normal;font-size:11px;color:var(--mut)}
 .oL,.oR{display:flex;flex-direction:column;min-height:0;min-width:0}
 .oL{overflow:auto;padding-right:4px}
 .akst{font-size:11.5px;padding:2px 8px;border-radius:10px;background:var(--panel2);color:var(--mut)}.akst.ok{background:rgba(22,163,74,.15);color:#16a34a;font-weight:600}.akst.ko{background:rgba(220,38,38,.14);color:#dc2626;font-weight:600}
@@ -400,7 +411,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 <div class="toast" id="toast"></div>
 <input type="file" id="fileIn" accept=".json,.zmx,.seq,.txt,.agf" style="display:none">
 <div class="drop" id="drop">Déposez un fichier .zmx, .seq, .json ou .agf</div>
-<script>const FOCALE_VERSION = 'ae999494';</script>
+<script>const FOCALE_VERSION = 'b25ecff5';</script>
 <script id="js-engine">
 'use strict';
 /* =====================================================================
@@ -1031,7 +1042,7 @@ const OE = (() => {
       opl += ctx.nAbs[j - 1] * t;
       if (clip && sf.clip && lx * lx + ly * ly > sf.sd * sf.sd * (1 + 1e-9)) return { vig: j, why: 'clip' };
       if (pts) pts.push([x, y, z, lx, ly]);
-      if (j === M.N) return { vig: 0, x: lx, y: ly, z: lz, L: dL, M: dM, N: dN, opl, gx: x, gy: y, gz: z, E: pol ? [Ex, Ey, Ez, Fx, Fy, Fz] : null };
+      if (j === M.N) { if (opts.rec) opts.rec.push([lx, ly, lz, dL, dM, dN, NaN, NaN]); return { vig: 0, x: lx, y: ly, z: lz, L: dL, M: dM, N: dN, opl, gx: x, gy: y, gz: z, E: pol ? [Ex, Ey, Ez, Fx, Fy, Fz] : null }; }
       // normale locale
       const g = sGrad(sf, lx, ly);
       let nx = -g[0], ny = -g[1], nz = 1;
@@ -1077,6 +1088,7 @@ const OE = (() => {
         const w = Math.sqrt(no * no - t2) * (dd >= 0 ? 1 : -1);
         dL = (tx + w * nx) / no; dM = (ty + w * ny) / no; dN = (tz + w * nz) / no; opl += K * ph;
       }
+      if (opts.rec) opts.rec.push([lx, ly, lz, dL, dM, dN, cosI, mode === 0 ? cosT : cosI]);
       if (pol) {
         const P = polStep([Ex, Ey, Ez, Fx, Fy, Fz], [iL, iM, iN], [dL, dM, dN], [nx, ny, nz], n1, n2, cosI, cosT, mode, pol.fresnel, sf);
         if (F.id) pol.E = P; else pol.E = [r[0] * P[0] + r[1] * P[1] + r[2] * P[2], r[3] * P[0] + r[4] * P[1] + r[5] * P[2], r[6] * P[0] + r[7] * P[1] + r[8] * P[2], r[0] * P[3] + r[1] * P[4] + r[2] * P[5], r[3] * P[3] + r[4] * P[4] + r[5] * P[5], r[6] * P[3] + r[7] * P[4] + r[8] * P[5]];
@@ -1923,34 +1935,140 @@ const OE = (() => {
 
   /* ---------------- Optimisation (moindres carrés amortis) ---------------- */
   /**
-   * Opérandes de la fonction de mérite. kind = contrainte par défaut (eq : égal, ge : ≥ cible, le : ≤ cible),
-   * modifiable par opérande (op.cmp). list : contrainte appliquée à chaque élément (épaisseurs). p : paramètre.
+   * Opérandes de la fonction de mérite (noms Zemax OpticStudio, équivalents CODE V dans « aka »).
+   * kind : contrainte par défaut (eq : =, ge : ≥ cible, le : ≤ cible), modifiable par ligne (op.cmp).
+   * cols : colonnes utilisées dans l'éditeur — s1, s2 (surfaces, ou n° de lignes pour les opérations), w (λ : 1…n, 0 = poly/primaire),
+   *        hx, hy (champ normalisé), px, py (pupille normalisée), p (paramètre, libellé pl, défaut pdef), fi (n° de champ).
+   * list : la contrainte s'applique à chaque élément d'une plage. hide : ancien opérande, masqué du sélecteur (fichiers existants).
    */
+  const OPG = [['first', 'Premier ordre'], ['img', 'Qualité d\'image'], ['ray', 'Rayons réels et paraxiaux'], ['aber', 'Aberrations'], ['thk', 'Épaisseurs et dimensions'], ['shape', 'Courbures, coniques, diamètres'], ['glass', 'Verres'], ['math', 'Opérations sur les lignes']];
+  const RF = ['w', 'hx', 'hy', 'px', 'py'], FLD = ['w', 'hx', 'hy'], RNG = ['s1', 's2'];
   const OPS = {
-    EFL: { label: 'Focale (EFL)', kind: 'eq', u: 'mm' }, WFNO: { label: 'F/# de travail (paraxial)', kind: 'eq' },
-    TTL: { label: 'Longueur totale (1ʳᵉ surface → image)', kind: 'eq', u: 'mm' }, BFL: { label: 'Distance image paraxiale (dernière surface → foyer)', kind: 'eq', u: 'mm' },
-    PMAG: { label: 'Grandissement paraxial', kind: 'eq' }, IMGH: { label: 'Hauteur image paraxiale (champ max)', kind: 'eq', u: 'mm' },
-    RIMH: { label: 'Hauteur image réelle (rayon principal, champ max)', kind: 'eq', u: 'mm' },
-    DIST: { label: 'Distorsion réelle au champ max', kind: 'eq', u: '%' },
-    AXCL: { label: 'Chromatisme axial (foyer λmax − λmin)', kind: 'eq', u: 'mm' }, LACL: { label: 'Chromatisme latéral (λmax − λmin, champ max)', kind: 'eq', u: 'mm' },
-    SPHA: { label: 'Sphérique de Seidel W040', kind: 'eq', u: 'λ' }, COMA: { label: 'Coma de Seidel W131', kind: 'eq', u: 'λ' },
-    ASTI: { label: 'Astigmatisme de Seidel W222', kind: 'eq', u: 'λ' }, FCUR: { label: 'Courbure de champ (Petzval) W220', kind: 'eq', u: 'λ' },
-    MTFA: { label: 'FTM moyenne T/S à une fréquence', kind: 'ge', p: 'cycles/mm', pdef: 30 },
-    MNCT: { label: 'Épaisseur centre verre min', kind: 'ge', u: 'mm', list: 1 }, MXCT: { label: 'Épaisseur centre verre max', kind: 'le', u: 'mm', list: 1 },
-    MNET: { label: 'Épaisseur bord verre min', kind: 'ge', u: 'mm', list: 1 }, MXET: { label: 'Épaisseur bord verre max', kind: 'le', u: 'mm', list: 1 },
-    MNCA: { label: 'Espace d\'air centre min', kind: 'ge', u: 'mm', list: 1 }, MXCA: { label: 'Espace d\'air centre max', kind: 'le', u: 'mm', list: 1 },
-    MNEA: { label: 'Espace d\'air bord min', kind: 'ge', u: 'mm', list: 1 },
-    RGLA: { label: 'Verre modèle réaliste (écart au verre réel le plus proche)', kind: 'le', list: 1 },
-    MTFT: { label: 'FTM tangentielle à une fréquence (par champ)', kind: 'ge', p: 'cycles/mm', pdef: 30, f: 1 },
-    MTFS: { label: 'FTM sagittale à une fréquence (par champ)', kind: 'ge', p: 'cycles/mm', pdef: 30, f: 1 },
-    SPOT: { label: 'Spot RMS polychromatique (par champ)', kind: 'le', u: 'µm', f: 1 },
-    WFER: { label: 'Front d\'onde RMS λ primaire (par champ)', kind: 'le', u: 'λ', f: 1 },
-    DISM: { label: 'Distorsion max |%| sur tout le champ', kind: 'le', u: '%' },
-    RELI: { label: 'Éclairement relatif au bord du champ', kind: 'ge' },
-    CTHK: { label: 'Épaisseur au centre de la surface j', kind: 'ge', u: 'mm', p: 'surface j', pdef: 1 },
-    ETHK: { label: 'Épaisseur au bord entre j et j+1', kind: 'ge', u: 'mm', p: 'surface j', pdef: 1 },
-    GLTR: { label: 'Transmission interne des verres (axe)', kind: 'ge', p: 'λ (µm)', pdef: 0.4 },
+    // ---- premier ordre (paraxial) ----
+    EFL: { g: 'first', label: 'Focale effective', kind: 'eq', u: 'mm', cols: ['w'], aka: 'Zemax EFFL · CODE V EFL' },
+    ISFN: { g: 'first', label: 'F/# image (EFL / EPD)', kind: 'eq', aka: 'Zemax ISFN · CODE V FNO (infini)' },
+    WFNO: { g: 'first', label: 'F/# de travail paraxial', kind: 'eq', cols: ['w'], aka: 'Zemax WFNO · CODE V FNO' },
+    PMAG: { g: 'first', label: 'Grandissement paraxial', kind: 'eq', cols: ['w'], aka: 'Zemax PMAG · CODE V RED' },
+    TTL: { g: 'first', label: 'Longueur totale (1ʳᵉ surface → image)', kind: 'eq', u: 'mm', aka: 'Zemax TOTR · CODE V TOT' },
+    OAL: { g: 'first', label: 'Longueur de la 1ʳᵉ à la dernière surface', kind: 'eq', u: 'mm', aka: 'CODE V OAL' },
+    BFL: { g: 'first', label: 'Tirage paraxial (dernière surface → foyer)', kind: 'eq', u: 'mm', cols: ['w'], aka: 'CODE V BFL · Zemax PARZ image' },
+    IMGH: { g: 'first', label: 'Hauteur image paraxiale (champ max)', kind: 'eq', u: 'mm', aka: 'Zemax PIMH · CODE V HT' },
+    ENPP: { g: 'first', label: 'Position pupille d\'entrée (/ 1ʳᵉ surface)', kind: 'eq', u: 'mm', aka: 'Zemax ENPP · CODE V ENP' },
+    ENPD: { g: 'first', label: 'Diamètre pupille d\'entrée', kind: 'eq', u: 'mm', aka: 'CODE V EPD' },
+    EXPP: { g: 'first', label: 'Position pupille de sortie (/ image)', kind: 'eq', u: 'mm', aka: 'Zemax EXPP · CODE V EXP' },
+    EXPD: { g: 'first', label: 'Diamètre pupille de sortie', kind: 'eq', u: 'mm', aka: 'Zemax EXPD' },
+    LINV: { g: 'first', label: 'Invariant de Lagrange', kind: 'eq', u: 'mm', aka: 'Zemax LINV · CODE V INV' },
+    POWR: { g: 'first', label: 'Puissance de la surface s1', kind: 'eq', u: '1/mm', cols: ['s1', 'w'], aka: 'Zemax POWR' },
+    TTHI: { g: 'first', label: 'Somme des épaisseurs s1 … s2', kind: 'eq', u: 'mm', cols: RNG, aka: 'Zemax TTHI · CODE V OAL Si..j' },
+    // ---- qualité d'image ----
+    RSCE: { g: 'img', label: 'Spot RMS (barycentre) à un champ', kind: 'le', u: 'mm', cols: [...FLD, 'p'], pl: 'anneaux', pdef: 3, aka: 'Zemax RSCE' },
+    RSCH: { g: 'img', label: 'Spot RMS (rayon principal) à un champ', kind: 'le', u: 'mm', cols: [...FLD, 'p'], pl: 'anneaux', pdef: 3, aka: 'Zemax RSCH' },
+    RWCE: { g: 'img', label: 'Front d\'onde RMS (barycentre : piston + tilt retirés)', kind: 'le', u: 'λ', cols: [...FLD, 'p'], pl: 'anneaux', pdef: 3, aka: 'Zemax RWCE · CODE V WAV' },
+    RWCH: { g: 'img', label: 'Front d\'onde RMS (rayon principal : piston retiré)', kind: 'le', u: 'λ', cols: [...FLD, 'p'], pl: 'anneaux', pdef: 3, aka: 'Zemax RWCH' },
+    STRH: { g: 'img', label: 'Strehl (Maréchal, depuis le front d\'onde RMS)', kind: 'ge', cols: FLD, aka: 'Zemax STRH' },
+    SPOT: { g: 'img', label: 'Spot RMS polychromatique (n° de champ)', kind: 'le', u: 'µm', f: 1, aka: 'CODE V SPOT' },
+    WFER: { g: 'img', label: 'Front d\'onde RMS λ primaire (n° de champ)', kind: 'le', u: 'λ', f: 1, aka: 'CODE V WAV' },
+    MTFT: { g: 'img', label: 'FTM tangentielle (n° de champ)', kind: 'ge', p: 'cycles/mm', pl: 'cycles/mm', pdef: 30, f: 1, aka: 'Zemax MTFT · CODE V MTF' },
+    MTFS: { g: 'img', label: 'FTM sagittale (n° de champ)', kind: 'ge', p: 'cycles/mm', pl: 'cycles/mm', pdef: 30, f: 1, aka: 'Zemax MTFS · CODE V MTF' },
+    MTFA: { g: 'img', label: 'FTM moyenne T/S (champs pondérés)', kind: 'ge', p: 'cycles/mm', pl: 'cycles/mm', pdef: 30, aka: 'Zemax MTFA' },
+    ZERN: { g: 'img', label: 'Coefficient de Zernike Fringe n° p', kind: 'eq', u: 'λ', cols: [...FLD, 'p'], pl: 'terme', pdef: 9, aka: 'Zemax ZERN · CODE V ZFR' },
+    RELI: { g: 'img', label: 'Éclairement relatif au bord du champ', kind: 'ge', aka: 'Zemax RELI' },
+    // ---- rayons ----
+    REAX: { g: 'ray', label: 'Coordonnée x réelle sur s1 (0 = image)', kind: 'eq', u: 'mm', cols: ['s1', ...RF], aka: 'Zemax REAX · CODE V X' },
+    REAY: { g: 'ray', label: 'Coordonnée y réelle sur s1 (0 = image)', kind: 'eq', u: 'mm', cols: ['s1', ...RF], aka: 'Zemax REAY · CODE V Y' },
+    REAR: { g: 'ray', label: 'Rayon (distance à l\'axe) réel sur s1', kind: 'eq', u: 'mm', cols: ['s1', ...RF], aka: 'Zemax REAR' },
+    REAB: { g: 'ray', label: 'Cosinus directeur y après s1', kind: 'eq', cols: ['s1', ...RF], aka: 'Zemax REAB · CODE V TANY (≈)' },
+    RANG: { g: 'ray', label: 'Angle du rayon / axe après s1', kind: 'eq', u: '°', cols: ['s1', ...RF], aka: 'Zemax RANG (en degrés ici)' },
+    RAID: { g: 'ray', label: 'Angle d\'incidence sur s1', kind: 'le', u: '°', cols: ['s1', ...RF], aka: 'Zemax RAID · CODE V AOI' },
+    RAED: { g: 'ray', label: 'Angle d\'émergence sur s1', kind: 'le', u: '°', cols: ['s1', ...RF], aka: 'Zemax RAED · CODE V AOR' },
+    RIMH: { g: 'ray', label: 'Hauteur image réelle (rayon principal, champ max)', kind: 'eq', u: 'mm', aka: 'CODE V RIH' },
+    TRAX: { g: 'ray', label: 'Aberration transverse x (/ rayon principal)', kind: 'eq', u: 'mm', cols: RF, aka: 'Zemax TRAX · CODE V DX' },
+    TRAY: { g: 'ray', label: 'Aberration transverse y (/ rayon principal)', kind: 'eq', u: 'mm', cols: RF, aka: 'Zemax TRAY · CODE V DY' },
+    TRAR: { g: 'ray', label: 'Aberration transverse radiale (/ rayon principal)', kind: 'le', u: 'mm', cols: RF, aka: 'Zemax TRAR' },
+    OPDC: { g: 'ray', label: 'Différence de marche (/ rayon principal)', kind: 'eq', u: 'λ', cols: RF, aka: 'Zemax OPDC · CODE V OPD' },
+    OPDX: { g: 'ray', label: 'Différence de marche (piston + tilt retirés)', kind: 'eq', u: 'λ', cols: RF, aka: 'Zemax OPDX' },
+    LONA: { g: 'ray', label: 'Aberration longitudinale (zone py, / foyer paraxial)', kind: 'eq', u: 'mm', cols: ['w', 'py'], aka: 'Zemax LONA · CODE V LA' },
+    PARY: { g: 'ray', label: 'Hauteur d\'un rayon paraxial sur s1 (hy, py)', kind: 'eq', u: 'mm', cols: ['s1', 'w', 'hy', 'py'], aka: 'Zemax PARY · CODE V HMY/HCY' },
+    PARB: { g: 'ray', label: 'Angle d\'un rayon paraxial après s1 (u)', kind: 'eq', cols: ['s1', 'w', 'hy', 'py'], aka: 'Zemax PARB · CODE V UMY/UCY' },
+    // ---- aberrations ----
+    AXCL: { g: 'aber', label: 'Chromatisme axial (foyer λmax − λmin)', kind: 'eq', u: 'mm', aka: 'Zemax AXCL · CODE V CLA' },
+    LACL: { g: 'aber', label: 'Chromatisme latéral (λmax − λmin, champ max)', kind: 'eq', u: 'mm', aka: 'Zemax LACL · CODE V CTR' },
+    DIST: { g: 'aber', label: 'Distorsion réelle au champ max', kind: 'eq', u: '%', aka: 'CODE V DIS' },
+    DISG: { g: 'aber', label: 'Distorsion réelle à un champ (hx, hy)', kind: 'eq', u: '%', cols: FLD, aka: 'Zemax DISG' },
+    DISM: { g: 'aber', label: 'Distorsion max |%| sur tout le champ', kind: 'le', u: '%', aka: 'Zemax DIMX' },
+    FCGT: { g: 'aber', label: 'Courbure de champ tangentielle à un champ', kind: 'eq', u: 'mm', cols: FLD, aka: 'Zemax FCGT · CODE V FCT' },
+    FCGS: { g: 'aber', label: 'Courbure de champ sagittale à un champ', kind: 'eq', u: 'mm', cols: FLD, aka: 'Zemax FCGS · CODE V FCS' },
+    SPHA: { g: 'aber', label: 'Sphérique de Seidel W040 (s1 ; 0 = somme)', kind: 'eq', u: 'λ', cols: ['s1'], aka: 'Zemax SPHA · CODE V SA' },
+    COMA: { g: 'aber', label: 'Coma de Seidel W131 (s1 ; 0 = somme)', kind: 'eq', u: 'λ', cols: ['s1'], aka: 'Zemax COMA · CODE V TCO' },
+    ASTI: { g: 'aber', label: 'Astigmatisme de Seidel W222 (s1 ; 0 = somme)', kind: 'eq', u: 'λ', cols: ['s1'], aka: 'Zemax ASTI · CODE V TAS' },
+    FCUR: { g: 'aber', label: 'Courbure de Petzval W220 (s1 ; 0 = somme)', kind: 'eq', u: 'λ', cols: ['s1'], aka: 'Zemax FCUR · CODE V PTZ' },
+    // ---- épaisseurs ----
+    CTGT: { g: 'thk', label: 'Épaisseur au centre de s1 ≥', kind: 'ge', u: 'mm', cols: ['s1'], aka: 'Zemax CTGT · CODE V MNT' },
+    CTLT: { g: 'thk', label: 'Épaisseur au centre de s1 ≤', kind: 'le', u: 'mm', cols: ['s1'], aka: 'Zemax CTLT · CODE V MXT' },
+    CTVA: { g: 'thk', label: 'Épaisseur au centre de s1 =', kind: 'eq', u: 'mm', cols: ['s1'], aka: 'Zemax CTVA · CODE V THI' },
+    ETGT: { g: 'thk', label: 'Épaisseur au bord de s1 ≥', kind: 'ge', u: 'mm', cols: ['s1'], aka: 'Zemax ETGT · CODE V MNE' },
+    ETLT: { g: 'thk', label: 'Épaisseur au bord de s1 ≤', kind: 'le', u: 'mm', cols: ['s1'], aka: 'Zemax ETLT · CODE V MXE' },
+    ETVA: { g: 'thk', label: 'Épaisseur au bord de s1 =', kind: 'eq', u: 'mm', cols: ['s1'], aka: 'Zemax ETVA · CODE V ETH' },
+    MNCT: { g: 'thk', label: 'Épaisseur centre min (toutes, s1 … s2)', kind: 'ge', u: 'mm', list: 1, cols: RNG, aka: 'Zemax MNCT · CODE V MNT' },
+    MXCT: { g: 'thk', label: 'Épaisseur centre max (toutes, s1 … s2)', kind: 'le', u: 'mm', list: 1, cols: RNG, aka: 'Zemax MXCT · CODE V MXT' },
+    MNET: { g: 'thk', label: 'Épaisseur bord min (toutes, s1 … s2)', kind: 'ge', u: 'mm', list: 1, cols: RNG, aka: 'Zemax MNET · CODE V MNE' },
+    MXET: { g: 'thk', label: 'Épaisseur bord max (toutes, s1 … s2)', kind: 'le', u: 'mm', list: 1, cols: RNG, aka: 'Zemax MXET · CODE V MXE' },
+    MNCG: { g: 'thk', label: 'Verre : épaisseur centre min', kind: 'ge', u: 'mm', list: 1, cols: RNG, aka: 'Zemax MNCG · CODE V MNT (verre)' },
+    MXCG: { g: 'thk', label: 'Verre : épaisseur centre max', kind: 'le', u: 'mm', list: 1, cols: RNG, aka: 'Zemax MXCG · CODE V MXT (verre)' },
+    MNEG: { g: 'thk', label: 'Verre : épaisseur bord min', kind: 'ge', u: 'mm', list: 1, cols: RNG, aka: 'Zemax MNEG · CODE V MNE (verre)' },
+    MXEG: { g: 'thk', label: 'Verre : épaisseur bord max', kind: 'le', u: 'mm', list: 1, cols: RNG, aka: 'Zemax MXEG' },
+    MNCA: { g: 'thk', label: 'Air : espace centre min', kind: 'ge', u: 'mm', list: 1, cols: RNG, aka: 'Zemax MNCA · CODE V MNA' },
+    MXCA: { g: 'thk', label: 'Air : espace centre max', kind: 'le', u: 'mm', list: 1, cols: RNG, aka: 'Zemax MXCA · CODE V MXA' },
+    MNEA: { g: 'thk', label: 'Air : espace bord min', kind: 'ge', u: 'mm', list: 1, cols: RNG, aka: 'Zemax MNEA · CODE V MNE (air)' },
+    MXEA: { g: 'thk', label: 'Air : espace bord max', kind: 'le', u: 'mm', list: 1, cols: RNG, aka: 'Zemax MXEA' },
+    // ---- formes ----
+    CVGT: { g: 'shape', label: 'Courbure de s1 ≥', kind: 'ge', u: '1/mm', cols: ['s1'], aka: 'Zemax CVGT' },
+    CVLT: { g: 'shape', label: 'Courbure de s1 ≤', kind: 'le', u: '1/mm', cols: ['s1'], aka: 'Zemax CVLT' },
+    CVVA: { g: 'shape', label: 'Courbure de s1 =', kind: 'eq', u: '1/mm', cols: ['s1'], aka: 'Zemax CVVA · CODE V CUY' },
+    COGT: { g: 'shape', label: 'Conique de s1 ≥', kind: 'ge', cols: ['s1'], aka: 'Zemax COGT' },
+    COLT: { g: 'shape', label: 'Conique de s1 ≤', kind: 'le', cols: ['s1'], aka: 'Zemax COLT' },
+    COVA: { g: 'shape', label: 'Conique de s1 =', kind: 'eq', cols: ['s1'], aka: 'Zemax COVA · CODE V K' },
+    DMGT: { g: 'shape', label: 'Diamètre (2 × demi-diamètre) de s1 ≥', kind: 'ge', u: 'mm', cols: ['s1'], aka: 'Zemax DMGT' },
+    DMLT: { g: 'shape', label: 'Diamètre de s1 ≤', kind: 'le', u: 'mm', cols: ['s1'], aka: 'Zemax DMLT · CODE V MXD' },
+    DMVA: { g: 'shape', label: 'Diamètre de s1 =', kind: 'eq', u: 'mm', cols: ['s1'], aka: 'Zemax DMVA' },
+    MNSD: { g: 'shape', label: 'Demi-diamètre min (s1 … s2)', kind: 'ge', u: 'mm', list: 1, cols: RNG, aka: 'Zemax MNSD' },
+    MXSD: { g: 'shape', label: 'Demi-diamètre max (s1 … s2)', kind: 'le', u: 'mm', list: 1, cols: RNG, aka: 'Zemax MXSD · CODE V MXD' },
+    // ---- verres ----
+    RGLA: { g: 'glass', label: 'Verres modèles près des verres réels', kind: 'le', list: 1, aka: 'Zemax RGLA' },
+    MNIN: { g: 'glass', label: 'Verres modèles : nd min (s1 … s2)', kind: 'ge', list: 1, cols: RNG, aka: 'Zemax MNIN' },
+    MXIN: { g: 'glass', label: 'Verres modèles : nd max (s1 … s2)', kind: 'le', list: 1, cols: RNG, aka: 'Zemax MXIN' },
+    MNAB: { g: 'glass', label: 'Verres modèles : νd min (s1 … s2)', kind: 'ge', list: 1, cols: RNG, aka: 'Zemax MNAB' },
+    MXAB: { g: 'glass', label: 'Verres modèles : νd max (s1 … s2)', kind: 'le', list: 1, cols: RNG, aka: 'Zemax MXAB' },
+    GLTR: { g: 'glass', label: 'Transmission interne des verres (axe)', kind: 'ge', p: 'λ (µm)', pl: 'λ (µm)', pdef: 0.4, aka: 'Zemax TRAN (≈)' },
+    // ---- opérations sur les lignes (s1, s2 = n° de ligne) ----
+    BLNK: { g: 'math', label: 'Ligne vide / commentaire', kind: 'eq', aka: 'Zemax BLNK', nores: 1 },
+    CONS: { g: 'math', label: 'Constante (valeur = paramètre)', kind: 'eq', cols: ['p'], pl: 'valeur', pdef: 0, aka: 'Zemax CONS' },
+    SUMM: { g: 'math', label: 'Somme des lignes s1 + s2', kind: 'eq', cols: RNG, math: 1, aka: 'Zemax SUMM' },
+    DIFF: { g: 'math', label: 'Différence des lignes s1 − s2', kind: 'eq', cols: RNG, math: 1, aka: 'Zemax DIFF' },
+    PROD: { g: 'math', label: 'Produit des lignes s1 × s2', kind: 'eq', cols: RNG, math: 1, aka: 'Zemax PROD' },
+    DIVI: { g: 'math', label: 'Quotient des lignes s1 / s2', kind: 'eq', cols: RNG, math: 1, aka: 'Zemax DIVI' },
+    ABSO: { g: 'math', label: 'Valeur absolue de la ligne s1', kind: 'eq', cols: ['s1'], math: 1, aka: 'Zemax ABSO' },
+    SQRT: { g: 'math', label: 'Racine carrée de la ligne s1', kind: 'eq', cols: ['s1'], math: 1, aka: 'Zemax SQRT' },
+    MINN: { g: 'math', label: 'Minimum des lignes s1 … s2', kind: 'eq', cols: RNG, math: 1, aka: 'Zemax MINN' },
+    MAXX: { g: 'math', label: 'Maximum des lignes s1 … s2', kind: 'eq', cols: RNG, math: 1, aka: 'Zemax MAXX' },
+    OPGT: { g: 'math', label: 'Ligne s1 ≥ cible', kind: 'ge', cols: ['s1'], math: 1, aka: 'Zemax OPGT' },
+    OPLT: { g: 'math', label: 'Ligne s1 ≤ cible', kind: 'le', cols: ['s1'], math: 1, aka: 'Zemax OPLT' },
+    OPVA: { g: 'math', label: 'Ligne s1 = cible', kind: 'eq', cols: ['s1'], math: 1, aka: 'Zemax OPVA' },
+    // ---- anciens opérandes Focale (fichiers existants) ----
+    CTHK: { g: 'thk', label: 'Épaisseur au centre de la surface j', kind: 'ge', u: 'mm', p: 'surface j', pl: 'surface j', pdef: 1, hide: 1 },
+    ETHK: { g: 'thk', label: 'Épaisseur au bord entre j et j+1', kind: 'ge', u: 'mm', p: 'surface j', pl: 'surface j', pdef: 1, hide: 1 },
   };
+  for (const d of Object.values(OPS)) { d.cols = d.cols || [...(d.p ? ['p'] : []), ...(d.f ? ['fi'] : [])]; if (d.p && !d.cols.includes('p')) d.cols.push('p'); }
+  /** fonction de mérite d'avant la version 2 : MNCT/MXCT/MNET/MXET visaient le verre seul, CTHK/ETHK la surface « p », poids linéaires */
+  function meritUpgrade(sys) {
+    const mf = sys && sys.merit; if (!mf || mf.v >= 2) return sys;
+    const ren = { MNCT: 'MNCG', MXCT: 'MXCG', MNET: 'MNEG', MXET: 'MXEG', CTHK: 'CTGT', ETHK: 'ETGT' };
+    for (const o of mf.ops || []) {
+      if (ren[o.type]) { if (o.type === 'CTHK' || o.type === 'ETHK') { o.s1 = Math.round(+o.p || 1); delete o.p; if (o.cmp === 'ge') delete o.cmp; } o.type = ren[o.type]; }
+      if (+o.weight) o.weight = Math.pow(+o.weight, 2); // résidu w·r (ancien) → poids W·r² (Zemax)
+    }
+    mf.v = 2; return sys;
+  }
   /* ---------------- Verres variables (verre modèle nd/νd) ---------------- */
   const MODEL_RE = /^\s*([0-9.]+)\s*[,\/;:]\s*([0-9.]+)\s*$/;
   /** verre modèle « nd/νd » → { nd, vd } (null pour un verre de catalogue) */
@@ -1973,7 +2091,7 @@ const OE = (() => {
   function subTry(sys, j, name, it = 12) {
     const s = structuredClone(sys); s.surfaces[j].glass = name;
     const st = { sys: s, mu: 1e-3 }; for (let i = 0; i < it; i++) { const r = optStep(st); if (r.done) break; }
-    const r = residuals(st.sys); return { sys: st.sys, m: r ? meritOf(r.f) : Infinity };
+    const r = residuals(st.sys); return { sys: st.sys, m: r ? meritR(r) * (1 + 1e6 * consViol(r.cons)) : Infinity };
   }
   const ASPH = ASPK;
   function getVars(sys) {
@@ -2013,137 +2131,297 @@ const OE = (() => {
     return W.map((_, i) => i);
   }
   const GQ = [[0.3357107, 5 / 18], [0.7071068, 8 / 18], [0.9419651, 5 / 18]];
-  /** valeur d'un opérande : { val } ou { list } */
-  function opValue(M, op) {
+  /** nœuds et poids de Gauss-Legendre sur [−1, 1] */
+  const GLC = new Map();
+  function gaussLegendre(n) {
+    if (GLC.has(n)) return GLC.get(n);
+    const x = [], w = [];
+    for (let i = 1; i <= n; i++) {
+      let z = Math.cos(Math.PI * (i - 0.25) / (n + 0.5)), pp = 1;
+      for (let it = 0; it < 100; it++) { let p1 = 1, p2 = 0; for (let j = 1; j <= n; j++) { const p3 = p2; p2 = p1; p1 = ((2 * j - 1) * z * p2 - (j - 1) * p3) / j; } pp = n * (z * p1 - p2) / (z * z - 1); const z1 = z; z = z1 - p1 / pp; if (Math.abs(z - z1) < 1e-15) break; }
+      x.push(z); w.push(2 / ((1 - z * z) * pp * pp));
+    }
+    const r = { x, w }; GLC.set(n, r); return r;
+  }
+  /**
+   * échantillonnage de la pupille de la fonction de mérite : quadrature de Gauss (anneaux × bras, Zemax « Gaussian quadrature »)
+   * ou grille rectangulaire (Zemax « Rectangular array », CODE V DEL). half : demi-pupille px ≥ 0 (symétrie), poids doublés.
+   * Renvoie [[px, py, w]] (Σw = 1).
+   */
+  function meritPupil(pu, obs = 0, half = false) {
+    const out = [];
+    if (pu && pu.type === 'RA') {
+      const n = Math.max(2, Math.min(40, pu.grid | 0 || 8)); for (const [px, py] of pupilGrid(n, obs)) out.push([px, py, 1]);
+    } else {
+      const nr = Math.max(1, Math.min(20, (pu && pu.rings) | 0 || 3)), na = Math.max(2, Math.min(36, (pu && pu.arms) | 0 || 8)), g = gaussLegendre(nr), o2 = obs * obs;
+      for (let i = 0; i < nr; i++) { const r = Math.sqrt(o2 + (1 - o2) * (g.x[i] + 1) / 2); for (let a = 0; a < na; a++) { const th = 2 * Math.PI * (a + 0.5) / na; out.push([r * Math.cos(th), r * Math.sin(th), g.w[i] / 2 / na]); } }
+    }
+    let P = out;
+    if (half) { P = []; for (const [x, y, w] of out) { if (x < -1e-12) continue; P.push([x, y, x > 1e-12 ? 2 * w : w]); } }
+    const s = P.reduce((a, q) => a + q[2], 0) || 1; return P.map(([x, y, w]) => [x, y, w / s]);
+  }
+  /** système de révolution et champs dans le plan méridien : la demi-pupille suffit */
+  function axisSym(M) {
+    for (let j = 1; j <= M.N; j++) { const F = M.fr[j], s = M.S[j]; if (!F.id || Math.abs(F.o[0]) > 1e-12 || Math.abs(F.o[1]) > 1e-12) return false; if (s.type && s.type !== 'STD') return false; if (s.elem === 'grating') return false; }
+    return M.sys.fields.every(f => Math.abs(+f.x || 0) < 1e-12 && (+f.vux || 0) === (+f.vlx || 0));
+  }
+  /** champ normalisé (hx, hy) → champ interne ; normalisation par le champ radial max (Zemax) */
+  const fieldAt = (M, hx, hy) => { const R = Math.max(0, ...M.sys.fields.map(f => Math.hypot(+f.x || 0, +f.y || 0))); return { x: (+hx || 0) * R, y: (+hy || 0) * R }; };
+  /** n° de longueur d'onde de l'opérande (1…n ; 0 ou vide → primaire) */
+  const wOf = (M, w) => { const k = Math.round(+w || 0); return k >= 1 && k <= M.wls.length ? k - 1 : M.pw; };
+  /** rayon avec relevé surface par surface : rec[j−1] = [x, y, z (locaux), L, M, N (après la surface, locaux), cos i, cos i′] */
+  function rayRec(M, wi, f, px, py) { const rec = []; const r = ray(M, wi, f, px, py, { rec }); return { r, rec }; }
+  /** RMS du spot à un champ (référence barycentre ou rayon principal), λ wi ou polychromatique (wi < 0) */
+  function spotRms(M, f, wi, rings, ref, pu) {
+    const P = meritPupil(pu || { rings, arms: Math.max(6, 2 * rings) }, M.obs), W = M.sys.wavelengths, wl = wi >= 0 ? [wi] : W.map((_, i) => i);
+    const pts = []; let sx = 0, sy = 0, sw = 0;
+    for (const k of wl) { const ww = wi >= 0 ? 1 : (W[k].w ?? 1); for (const [px, py, w] of P) { const r = ray(M, k, f, px, py); if (r.vig) continue; pts.push([r.x, r.y, w * ww]); sx += w * ww * r.x; sy += w * ww * r.y; sw += w * ww; } }
+    if (!sw) return NaN;
+    let cx = sx / sw, cy = sy / sw; if (ref === 'chief') { const c = ray(M, M.pw, f, 0, 0); if (c.vig) return NaN; cx = c.x; cy = c.y; }
+    let s2 = 0; for (const [x, y, w] of pts) s2 += w * ((x - cx) ** 2 + (y - cy) ** 2); return Math.sqrt(s2 / sw);
+  }
+  /** front d'onde échantillonné (λ) sur P, ajusté en piston (tilt : false), piston + tilt X/Y ('xy') ou piston + tilt Y ('y', demi-pupille) ;
+      S[k] = [px, py, w, W] dans l'ordre de P (W = NaN si le rayon est vignetté) */
+  function wfSample(M, f, wi, P, tilt) {
+    const ref = opdRef(M, wi, f); if (!ref) return null; const S = []; // opdRef.W : en ondes
+    for (const [px, py, w] of P) { const v = ref.W(ray(M, wi, f, px, py)); S.push([px, py, w, isFinite(v) ? v : NaN]); }
+    const G = S.filter(q => isFinite(q[3])); if (!G.length) return null;
+    let a = 0, b = 0, c = 0;
+    if (tilt) { const nb = tilt === 'y' ? 2 : 3, A = Array.from({ length: nb }, () => new Array(nb).fill(0)), B = new Array(nb).fill(0);
+      for (const [x, y, w, v] of G) { const z = tilt === 'y' ? [1, y] : [1, x, y]; for (let i = 0; i < nb; i++) { B[i] += w * z[i] * v; for (let j = 0; j < nb; j++) A[i][j] += w * z[i] * z[j]; } }
+      for (let i = 0; i < nb; i++) A[i][i] += 1e-14; const q = solveLin(A, B) || new Array(nb).fill(0); if (tilt === 'y') [a, c] = q; else [a, b, c] = q; }
+    else { let sw = 0; for (const [, , w, v] of G) { a += w * v; sw += w; } a /= sw || 1; }
+    return { S, n: G.length, a, b, c, fit: (x, y) => a + b * x + c * y };
+  }
+  function wfRms(M, f, wi, rings, tilt) {
+    const P = meritPupil({ rings, arms: Math.max(6, 2 * rings) }, M.obs), wl = wi >= 0 ? [wi] : M.wls.map((_, i) => i), W = M.sys.wavelengths;
+    let acc = 0, ws = 0;
+    for (const k of wl) { const q = wfSample(M, f, k, P, tilt ? 'xy' : false); if (!q) return NaN; let s2 = 0, sw = 0; for (const [x, y, w, v] of q.S) { if (!isFinite(v)) continue; s2 += w * (v - q.fit(x, y)) ** 2; sw += w; } const ww = wi >= 0 ? 1 : (W[k].w ?? 1); acc += ww * s2 / (sw || 1); ws += ww; }
+    return Math.sqrt(acc / (ws || 1));
+  }
+  /** foyers tangentiel / sagittal (mm, / surface image) pour un champ et une λ */
+  function fcAt(M, wi, f, tang) {
+    const c = ray(M, wi, f, 0, 0), e = 0.02, a = tang ? 0 : e, b = tang ? e : 0, r1 = ray(M, wi, f, a, b), r2 = ray(M, wi, f, -a, -b);
+    if (c.vig || r1.vig || r2.vig) return NaN;
+    const z = r => b ? -(r.y - c.y) / (r.M / r.N - c.M / c.N) : -(r.x - c.x) / (r.L / r.N - c.L / c.N); return (z(r1) + z(r2)) / 2;
+  }
+  /** valeur d'un opérande : { val } ou { list } ; rows : valeurs des lignes précédentes (opérations) */
+  function opValue(M, op, rows = []) {
     const S = M.S, N = M.N, sys = M.sys, wl = M.wls;
     const sagAt = (j, r) => { const s = M.ctxs[M.pw].s[j]; const v = sag(s, 0, r); return isFinite(v) ? v : 0; };
     const chief = wi => { const fy = M.par.fmax; const c = ray(M, wi, { x: 0, y: fy }, 0, 0); return c.vig ? NaN : c.y; };
     const lmin = wl.indexOf(Math.min(...wl)), lmax = wl.indexOf(Math.max(...wl));
     const edge = (j, k) => { const r = Math.max(S[j].sd, S[k].sd); return S[j].t + sagAt(k, r) - sagAt(j, r); };
+    const sj = (v, d = 1) => { const k = Math.round(+v); return k >= 0 && k <= N ? k : d; }, s1 = sj(op.s1, 1), surfN = k => (k === 0 ? N : k);
+    const range = (a0 = 1, b0 = N - 2) => { let a = Math.round(+op.s1 || 0), b = Math.round(+op.s2 || 0); if (!a && !b) { a = a0; b = b0; } else if (!b) b = a; if (a > b) [a, b] = [b, a]; return [Math.max(1, a), Math.min(N - 1, b)]; };
+    const wi = wOf(M, op.w), f = fieldAt(M, op.hx, op.hy), px = +op.px || 0, py = +op.py || 0;
+    const parW = () => wi === M.pw ? M.par : paraxial(sys, M.nW[wi], M.stopIdx, M.objInf);
+    const glass = j => !isAir(S[j].glass) && !isMirror(S[j]), air = j => isAir(S[j].glass) && !isMirror(S[j]) && S[j].tsolve !== 'M';
+    const row = k => { const v = rows[Math.round(+k) - 1]; return v == null ? NaN : v; };
     const list = [];
     switch (op.type) {
-      case 'EFL': return { val: M.par.efl };
-      case 'WFNO': return { val: M.par.wfno };
+      case 'EFL': return { val: parW().efl };
+      case 'ISFN': return { val: M.par.fno };
+      case 'WFNO': return { val: parW().wfno };
       case 'TTL': return { val: M.par.ttl };
-      case 'BFL': return { val: M.par.imgDist };
-      case 'PMAG': return { val: M.par.mag };
+      case 'OAL': return { val: M.par.ttl - S[N - 1].t };
+      case 'BFL': return { val: parW().imgDist };
+      case 'PMAG': return { val: parW().mag };
       case 'IMGH': return { val: M.par.imgH };
+      case 'ENPP': return { val: M.par.zE };
+      case 'ENPD': return { val: M.par.epd };
+      case 'EXPP': return { val: M.par.xpZ };
+      case 'EXPD': return { val: M.par.xpD };
+      case 'LINV': return { val: M.par.H };
+      case 'POWR': { const j = Math.max(1, Math.min(N - 1, s1)), n = M.ctxs[wi].nAbs, c = curv(S[j]); return { val: isMirror(S[j]) ? -2 * n[j - 1] * c : (n[j] - n[j - 1]) * c }; }
+      case 'TTHI': { const [a, b] = range(1, N - 1); let t = 0; for (let j = a; j <= b; j++) t += S[j].t; return { val: t }; }
       case 'RIMH': return { val: chief(M.pw) };
       case 'DIST': { const fy = M.par.fmax, c = ray(M, M.pw, { x: 0, y: fy }, 0, 0); const yp = M.objInf ? M.par.unitImgH * Math.tan(fy * DEG) : M.par.unitImgH * fy; return { val: c.vig ? 0 : 100 * (c.y - yp) / yp }; }
-      case 'AXCL': { if (lmin === lmax) return { val: 0 }; const d = l => paraxial(sys, indices(S, l), M.stopIdx, M.objInf).imgDist; return { val: d(wl[lmax]) - d(wl[lmin]) }; }
+      case 'DISG': { const R = Math.hypot(f.x, f.y); if (!R) return { val: 0 }; const c = ray(M, wi, f, 0, 0); if (c.vig) return { val: NaN }; const k = M.objInf ? M.par.unitImgH * Math.tan(R * DEG) / R : M.par.unitImgH; const rp = Math.hypot(k * f.x, k * f.y); return { val: 100 * (Math.hypot(c.x, c.y) - rp) / rp }; }
+      case 'AXCL': { if (lmin === lmax) return { val: 0 }; const d = l => paraxial(sys, indices(S, l, M.env), M.stopIdx, M.objInf).imgDist; return { val: d(wl[lmax]) - d(wl[lmin]) }; }
       case 'LACL': return { val: lmin === lmax ? 0 : chief(lmax) - chief(lmin) };
-      case 'SPHA': case 'COMA': case 'ASTI': case 'FCUR': { const sd = seidel(M).sum, lm = M.ctxs[M.pw].lmm;
-        return { val: op.type === 'SPHA' ? sd.SI / 8 / lm : op.type === 'COMA' ? sd.SII / 2 / lm : op.type === 'ASTI' ? sd.SIII / 2 / lm : sd.SIV / 4 / lm }; }
+      case 'FCGT': case 'FCGS': return { val: fcAt(M, wi, f, op.type === 'FCGT') };
+      case 'SPHA': case 'COMA': case 'ASTI': case 'FCUR': { const sd = seidel(M), lm = M.ctxs[M.pw].lmm, k = Math.round(+op.s1 || 0), q = k > 0 ? (sd.rows.find(r => r.j === k) || {}) : sd.sum;
+        const v = op.type === 'SPHA' ? (q.SI || 0) / 8 : op.type === 'COMA' ? (q.SII || 0) / 2 : op.type === 'ASTI' ? (q.SIII || 0) / 2 : (q.SIV || 0) / 4; return { val: v / lm }; }
       case 'MTFA': return { val: criterion(M, 'MTF', { mtfF: +op.p > 0 ? +op.p : 30 }) };
       case 'MTFT': case 'MTFS': case 'SPOT': case 'WFER': {
         const fis = +op.fi > 0 ? [Math.min(+op.fi, sys.fields.length) - 1] : sys.fields.map((_, i) => i), fr = +op.p > 0 ? +op.p : 30;
         const v = fis.map(fi => op.type === 'SPOT' ? spot(M, fi, 13).rms * 1e3 : op.type === 'WFER' ? (w => w.ok ? w.rms : 10)(wavefront(M, fi, M.pw, 24)) : (r => op.type === 'MTFT' ? r.T[0] : r.S[0])(mtf(M, fi, { freqs: [fr], N: 24 })));
         return fis.length === 1 ? { val: v[0] } : { list: v }; }
+      case 'RSCE': case 'RSCH': return { val: spotRms(M, f, Math.round(+op.w || 0) > 0 ? wi : -1, Math.max(1, Math.min(20, Math.round(+op.p || 3))), op.type === 'RSCH' ? 'chief' : 'centroid') };
+      case 'RWCE': case 'RWCH': return { val: wfRms(M, f, Math.round(+op.w || 0) > 0 ? wi : -1, Math.max(1, Math.min(20, Math.round(+op.p || 3))), op.type === 'RWCE') };
+      case 'STRH': { const s = wfRms(M, f, wi, 4, true); return { val: isFinite(s) ? Math.exp(-((2 * Math.PI * s) ** 2)) : 0 }; }
+      case 'ZERN': { const n = Math.max(1, Math.min(37, Math.round(+op.p || 9))), wf = wavefront(M, f, wi, 32, false); if (!wf.ok) return { val: NaN }; return { val: zernFit(wf, Math.max(n, 16)).c[n - 1] }; }
       case 'DISM': { const d = fieldCurves(M, 10).dist.filter(isFinite).map(Math.abs); return { val: d.length ? Math.max(...d) : 0 }; }
-      case 'RELI': { const F = sys.fields, k = F.reduce((b, f, i) => Math.hypot(f.x || 0, f.y || 0) > Math.hypot(F[b].x || 0, F[b].y || 0) ? i : b, 0), a0 = beamArea(M, { x: 0, y: 0 }, M.pw, 14).A; return { val: a0 > 0 ? beamArea(M, F[k], M.pw, 14).A / a0 : 0 }; }
+      case 'RELI': { const F = sys.fields, k = F.reduce((b, q, i) => Math.hypot(q.x || 0, q.y || 0) > Math.hypot(F[b].x || 0, F[b].y || 0) ? i : b, 0), a0 = beamArea(M, { x: 0, y: 0 }, M.pw, 14).A; return { val: a0 > 0 ? beamArea(M, F[k], M.pw, 14).A / a0 : 0 }; }
+      case 'REAX': case 'REAY': case 'REAR': case 'REAB': case 'RANG': case 'RAID': case 'RAED': {
+        const j = surfN(sj(op.s1, 0)), q = rayRec(M, wi, f, px, py); if (q.r.vig || !q.rec[j - 1]) return { val: NaN }; const e = q.rec[j - 1];
+        const v = op.type === 'REAX' ? e[0] : op.type === 'REAY' ? e[1] : op.type === 'REAR' ? Math.hypot(e[0], e[1]) : op.type === 'REAB' ? e[4] : op.type === 'RANG' ? Math.acos(Math.min(1, Math.abs(e[5]))) / DEG : op.type === 'RAID' ? Math.acos(Math.min(1, Math.abs(e[6]))) / DEG : Math.acos(Math.min(1, Math.abs(e[7]))) / DEG;
+        return { val: v }; }
+      case 'TRAX': case 'TRAY': case 'TRAR': { const r = ray(M, wi, f, px, py), c = ray(M, M.pw, f, 0, 0); if (r.vig || c.vig) return { val: NaN }; const dx = r.x - c.x, dy = r.y - c.y; return { val: op.type === 'TRAX' ? dx : op.type === 'TRAY' ? dy : Math.hypot(dx, dy) }; }
+      case 'OPDC': { const ref = opdRef(M, wi, f); if (!ref) return { val: NaN }; return { val: ref.W(ray(M, wi, f, px, py)) }; }
+      case 'OPDX': { const q = wfSample(M, f, wi, meritPupil({ rings: 4, arms: 8 }, M.obs), 'xy'), ref = opdRef(M, wi, f); if (!q || !ref) return { val: NaN }; return { val: ref.W(ray(M, wi, f, px, py)) - q.fit(px, py) }; }
+      case 'LONA': { const pz = py || 1, r = ray(M, wi, { x: 0, y: 0 }, 0, pz); if (r.vig || Math.abs(r.M) < 1e-15) return { val: NaN }; const zc = r.z - r.y * r.N / r.M, p = parW(); return { val: zc - (p.imgDist - S[N - 1].t) }; }
+      case 'PARY': case 'PARB': { const p = parW(), j = Math.max(1, Math.min(N, sj(op.s1, 1))), hy = +op.hy || 0, n = M.nW[wi];
+        return { val: op.type === 'PARY' ? py * p.mar.y[j] + hy * p.chf.y[j] : (py * p.mar.nu[Math.min(j, N - 1)] + hy * p.chf.nu[Math.min(j, N - 1)]) / n[Math.min(j, N - 1)] }; }
+      case 'GLTR': { const v = sysTau(sys, +op.p > 0 ? +op.p : 0.4); return { val: isFinite(v) ? v : 1 }; }
+      case 'CTGT': case 'CTLT': case 'CTVA': { const j = Math.max(1, Math.min(N - 1, s1)); return { val: Math.abs(S[j].t) }; }
+      case 'ETGT': case 'ETLT': case 'ETVA': { const j = Math.max(1, Math.min(N - 1, s1)); return { val: edge(j, j + 1) }; }
       case 'CTHK': { const j = Math.max(1, Math.min(N - 1, Math.round(+op.p || 1))); return { val: Math.abs(S[j].t) }; }
       case 'ETHK': { const j = Math.max(1, Math.min(N - 2, Math.round(+op.p || 1))); return { val: edge(j, j + 1) }; }
-      case 'GLTR': { const v = sysTau(sys, +op.p > 0 ? +op.p : 0.4); return { val: isFinite(v) ? v : 1 }; }
-      case 'MNCT': case 'MXCT': for (let j = 1; j < N - 1; j++) if (!isAir(S[j].glass) && !isMirror(S[j])) list.push(Math.abs(S[j].t)); break;
-      case 'MNCA': case 'MXCA': for (let j = 1; j < N - 1; j++) if (isAir(S[j].glass) && !isMirror(S[j]) && S[j].tsolve !== 'M') list.push(Math.abs(S[j].t)); break;
-      case 'MNET': case 'MXET': for (let j = 1; j < N - 1; j++) if (!isAir(S[j].glass) && !isMirror(S[j])) list.push(edge(j, j + 1)); break;
+      case 'CVGT': case 'CVLT': case 'CVVA': return { val: curv(S[Math.max(1, Math.min(N, s1))]) };
+      case 'COGT': case 'COLT': case 'COVA': return { val: +S[Math.max(1, Math.min(N, s1))].k || 0 };
+      case 'DMGT': case 'DMLT': case 'DMVA': return { val: 2 * (S[Math.max(1, Math.min(N, s1))].sd || 0) };
+      case 'MNSD': case 'MXSD': { const [a, b] = range(1, N - 1); for (let j = a; j <= b; j++) list.push(S[j].sd || 0); break; }
+      case 'MNCT': case 'MXCT': { const [a, b] = range(); for (let j = a; j <= b; j++) if (!isMirror(S[j]) && S[j].tsolve !== 'M') list.push(Math.abs(S[j].t)); break; }
+      case 'MNET': case 'MXET': { const [a, b] = range(); for (let j = a; j <= b; j++) if (!isMirror(S[j]) && j + 1 < N + 1 && S[j].tsolve !== 'M') list.push(edge(j, j + 1)); break; }
+      case 'MNCG': case 'MXCG': { const [a, b] = range(); for (let j = a; j <= b; j++) if (glass(j)) list.push(Math.abs(S[j].t)); break; }
+      case 'MNEG': case 'MXEG': { const [a, b] = range(); for (let j = a; j <= b; j++) if (glass(j)) list.push(edge(j, j + 1)); break; }
+      case 'MNCA': case 'MXCA': { const [a, b] = range(); for (let j = a; j <= b; j++) if (air(j)) list.push(Math.abs(S[j].t)); break; }
+      case 'MNEA': case 'MXEA': { const [a, b] = range(); for (let j = a; j <= b; j++) if (air(j) && j + 1 <= N) list.push(edge(j, j + 1)); break; }
       case 'RGLA': { const o = (sys.merit && sys.merit.gsub) || {}; for (let j = 1; j < N; j++) if (S[j].vg) { const m = parseModel(S[j].glass); if (m) list.push(glassNearest(m.nd, m.vd, { ...o, k: 1 })[0]?.d ?? 0); } break; }
-      case 'MNEA': for (let j = 1; j < N - 1; j++) if (isAir(S[j].glass) && !isMirror(S[j]) && S[j].tsolve !== 'M' && j + 1 < N) list.push(edge(j, j + 1)); break;
+      case 'MNIN': case 'MXIN': case 'MNAB': case 'MXAB': { const [a, b] = range(1, N - 1); for (let j = a; j <= b; j++) { const m = parseModel(S[j].glass); if (m && !isMirror(S[j])) list.push(op.type.endsWith('IN') ? m.nd : m.vd); } break; }
+      case 'BLNK': return { val: null };
+      case 'CONS': return { val: +op.p || 0 };
+      case 'SUMM': return { val: row(op.s1) + row(op.s2) };
+      case 'DIFF': return { val: row(op.s1) - row(op.s2) };
+      case 'PROD': return { val: row(op.s1) * row(op.s2) };
+      case 'DIVI': { const d = row(op.s2); return { val: d ? row(op.s1) / d : NaN }; }
+      case 'ABSO': return { val: Math.abs(row(op.s1)) };
+      case 'SQRT': return { val: Math.sqrt(Math.abs(row(op.s1))) };
+      case 'MINN': case 'MAXX': { let a = Math.round(+op.s1 || 1), b = Math.round(+op.s2 || a); if (a > b) [a, b] = [b, a]; const v = []; for (let k = a; k <= b; k++) { const x = row(k); if (isFinite(x)) v.push(x); } return { val: v.length ? (op.type === 'MINN' ? Math.min(...v) : Math.max(...v)) : NaN }; }
+      case 'OPGT': case 'OPLT': case 'OPVA': return { val: row(op.s1) };
     }
     return { list };
   }
-  /** résidus de la fonction de mérite (critère image + opérandes) ; parts = valeur et part de chaque opérande */
-  /** résidus de la fonction de mérite ; en multi-configuration (mc.opt ≠ 'cur') : somme sur toutes les configurations */
+  /** résidus de la fonction de mérite ; en multi-configuration (mc.opt ≠ 'cur') : somme sur toutes les configurations.
+      f : résidus pondérés (Σ f² = Σ W·r²), wt : somme des poids (fonction de mérite = √(Σ f² / wt), convention Zemax),
+      cons : contraintes exactes (multiplicateurs de Lagrange, CODE V), parts : valeur et part de chaque ligne */
   function residuals(sys) {
+    meritUpgrade(sys);
     if (!mcOn(sys) || sys.mc.opt === 'cur') return residuals1(sys, null);
-    const f = [], byOp = new Map(); let img2 = 0, M = null;
+    const f = [], byOp = new Map(), cons = []; let img2 = 0, M = null, wt = 0, imgW = 0;
     for (let k = 0; k < sys.mc.n; k++) {
       const r = residuals1(k === (sys.mc.cur | 0) ? sys : mcApply(sys, k), k); if (!r) return null;
-      for (const v of r.f) f.push(v); img2 += r.img2;
+      for (const v of r.f) f.push(v); img2 += r.img2; wt += r.wt; imgW += r.imgW;
+      for (const c of r.cons) cons.push({ ...c, key: c.key + '@' + k });
       if (k === (sys.mc.cur | 0)) M = r.M;
-      for (const p of r.parts) { const op = (sys.merit.ops || [])[p.i], own = op && +op.cfg ? +op.cfg - 1 === k : k === (sys.mc.cur | 0); if (own) byOp.set(p.i, p); else if (byOp.has(p.i)) byOp.get(p.i).r2 += p.r2; else byOp.set(p.i, { ...p, val: null, ok: null }); }
+      for (const p of r.parts) { const op = (sys.merit.ops || [])[p.i], own = op && +op.cfg ? +op.cfg - 1 === k : k === (sys.mc.cur | 0); if (own) byOp.set(p.i, { ...p, r2: (byOp.get(p.i)?.r2 || 0) + p.r2 }); else if (byOp.has(p.i)) byOp.get(p.i).r2 += p.r2; else byOp.set(p.i, { ...p, val: null, ok: null }); }
     }
-    return { f, M, img2, parts: [...byOp.values()].sort((a, b) => a.i - b.i) };
+    return { f, M, img2, wt, imgW, cons, parts: [...byOp.values()].sort((a, b) => a.i - b.i) };
   }
   function residuals1(sys, cfg) {
     const M = prepare(sys);
     if (!M.ok) return null;
-    const f = [];
+    const f = [], cons = [];
     const mf = sys.merit || { image: 'SPOT', ops: [] };
     const F = sys.fields, Wl = sys.wavelengths, sel = wlSel(sys, mf.wl);
     // poids du critère : ceux de la fonction de mérite (mf.fw, mf.ww) s'ils sont définis, sinon ceux des champs et longueurs d'onde
     const fw = F.map((x, i) => Array.isArray(mf.fw) && mf.fw[i] != null && mf.fw[i] !== '' ? +mf.fw[i] : (x.w ?? 1)); let ww = Wl.map((x, i) => sel.includes(i) ? (Array.isArray(mf.ww) && mf.ww[i] != null && mf.ww[i] !== '' ? +mf.ww[i] : (x.w ?? 1)) : 0);
     if (!ww.some(v => v > 0)) ww = Wl.map((_, i) => sel.includes(i) ? 1 : 0);
-    const nArm = 8;
-    const ray0 = [];
-    for (const [r, w] of GQ) for (let a = 0; a < nArm; a++) { const th = 2 * Math.PI * (a + 0.5) / nArm; ray0.push([r * Math.cos(th), r * Math.sin(th), w / nArm]); }
-    if (mf.image === 'SPOT' || mf.image === 'WFE') {
-      const Wsum = fw.reduce((a, b) => a + b, 0) * ww.reduce((a, b) => a + b, 0);
+    const half = mf.sym !== false && axisSym(M), P = meritPupil(mf.pupil || { type: 'GQ', rings: 3, arms: 8 }, M.obs, half), chiefRef = mf.ref === 'chief';
+    const IW = mf.image === 'NONE' ? 0 : Math.max(0, mf.iw == null || mf.iw === '' ? 1 : +mf.iw || 0), sq = Math.sqrt(IW);
+    if (IW && (mf.image === 'SPOT' || mf.image === 'WFE')) {
+      const Wsum = fw.reduce((a, b) => a + b, 0) * ww.reduce((a, b) => a + b, 0) || 1;
       F.forEach((fd, fi) => {
+        if (!fw[fi]) return;
         if (mf.image === 'SPOT') {
-          const rs = [];
-          let sx = 0, sy = 0, sw = 0;
-          sel.forEach(wi => ray0.forEach(([px, py, w]) => { const r = ray(M, wi, fd, px, py); rs.push([r, wi, w]); if (!r.vig) { sx += ww[wi] * w * r.x; sy += ww[wi] * w * r.y; sw += ww[wi] * w; } }));
-          const cx = sx / sw, cy = sy / sw;
-          for (const [r, wi, w] of rs) { const k = Math.sqrt(fw[fi] * ww[wi] * w / Wsum); if (r.vig) { f.push(k * 1, k * 1); } else { f.push(k * (r.x - cx), k * (r.y - cy)); } }
+          const rs = []; let sx = 0, sy = 0, sw = 0;
+          sel.forEach(wi => { if (!ww[wi]) return; P.forEach(([px, py, w]) => { const r = ray(M, wi, fd, px, py); rs.push([r, wi, w]); if (!r.vig) { sx += ww[wi] * w * r.x; sy += ww[wi] * w * r.y; sw += ww[wi] * w; } }); });
+          let cx = sw ? sx / sw : 0, cy = sw ? sy / sw : 0;
+          if (chiefRef) { const c = ray(M, M.pw, fd, 0, 0); if (!c.vig) { cx = c.x; cy = c.y; } } else if (half) cx = 0;
+          for (const [r, wi, w] of rs) { const k = sq * Math.sqrt(fw[fi] * ww[wi] * w / Wsum); if (r.vig) f.push(k, k); else f.push(k * (r.x - cx), k * (r.y - cy)); }
         } else {
           sel.forEach(wi => {
-            const ref = opdRef(M, wi, fd); const vals = [];
-            ray0.forEach(([px, py, w]) => vals.push([ref ? ref.W(ray(M, wi, fd, px, py)) : NaN, w]));
-            let m = 0, s = 0; vals.forEach(([v, w]) => { if (isFinite(v)) { m += v * w; s += w; } }); m /= s || 1;
-            vals.forEach(([v, w]) => { const k = Math.sqrt(fw[fi] * ww[wi] * w / Wsum) * M.ctxs[wi].lmm; f.push(isFinite(v) ? k * (v - m) : k * 10); });
+            if (!ww[wi]) return; const q = wfSample(M, fd, wi, P, chiefRef ? false : half ? 'y' : 'xy');
+            P.forEach(([px, py, w], k) => { const c = sq * Math.sqrt(fw[fi] * ww[wi] * w / Wsum), e = q && q.S[k]; f.push(e && isFinite(e[3]) ? c * (e[3] - q.fit(px, py)) : c * 3); });
           });
         }
       });
+    } else if (IW && mf.image === 'MTF') {
+      const fr = +mf.mtfF > 0 ? +mf.mtfF : 30, Ws = fw.reduce((a, b) => a + b, 0) || 1;
+      F.forEach((fd, fi) => { if (!fw[fi]) return; const r = mtf(M, fi, { freqs: [fr], N: 32 }), k = sq * Math.sqrt(fw[fi] / Ws / 2); f.push(k * (1 - (isFinite(r.T[0]) ? r.T[0] : 0)), k * (1 - (isFinite(r.S[0]) ? r.S[0] : 0))); });
     }
     let img2 = 0; for (const v of f) img2 += v * v;
-    const parts = [];
+    let wt = IW && mf.image !== 'NONE' ? IW : 0; const imgW = wt;
+    const parts = [], rows = [];
     (mf.ops || []).forEach((op, oi) => {
-      const w = +op.weight || 0, tg = +op.target || 0, def = OPS[op.type]; if (!def) return;
-      if (cfg != null && +op.cfg && +op.cfg - 1 !== cfg) return;
-      const cmp = op.cmp || def.kind, o = opValue(M, op), n0 = f.length;
-      const res = v => cmp === 'ge' ? Math.max(0, tg - v) : cmp === 'le' ? Math.max(0, v - tg) : v - tg;
-      let shown = o.val;
-      if (o.val != null) { if (w) f.push(w * res(o.val)); }
-      else if (o.list && o.list.length) { shown = cmp === 'le' ? Math.max(...o.list) : Math.min(...o.list); if (w) for (const v of o.list) f.push(w * res(v)); }
+      const def = OPS[op.type]; if (!def) { rows.push(NaN); return; }
+      const cmp = op.cmp || def.kind, tg = +op.target || 0, W = Math.max(0, +op.weight || 0), n0 = f.length;
+      if (cfg != null && +op.cfg && +op.cfg - 1 !== cfg) { rows.push(NaN); return; }
+      const o = opValue(M, op, rows);
+      const res = v => !isFinite(v) ? 1e3 : cmp === 'ge' ? Math.max(0, tg - v) : cmp === 'le' ? Math.max(0, v - tg) : v - tg;
+      let shown = o.val; const vals = o.val != null ? [o.val] : (o.list || []);
+      if (o.val == null && o.list && o.list.length) shown = cmp === 'le' ? Math.max(...o.list) : cmp === 'ge' ? Math.min(...o.list) : o.list.reduce((a, b) => Math.abs(b - tg) > Math.abs(a - tg) ? b : a, o.list[0]);
+      rows.push(shown == null ? NaN : shown);
+      if (def.nores || shown == null) { parts.push({ i: oi, val: null, r2: 0, ok: null }); return; }
+      if (op.lag) vals.forEach((v, e) => cons.push({ i: oi, key: oi + ':' + e, v, t: tg, cmp }));
+      else if (W) { wt += W; const k = Math.sqrt(W); for (const v of vals) f.push(k * res(v)); }
       let r2 = 0; for (let k = n0; k < f.length; k++) r2 += f[k] * f[k];
-      parts.push({ i: oi, val: shown, r2, ok: cmp === 'eq' || shown == null || !isFinite(shown) ? null : res(shown) <= 1e-9 + 1e-6 * Math.abs(tg) });
+      parts.push({ i: oi, val: shown, r2, lag: !!op.lag, ok: (cmp === 'eq' && !op.lag) || shown == null || !isFinite(shown) ? null : Math.abs(res(shown)) <= 1e-9 + 1e-6 * Math.abs(tg) + (op.lag && cmp === 'eq' ? 1e-6 * Math.max(1, Math.abs(tg)) : 0) });
     });
-    return { f, M, img2, parts };
+    return { f, M, img2, wt, imgW, cons, parts };
   }
-  const meritOf = f => Math.sqrt(f.reduce((a, b) => a + b * b, 0));
+  /** fonction de mérite (Zemax) : √(Σ W·r² / Σ W) ; f déjà pondérés */
+  const meritOf = (f, wt = 1) => Math.sqrt(f.reduce((a, b) => a + b * b, 0) / (wt > 0 ? wt : 1));
+  const meritR = r => r ? meritOf(r.f, r.wt) : NaN;
+  /** écart aux contraintes exactes (actives) : Σ (violation / échelle)² */
+  const consViol = cons => { let s = 0; for (const c of cons) { const d = c.cmp === 'ge' ? Math.max(0, c.t - c.v) : c.cmp === 'le' ? Math.max(0, c.v - c.t) : c.v - c.t; s += (isFinite(d) ? d : 1e3) ** 2 / Math.max(1, Math.abs(c.t)) ** 2; } return s; };
+  /** pas de dérivation numérique d'une variable */
+  function varStep(M, v, x) {
+    if (v.kind === 'c' || v.kind === 'cx') return Math.max(1e-7, Math.abs(x) * 1e-5);
+    if (v.kind === 't' || v.kind === 'k') return 1e-4; if (v.kind === 'nd') return 1e-5; if (v.kind === 'vd') return 1e-3;
+    if (v.kind.startsWith('da')) return Math.max(1e-3, Math.abs(x) * 1e-5);
+    const sdv = Math.max(1e-3, (M.S[v.si] && M.S[v.si].sd) || 1); return 1e-6 / Math.pow(sdv, +v.kind.slice(1));
+  }
+  /**
+   * Un cycle de moindres carrés amortis (Levenberg-Marquardt, amortissement diagonal de Marquardt).
+   * Contraintes exactes (op.lag) : système KKT [JᵀJ + μD, Cᵀ ; C, 0] (multiplicateurs de Lagrange, comme CODE V) ;
+   * une contrainte d'inégalité n'est active que si elle est violée. state : { sys, mu, central }.
+   */
   function optStep(state) {
     const { sys } = state, vars = getVars(sys);
     if (!vars.length) return { done: true, msg: 'Aucune variable' };
     const r0 = residuals(sys); if (!r0) return { done: true, msg: 'Système invalide' };
-    const f0 = r0.f, m0 = meritOf(f0), nv = vars.length, nf = f0.length;
-    const x0 = vars.map(v => getVal(sys, v));
-    const J = [];
+    const f0 = r0.f, m0 = meritOf(f0, r0.wt), nv = vars.length, nf = f0.length;
+    const act = r0.cons.filter(c => c.cmp === 'eq' || (c.cmp === 'ge' ? c.v < c.t : c.v > c.t) || !isFinite(c.v)), na = act.length, V0 = consViol(r0.cons);
+    const x0 = vars.map(v => getVal(sys, v)), J = [], C = [];
+    const cmap = r => { const m = new Map(); for (const c of r.cons) m.set(c.key, c.v); return m; };
     for (let k = 0; k < nv; k++) {
-      const v = vars[k], sdv = Math.max(1e-3, r0.M.S[v.si].sd || 1), h = v.kind === 'c' || v.kind === 'cx' ? Math.max(1e-7, Math.abs(x0[k]) * 1e-5) : v.kind === 't' || v.kind === 'k' ? 1e-4 : v.kind === 'nd' ? 1e-5 : v.kind === 'vd' ? 1e-3 : v.kind.startsWith('da') ? Math.max(1e-3, Math.abs(x0[k]) * 1e-5) : 1e-6 / Math.pow(sdv, +v.kind.slice(1));
-      const s2 = structuredClone(sys); setVal(s2, v, x0[k] + h);
-      const r = residuals(s2); const col = new Float64Array(nf);
-      if (r && r.f.length === nf) for (let i = 0; i < nf; i++) col[i] = (r.f[i] - f0[i]) / h;
-      J.push(col);
+      const v = vars[k], h = varStep(r0.M, v, x0[k]);
+      const s2 = structuredClone(sys); setVal(s2, v, x0[k] + h); const r = residuals(s2), col = new Float64Array(nf), cc = new Float64Array(na);
+      let rm = null; if (state.central) { const s3 = structuredClone(sys); setVal(s3, v, x0[k] - h); rm = residuals(s3); if (rm && rm.f.length !== nf) rm = null; }
+      if (r && r.f.length === nf) { for (let i = 0; i < nf; i++) col[i] = rm ? (r.f[i] - rm.f[i]) / (2 * h) : (r.f[i] - f0[i]) / h; const cm = cmap(r), cmm = rm ? cmap(rm) : null; act.forEach((c, i) => { const a = cm.get(c.key); cc[i] = isFinite(a) ? (cmm && isFinite(cmm.get(c.key)) ? (a - cmm.get(c.key)) / (2 * h) : (a - c.v) / h) : 0; }); }
+      J.push(col); C.push(cc);
     }
     const JtJ = Array.from({ length: nv }, (_, a) => Array.from({ length: nv }, (_, b) => { let s = 0; for (let i = 0; i < nf; i++) s += J[a][i] * J[b][i]; return s; }));
     const Jtf = Array.from({ length: nv }, (_, a) => { let s = 0; for (let i = 0; i < nf; i++) s += J[a][i] * f0[i]; return s; });
-    let mu = state.mu ?? 1e-3;
-    for (let tr = 0; tr < 10; tr++) {
-      const A = JtJ.map((row, a) => row.map((v, b) => a === b ? v * (1 + mu) + 1e-18 : v));
-      const dx = solveLin(A, Jtf.map(v => -v));
+    const cres = act.map(c => c.v - c.t);
+    // échelle de l'amortissement : diagonale de JᵀJ (ou des contraintes si une variable ne pèse que sur elles)
+    const dg = JtJ.map((row, a) => { let d = row[a]; if (d <= 1e-30) { let s = 0; for (let i = 0; i < na; i++) s += C[a][i] ** 2; d = s || 1e-12; } return d; });
+    let mu = state.mu ?? 1e-3, al = 1; // al : fraction de la correction des contraintes demandée à ce pas (réduite si le pas est refusé)
+    for (let tr = 0; tr < 14; tr++) {
+      const n = nv + na, A = Array.from({ length: n }, () => new Array(n).fill(0)), b = new Array(n).fill(0);
+      for (let a = 0; a < nv; a++) { for (let c = 0; c < nv; c++) A[a][c] = JtJ[a][c]; A[a][a] += mu * dg[a] + 1e-18; b[a] = -Jtf[a]; }
+      for (let i = 0; i < na; i++) { for (let a = 0; a < nv; a++) { A[nv + i][a] = C[a][i]; A[a][nv + i] = C[a][i]; } b[nv + i] = -al * cres[i]; }
+      let dx = solveLin(A, b);
+      if (!dx && na) { // contraintes incompatibles ou redondantes : pénalité forte
+        const B = JtJ.map((row, a) => row.map((v, c) => { let s = v; for (let i = 0; i < na; i++) s += 1e6 * C[a][i] * C[c][i]; return a === c ? s + mu * dg[a] + 1e-18 : s; }));
+        dx = solveLin(B, Jtf.map((v, a) => { let s = -v; for (let i = 0; i < na; i++) s -= 1e6 * C[a][i] * al * cres[i]; return s; }));
+      }
       if (dx) {
         const s2 = structuredClone(sys); vars.forEach((v, k) => setVal(s2, v, x0[k] + dx[k]));
         const r = residuals(s2);
         if (r && r.f.length === nf) {
-          const m1 = meritOf(r.f);
-          if (m1 < m0) { state.sys = s2; state.mu = Math.max(1e-9, mu / 4); state.merit = m1; return { done: (m0 - m1) / m0 < 1e-7, merit: m1 }; }
+          const m1 = meritOf(r.f, r.wt), V1 = consViol(r.cons), tolV = 1e-14;
+          const ok = na || V0 > tolV ? (V1 < V0 * 0.98 && m1 < m0 * 2 + 1e-12) || (V1 <= Math.max(V0, tolV) * 1.0001 && m1 < m0) : m1 < m0;
+          if (ok) { state.sys = s2; state.mu = Math.max(1e-9, mu / 4); state.merit = m1; state.viol = V1; return { done: V1 <= 1e-12 && (m0 - m1) / Math.max(m0, 1e-300) < 1e-7, merit: m1, viol: V1 }; }
         }
       }
-      mu *= 6;
+      mu *= 6; if (na) al *= 0.5;
     }
-    state.mu = mu; state.merit = m0;
-    return { done: true, merit: m0, msg: 'Minimum local atteint' };
+    state.mu = mu; state.merit = m0; state.viol = V0;
+    return { done: true, merit: m0, viol: V0, msg: V0 > 1e-10 ? 'Contraintes exactes non satisfaites (incompatibles ou hors d\'atteinte des variables)' : 'Minimum local atteint' };
   }
 
   /**
@@ -2627,7 +2905,7 @@ const OE = (() => {
 
   return { ghosts, MCT, mcOn, mcSync, mcSet, mcLoad, mcApply, mcCtl, mcAddOp, mcSummary, fieldSweep, throughFocus, mtfField, beamArea, relIllum, distGrid, tolTrialD, DEG, fiberInfo, binPSF, detMTF, extSource, binImage, imageSim, polPupil, polOut, POLSTATES, TOLT, TOLC, LT, quickFocus, wlSel, opValue, parseModel, fmtModel, glassNearest, glassPool, toModel, subTry, tolBase, tolDefaults, tolFreeze, tolItems, tolGen, tolApplicable, tolLabel, tolApply, tolWorse, tolSens, tolInverse, tolTrial, tolRebuild, tolValue, niceDown, rng, mtfAt, compensate, criterion, bestFocus, tolEval, focusStep, tolDraw, frames, toGlobal, mv, sGrad, fieldDir, catalog, glassN, glassRecord, glassProps, glassTau, sysTau, addGlasses, parseAGF, cats: () => [...CATS], dispN, glassInfo, glassKey, isMirror, isAir, curv, sag, prepare, ray, trace, spot, rayFan, opdFan,
     wavefront, zernFit, ZN37, psf, psfGrid, mtf, mtfGeo, pupilScale, otfAC, mtfOne, mtfDL, encircled, footprint, fieldCurves, seidel, chromShift, ZN, zernBasis,
-    OPS, getVars, getVal, setVal, residuals, meritOf, optStep, pupilGrid, indices, paraxial,
+    OPS, OPG, meritUpgrade, meritPupil, gaussLegendre, meritR, consViol, getVars, getVal, setVal, residuals, meritOf, optStep, pupilGrid, indices, paraxial,
     ASPK, FTYPES, vigMap, modelN, aimMode, setVignetting, convertFields, thermalScan, glassTherm, nAir, envN, envCtx, isSolid };
 })();
 if (typeof module !== 'undefined') module.exports = OE;
@@ -3730,9 +4008,11 @@ const JOBS = {
   relillum: (a, prog) => OE.relIllum(a.sys, a.o, prog),
   /** optimisation locale (moindres carrés amortis) jusqu'à convergence ou maxIt itérations */
   async optLocal(a, prog) {
-    const st = { sys: a.sys, mu: 1e-3 }; let n = 0, r;
+    const st = { sys: a.sys, mu: 1e-3, central: !!a.central }; let n = 0, r;
     do { r = OE.optStep(st); n++; if (prog && n % 4 === 0) await prog(n, a.maxIt || 100); } while (!r.done && n < (a.maxIt || 100));
-    const rr = OE.residuals(st.sys); return { sys: st.sys, merit: st.merit ?? (rr ? OE.meritOf(rr.f) : Infinity), it: n };
+    const rr = OE.residuals(st.sys), m = rr ? OE.meritR(rr) : Infinity, v = rr ? OE.consViol(rr.cons) : 0;
+    // solution qui viole des contraintes exactes : pénalisée pour le classement de la recherche globale
+    return { sys: st.sys, merit: v > 1e-10 ? m * (1 + 1e6 * v) + 1e-300 : m, viol: v, it: n };
   },
   mcsum: async a => OE.mcSummary(a.sys).map(o => { const r = { ...o }; delete r.M; return r; }),
   /** tolérancement : système nominal compensé */
@@ -3762,6 +4042,15 @@ if (typeof module !== 'undefined') module.exports = JOBS;
 <script>
 'use strict';
 /* Centre d'aide de Focale : chaque rubrique = { id, t (titre), h (HTML) } */
+/** référence des opérandes, générée depuis OE.OPS */
+function helpOps() {
+  if (typeof OE === 'undefined' || !OE.OPS) return '<p>Liste indisponible.</p>';
+  const COL = { s1: 'S1', s2: 'S2', w: 'λ', hx: 'Hx', hy: 'Hy', px: 'Px', py: 'Py', p: 'Param.', fi: 'champ n°' }, K = { eq: '=', ge: '≥', le: '≤' };
+  const e = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  return '<p>Noms repris de Zemax OpticStudio quand ils existent ; la colonne « Zemax / CODE V » donne les équivalents (recherche possible par ces noms dans le sélecteur). Contrainte par défaut entre parenthèses, modifiable par ligne. Champ (Hx, Hy) normalisé par le champ radial maximal ; pupille (Px, Py) normalisée ; λ : numéro de longueur d\'onde (vide = primaire, ou polychromatique pour les RMS) ; S1 = 0 : surface image pour les opérandes de rayon ; plage S1 … S2 vide : toutes les surfaces.</p>' +
+    OE.OPG.map(([g, gl]) => { const L = Object.entries(OE.OPS).filter(([k, d]) => d.g === g && !d.hide); if (!L.length) return '';
+      return `<h4>${e(gl)}</h4><table class="ht"><tr><th>Code</th><th>Grandeur</th><th>Colonnes</th><th>Zemax / CODE V</th></tr>` + L.map(([k, d]) => `<tr><td>${k}</td><td>${e(d.label)}${d.u ? ` <span class="hint">(${e(d.u)})</span>` : ''} <span class="hint">${K[d.kind]}</span></td><td>${(d.cols || []).map(c => COL[c] || c).join(', ') || '—'}</td><td class="hint">${e(d.aka || '')}</td></tr>`).join('') + '</table>'; }).join('');
+}
 const HELP = [
   { id: 'demarrage', t: 'Démarrage rapide', h: `
 <p>Focale est un logiciel de <b>conception optique séquentielle</b> : la lumière traverse les surfaces dans l'ordre de l'éditeur de lentilles, de l'objet (surface 0) à l'image (dernière surface).</p>
@@ -3801,7 +4090,7 @@ Les combinaisons ont été optimisées dans Focale (spot, front d'onde) : ce son
 <li>Gardez l'historique (Ctrl+H) et créez des <b>points de sauvegarde</b> avant chaque essai : on revient facilement à une version antérieure.</li>
 <li>Commencez avec peu de rayons et de champs, puis densifiez pour la validation finale.</li>
 <li>Une variable inutile ralentit et rend l'optimisation instable : rendez variables seulement les paramètres qui ont un effet.</li>
-<li>Si l'optimisation propose des épaisseurs négatives ou des lentilles trop fines, augmentez le poids des contraintes MNCT / MNET / MNCA / MNEA.</li>
+<li>Si l'optimisation propose des épaisseurs négatives ou des lentilles trop fines, augmentez le poids des contraintes MNCG / MNEG / MNCA / MNEA (contraintes de bord), ou cochez-les en contraintes exactes.</li>
 <li>Pour comparer deux variantes, utilisez la multi-configuration ou des points de sauvegarde.</li>
 <li>Système proche de la diffraction : jugez sur le front d'onde RMS (objectif &lt; λ/14) et la FTM, pas sur le spot.</li>
 </ul>` },
@@ -4041,50 +4330,56 @@ Les combinaisons ont été optimisées dans Focale (spot, front d'onde) : ce son
 <p class="hint">Vos choix sont mémorisés pour le prochain rapport. Dans la version hébergée sur claude.ai, chaque téléchargement (PDF, JSON, images, CSV, exports) passe par une fenêtre de confirmation de Claude ; les formats que claude.ai n'accepte pas (.zmx, .seq, .agf) sont enregistrés avec « .txt » ajouté au nom : retirez-le après téléchargement.</p>` },
 
   { id: 'optimisation', t: 'Optimisation', h: `
-<p>Méthode des <b>moindres carrés amortis</b> (Levenberg-Marquardt) avec Jacobien numérique, comme l'optimisation locale de Zemax ou CODE V. Bouton <b>Optimiser</b> (Ctrl+Maj+O) ; la fenêtre se déplace et se redimensionne, et l'on peut continuer à travailler dans l'éditeur.</p>
+<p>L'optimisation de Focale reprend l'organisation de Zemax OpticStudio (éditeur de fonction de mérite, assistant de fonction de mérite par défaut, noms d'opérandes) et la gestion des contraintes de CODE V (contraintes exactes par multiplicateurs de Lagrange). Bouton <b>Optimiser</b> (Ctrl+Maj+O) ; la fenêtre se déplace et se redimensionne, et l'on peut continuer à travailler dans l'éditeur de lentilles.</p>
+<h4>Algorithme</h4>
+<ul><li><b>Moindres carrés amortis</b> (Levenberg-Marquardt, amortissement diagonal de Marquardt) avec Jacobien numérique, comme l'optimisation locale de Zemax et l'AUT de CODE V. Chaque cycle calcule les dérivées de tous les résidus par rapport à toutes les variables, résout le système amorti et garde le pas s'il améliore la fonction de mérite ; sinon l'amortissement augmente.</li>
+<li><b>Contraintes exactes</b> (case <b>Ex.</b> d'une ligne) : la contrainte n'est plus un terme pondéré de la fonction de mérite mais une équation imposée à chaque cycle (système de Karush-Kuhn-Tucker, multiplicateurs de Lagrange), comme les contraintes de CODE V. La fonction de mérite n'est alors minimisée que dans l'espace des solutions qui respectent la contrainte : pas de compromis entre focale et qualité d'image, pas de poids à régler. Une contrainte ≥ ou ≤ exacte n'est active que si elle est violée. Si les contraintes sont incompatibles ou hors d'atteinte des variables, le message le signale et elles passent en pénalité forte.</li>
+<li><b>Cycles</b> : <i>Automatique</i> (jusqu'à convergence, 500 cycles au plus) ou un nombre fixe (1, 5, 10, 50, 200), comme le choix « Cycles » de Zemax ou la commande MXC de CODE V.</li>
+<li><b>Dérivées</b> : différences avant (rapide) ou centrées (deux fois plus de calculs, plus précises près d'un minimum ou avec des opérandes très non linéaires comme la FTM).</li>
+<li>Arrêt : variation relative de la fonction de mérite &lt; 10⁻⁷ et contraintes exactes satisfaites, ou minimum local (aucun pas ne l'améliore).</li></ul>
+<h4>Fonction de mérite par défaut</h4>
+<p>Équivalent de l'<i>Optimization Wizard</i> de Zemax et de la fonction d'erreur par défaut de CODE V : un critère de qualité image calculé sur tous les champs et longueurs d'onde, affiché sur la première ligne (<b>DMF</b>) de l'éditeur.</p>
+<ul><li><b>Critère</b> : <i>RMS spot</i> (rayon, en mm), <i>RMS front d'onde</i> (en ondes) ou <i>contraste FTM</i> (1 − FTM tangentielle et sagittale à une fréquence, comme « Contrast » de Zemax), ou aucun (opérandes seuls).</li>
+<li><b>Référence</b> : <i>barycentre</i> (spot autour du centre de gravité ; front d'onde sans piston ni basculement) ou <i>rayon principal</i> (spot autour du rayon principal à λ primaire ; front d'onde sans piston seulement), comme « Centroid / Chief ray » de Zemax.</li>
+<li><b>Pupille</b> : <i>quadrature de Gauss</i> (anneaux × bras ; positions radiales de Gauss-Legendre en ρ², exactes pour les aberrations polynomiales jusqu'à l'ordre 4 × anneaux − 1 ; 3 × 6 est le défaut de Zemax) ou <i>grille rectangulaire</i> n × n (Zemax « Rectangular array », CODE V DEL), préférable si la pupille est fortement vignetée. Avec une obstruction centrale, les anneaux sont répartis dans la couronne.</li>
+<li><b>Symétrie axiale</b> : si le système est de révolution (pas de décentrement, de surface non sphérique de révolution ni de réseau) et que tous les champs sont en Y, seule la demi-pupille x ≥ 0 est tracée, avec des poids doublés : deux fois moins de rayons, même résultat (Zemax « Assume axial symmetry »).</li>
+<li><b>Longueurs d'onde</b> : toutes (pondérées), λ centrale, λ primaire ou une seule ; <b>poids</b> par champ (C1…) et par λ propres à la fonction de mérite (vide : ceux du système) ; <b>poids du critère</b> par rapport aux opérandes (1 par défaut).</li>
+<li><b>Contraintes de bord</b> : épaisseurs de verre au centre (min, max) et au bord (min), espaces d'air au centre (min, max) et au bord (min) ; <b>Écrire les contraintes</b> ajoute ou remplace les lignes MNCG, MXCG, MNEG, MNCA, MXCA, MNEA (numéro en couleur dans l'éditeur), éventuellement en contraintes exactes. C'est la partie « Thickness boundary values » de l'assistant de Zemax.</li></ul>
+<h4>Éditeur de fonction de mérite</h4>
+<ul><li>Une ligne par opérande, comme le <i>Merit Function Editor</i> de Zemax : <b>Type</b> (cliquez pour le changer), description, colonnes <b>S1, S2</b> (surfaces, ou numéros de ligne pour les opérations), <b>λ</b> (vide : primaire, ou polychromatique pour les RMS), <b>Hx, Hy</b> (champ normalisé par le champ radial maximal), <b>Px, Py</b> (pupille normalisée), <b>Param.</b> (fréquence, terme de Zernike, nombre d'anneaux…), puis la contrainte <b>= ≥ ≤</b>, la <b>cible</b>, le <b>poids</b>, la case <b>Ex.</b> (contrainte exacte), la <b>valeur</b> actuelle et la <b>part</b> (%) de la fonction de mérite. Seules les colonnes utiles à l'opérande sont éditables.</li>
+<li><b>+ Ajouter un opérande</b> ouvre un sélecteur classé par famille, avec recherche par nom Focale, <b>nom Zemax</b> (EFFL, TOTR, PIMH…) ou <b>nom CODE V</b> (OAL, RED, MNT…), et par description. La cible proposée est la valeur actuelle (ou une valeur usuelle pour les contraintes de bord).</li>
+<li><b>Fonction de mérite</b> = √(Σ W·(valeur − cible)² / Σ W), convention de Zemax : le poids multiplie le <i>carré</i> de l'écart. Une contrainte ≥ ou ≤ ne compte que si elle est violée. <b>Poids 0</b> : la ligne est calculée et affichée sans peser, ce qui sert de base aux opérations.</li>
+<li><b>Opérations sur les lignes</b> : SUMM, DIFF, PROD, DIVI, ABSO, SQRT, MINN, MAXX combinent les valeurs des lignes S1 et S2 (numéros de ligne, colonne « # ») ; OPGT, OPLT, OPVA contraignent la valeur d'une ligne ; CONS fournit une constante ; BLNK sépare des blocs avec un commentaire. Exemple : ligne 6 = TTL (poids 0), ligne 7 = OPLT 6 &lt; 62 en contrainte exacte. Les numéros ne sont pas renumérotés quand on déplace des lignes (↑ ↓).</li>
+<li><b>Multi-configuration</b> : la fonction de mérite additionne toutes les configurations (ou la seule active, au choix dans la fenêtre Multi-configuration) ; la colonne <b>Conf.</b> réserve une ligne à une configuration.</li>
+<li>La valeur s'affiche en orange si une contrainte n'est pas respectée, en vert pour une contrainte exacte satisfaite ; le bilan des contraintes exactes s'affiche sous la fonction de mérite.</li>
+<li>Fichiers d'avant cette version : MNCT, MXCT, MNET, MXET (qui visaient le verre seul) deviennent MNCG, MXCG, MNEG, MXEG, CTHK / ETHK deviennent CTGT / ETGT, et les poids sont élevés au carré pour garder le même équilibre.</li></ul>
+<h4>Correspondances avec Zemax et CODE V</h4>
+<table class="ht"><tr><th>Focale</th><th>Zemax OpticStudio</th><th>CODE V</th></tr>
+<tr><td>Fonction de mérite par défaut</td><td>Optimization Wizard (RMS Spot / Wavefront / Contrast, Centroid / Chief, Gaussian Quadrature / Rectangular Array, boundary values)</td><td>Fonction d'erreur par défaut de AUT, grille DEL</td></tr>
+<tr><td>Éditeur de fonction de mérite</td><td>Merit Function Editor</td><td>Contraintes et fonction d'erreur utilisateur de AUT</td></tr>
+<tr><td>Poids W (écart²)</td><td>Weight</td><td>Contrainte pondérée (WT)</td></tr>
+<tr><td>Case <b>Ex.</b></td><td>— (contraintes par poids élevés)</td><td>Contrainte exacte (Lagrange), « EFL = 50 »</td></tr>
+<tr><td>≥, ≤</td><td>Opérandes …GT / …LT, OPGT / OPLT</td><td>EFL &gt; 49, MNT, MXT…</td></tr>
+<tr><td>Cycles</td><td>Cycles (Automatic, 1, 5…)</td><td>MXC</td></tr>
+<tr><td>Recherche globale : Hammer, recuit, départs multiples</td><td>Hammer, Global Search</td><td>Global Synthesis</td></tr>
+<tr><td>Verres variables et substitution</td><td>Model glass, Glass substitution</td><td>Verres fictifs variables, GLA</td></tr></table>
 <h4>Variables</h4>
-<ul><li>Bouton <b>V</b> dans l'éditeur : rayon (la variable est la courbure), épaisseur, conique, <b>verre</b> (voir ci-dessous) et, avec la case « Asphères », les coefficients <b>A4, A6, A8, A10</b>.</li>
-<li>La fenêtre liste les variables avec leur valeur et leur <b>écart</b> depuis le début de l'optimisation ; « Tout libérer » retire tous les V.</li>
-<li>Une épaisseur pilotée par le solve M ne peut pas être variable.</li></ul>
-<h4>Fonction de mérite</h4>
-<ul><li><b>Critère de qualité image</b> : spot RMS (par rapport au barycentre), front d'onde RMS ou aucun ; quadrature de Gauss 3 anneaux × 8 bras sur tous les champs pondérés.</li>
-<li><b>Multi-configuration</b> : la fonction de mérite additionne toutes les configurations (ou la seule configuration active, au choix dans la fenêtre Multi-configuration) ; la colonne <b>Config.</b> réserve un opérande à une configuration, et les valeurs cochées V dans la fenêtre Multi-configuration deviennent des variables propres à chaque configuration.</li>
-<li><b>Longueurs d'onde du critère</b> : toutes (pondérées), la <b>λ centrale</b> (la plus proche du milieu de la bande), la λ primaire ou une λ donnée. Exemple : variable sur la dernière épaisseur + critère sur la λ centrale = mise au point à cette longueur d'onde. Les opérandes de chromatisme utilisent toujours toutes les λ.</li>
-<li><b>Opérandes</b>, chacun avec une contrainte <b>=</b>, <b>≥</b> ou <b>≤</b> (une contrainte d'inégalité ne pèse que si elle est violée) :
-<table class="ht"><tr><th>Code</th><th>Grandeur</th></tr>
-<tr><td>EFL · WFNO · TTL · BFL</td><td>Focale, F/# de travail paraxial, longueur totale (1ʳᵉ surface → image), distance image paraxiale.</td></tr>
-<tr><td>PMAG · IMGH · RIMH</td><td>Grandissement paraxial, hauteur image paraxiale et réelle (rayon principal) au champ maximal.</td></tr>
-<tr><td>DIST</td><td>Distorsion réelle au champ maximal (%).</td></tr>
-<tr><td>AXCL · LACL</td><td>Chromatisme axial (foyer paraxial λmax − λmin) et latéral (hauteur du rayon principal λmax − λmin au champ max), en mm.</td></tr>
-<tr><td>SPHA · COMA · ASTI · FCUR</td><td>Sommes de Seidel en ondes : W040, W131, W222, W220 (Petzval).</td></tr>
-<tr><td>MTFA</td><td>FTM moyenne T/S à une fréquence (paramètre, cycles/mm), moyenne pondérée sur les champs ; par défaut « ≥ cible ».</td></tr>
-<tr><td>MNCT · MXCT · MNET · MXET</td><td>Épaisseurs de verre au centre et au bord, min et max (toutes les lentilles).</td></tr>
-<tr><td>MNCA · MXCA · MNEA</td><td>Espaces d'air au centre (min, max) et au bord (min).</td></tr>
-<tr><td>MTFT · MTFS</td><td>FTM tangentielle ou sagittale à une fréquence (paramètre, cycles/mm), pour un champ ou pour chacun (« tous » : la contrainte s'applique à chaque champ ; défaut ≥).</td></tr>
-<tr><td>SPOT · WFER</td><td>Spot RMS (µm) ou front d'onde RMS (λ primaire) d'un champ ou de chacun (défaut ≤).</td></tr>
-<tr><td>DISM</td><td>Distorsion maximale |%| sur tout le champ (défaut ≤).</td></tr>
-<tr><td>RELI</td><td>Éclairement relatif au champ maximal (0 à 1, défaut ≥) : limite le vignetage.</td></tr>
-<tr><td>CTHK · ETHK</td><td>Épaisseur au centre de la surface j, ou au bord entre j et j+1 (paramètre = j) ; contrainte =, ≥ ou ≤ au choix.</td></tr>
-<tr><td>GLTR</td><td>Transmission interne des verres le long de l'axe (produit des verres traversés) à une longueur d'onde (paramètre, µm ; défaut ≥) : écarte les verres absorbants dans le bleu ou l'UV.</td></tr>
-<tr><td>RGLA</td><td>Verre modèle « réaliste » : écart normalisé entre chaque verre modèle variable et le verre réel le plus proche (catalogues choisis) ; « ≤ 0 » avec un petit poids les garde près des verres existants.</td></tr></table></li>
-<li>Le tableau affiche en direct la <b>valeur</b> de chaque opérande (en orange si une contrainte ≥/≤ n'est pas respectée) et sa <b>part</b> de la fonction de mérite ; la dernière ligne donne celle du critère image.</li></ul>
+<ul><li>Bouton <b>V</b> dans l'éditeur : rayon (la variable est la courbure), épaisseur, conique, <b>verre</b>, et avec « Asphères » A4…A10 ; coefficients des surfaces diffractives et rayon X des toriques.</li>
+<li><b>Rendre variables</b> en bloc : tous les rayons des dioptres et miroirs (sauf les renvois plans), les espaces d'air, les épaisseurs de verre, les coniques ou les verres (comme « Make all radii variable » de Zemax) ; <b>tout libérer</b> retire tous les V.</li>
+<li>La liste donne la valeur et l'<b>écart</b> depuis le début de l'optimisation. Une épaisseur pilotée par le solve M ne peut pas être variable. Pour borner une variable, utilisez les opérandes de contrainte (CTGT/CTLT, CVGT/CVLT, COGT/COLT…), éventuellement en contrainte exacte.</li></ul>
 <h4>Verres variables et substitution</h4>
-<ul><li>Bouton <b>V</b> de la colonne <b>Verre</b> (ou clic droit › Verre variable) : le verre devient un <b>verre modèle</b> « nd/νd » (affiché en italique) dont l'indice nd et la constringence νd sont deux variables continues (bornes 1,35–2,2 et 15–100). La dispersion du modèle est celle des verres fictifs de CODE V (voir <i>Verres</i>).</li>
-<li>Optimisez normalement, typiquement avec l'opérande <b>AXCL</b> (chromatisme axial) ; ajoutez <b>RGLA</b> (bouton « + Opérande RGLA ») pour éviter que les verres modèles partent dans une zone du diagramme nd/νd où aucun verre n'existe.</li>
-<li><b>Substituer par des verres réels</b> : pour chaque verre variable, Focale essaie les verres réels les plus proches dans le diagramme nd/νd (nombre de candidats réglable, catalogues cochés, préférentiels seulement en option, obsolètes exclus) ; à chaque essai les autres variables sont réoptimisées, et le verre qui donne la meilleure fonction de mérite est retenu. Plusieurs <b>passes</b> permettent de revoir les choix une fois les autres verres fixés. Le message liste les remplacements ; « Restaurer l'état initial » ou Ctrl+Z annulent.</li>
-<li>Après substitution, le verre reste marqué V (« réel, substituable ») : une nouvelle substitution peut encore le changer. Pour repartir d'un verre modèle continu, retirez puis remettez le V.</li>
-<li>La recherche globale perturbe aussi les verres modèles.</li></ul>
-<h4>Lancer</h4>
-<ul><li><b>Optimiser</b> : optimisation locale jusqu'à convergence ou au nombre d'itérations max.</li>
-<li><b>Recherche globale</b> : trois méthodes, chaque essai étant une optimisation locale complète, calculée <b>en parallèle</b> sur plusieurs cœurs (Web Workers) :
-<b>Perturbation du meilleur (Hammer)</b> : les variables du meilleur système sont perturbées au hasard (amplitude relative réglable) puis optimisées, le résultat est gardé s'il s'améliore.
-<b>Recuit simulé</b> : on part du point courant, et un résultat moins bon peut être accepté avec une probabilité qui décroît au fil des essais (température), ce qui permet de franchir les barrières entre minima ; le meilleur point rencontré est gardé.
-<b>Départs multiples</b> : perturbations fortes (×2,5) du point de départ, pour explorer d'autres familles de solutions.
-La liste <b>Meilleures solutions</b> (12 solutions distinctes, avec leur mérite) permet de <b>recharger</b> n'importe laquelle dans l'éditeur (Ctrl+Z pour revenir). <b>Arrêter</b> interrompt les essais en cours et garde le meilleur.</li>
-<li><b>Poids du critère</b> par champ (C1, C2…) et par longueur d'onde (λ1…) : propres à la fonction de mérite ; vide = poids du champ ou de la λ (Données système). Par exemple, donner plus de poids au champ sur l'axe sans changer les poids utilisés par les analyses.</li>
-<li><b>Restaurer l'état initial</b> revient au système d'avant la dernière optimisation ; Ctrl+Z fonctionne aussi.</li></ul>
+<ul><li>Bouton <b>V</b> de la colonne <b>Verre</b> (ou clic droit › Verre variable, ou « Rendre variables : verres ») : le verre devient un <b>verre modèle</b> « nd/νd » (en italique) dont nd et νd sont deux variables continues (bornes 1,35–2,2 et 15–100) ; dispersion des verres fictifs de CODE V (voir <i>Verres</i>). MNIN/MXIN et MNAB/MXAB bornent nd et νd.</li>
+<li>Ajoutez <b>RGLA</b> (bouton « + Opérande RGLA ») pour garder les verres modèles près des verres existants.</li>
+<li><b>Substituer par des verres réels</b> : pour chaque verre variable, les verres réels les plus proches dans le diagramme nd/νd (candidats, catalogues, préférentiels, obsolètes exclus) sont essayés avec réoptimisation des autres variables ; le meilleur est gardé. Plusieurs <b>passes</b> revoient les choix une fois les autres verres fixés.</li></ul>
+<h4>Recherche globale</h4>
+<ul><li>Chaque essai est une optimisation locale complète, calculée <b>en parallèle</b> sur plusieurs cœurs. <b>Perturbation du meilleur (Hammer)</b> : variables du meilleur système perturbées (amplitude réglable) puis optimisées, résultat gardé s'il s'améliore. <b>Recuit simulé</b> : un résultat moins bon peut être accepté avec une probabilité décroissante, pour franchir les barrières entre minima. <b>Départs multiples</b> : perturbations fortes du point de départ, pour explorer d'autres familles de solutions.</li>
+<li>Une solution qui viole une contrainte exacte est fortement pénalisée dans le classement. La liste <b>Meilleures solutions</b> (12 solutions distinctes) permet d'en recharger une (Ctrl+Z pour revenir).</li>
+<li><b>Restaurer l'état initial</b> revient au système d'avant la dernière optimisation.</li></ul>
 <h4>Quick focus</h4>
-<p>Bouton <b>⌖ Quick focus</b> de l'éditeur (ou Ctrl+Maj+F, ou clic droit) : déplace le plan image au <b>meilleur foyer</b> en ajustant l'épaisseur avant l'image. Le menu <b>▾</b> choisit le critère (spot RMS ou front d'onde RMS) et la longueur d'onde : <b>centrale</b> par défaut (utile en polychromatique), primaire, toutes pondérées ou une λ précise. Un solve M sur cette épaisseur est retiré. Le message indique le déplacement et le critère avant/après. Le bouton est aussi dans la fenêtre d'optimisation.</p>` },
+<p>Bouton <b>⌖ Quick focus</b> de l'éditeur (ou Ctrl+Maj+F) : déplace le plan image au <b>meilleur foyer</b> (spot ou front d'onde RMS, λ centrale par défaut, réglages dans ▾). Un solve M sur cette épaisseur est retiré. Aussi dans la fenêtre d'optimisation.</p>
+<p>La liste complète des opérandes est dans la rubrique <i>Opérandes de la fonction de mérite</i>.</p>` },
+
+  { id: 'operandes', t: 'Opérandes de la fonction de mérite', get h() { return helpOps(); } },
 
   { id: 'tolerancement', t: 'Tolérancement', h: `
 <p>Estime la dégradation due aux défauts de fabrication et d'alignement, à la manière du tolérancement de Zemax ou du module TOR de CODE V. Bouton <b>Tolérancer</b> ; la fenêtre a trois onglets de réglages à gauche et trois onglets de résultats à droite. La configuration est enregistrée avec le système.</p>
@@ -4127,7 +4422,7 @@ La liste <b>Meilleures solutions</b> (12 solutions distinctes, avec leur mérite
 <p>Le panneau ⚙ est compact (moteur, modèle Ollama avec « Tester », modèle du navigateur avec « Charger ») ; les options et l'aide à l'installation sont repliées sous « Options et installation ». Il se referme à l'envoi d'un message.</p>
 <ul><li><b>Demandes simples traitées par les règles</b> (activé par défaut) : une demande courte reconnue sans ambiguïté (« verre de la 2e lentille en N-SF11 », « f/4 », « quick focus »…) est exécutée immédiatement, sans attendre le modèle ; la ligne grise indique alors « règles (instantané) ». Les phrases plus libres ou composées (« puis », « pour que »…) vont au modèle.</li>
 <li><b>Appel d'outils natif</b> (Ollama, activé par défaut) : chaque action est décrite au modèle comme une fonction avec ses paramètres typés, format pour lequel Qwen3 est entraîné — plus fiable qu'un JSON libre pour un petit modèle. Les nombres renvoyés en texte (« 120 », « f/4 ») sont corrigés automatiquement. Décocher pour revenir au mode JSON contraint (utile avec un modèle qui ne gère pas les outils ; bascule automatique dans ce cas). Si le modèle répond seulement par du texte (« Compris : … ») sans appeler d'outil, Focale le <b>relance une fois</b> en lui demandant d'exécuter les actions ; une réponse terminée par « ? » est traitée comme une question.</li>
-<li>Les contraintes s'expriment simplement : « épaisseur minimale des verres 5 mm » (MNCT ≥ 5), « épaisseur maximale… » (MXCT), « espace d'air minimum 0,5 mm » (MNCA), « … au bord » (MNET, MNEA), « longueur totale inférieure à 120 mm » (TTL ≤ 120). Elles s'appliquent à toutes les lentilles ; pour fixer l'épaisseur d'une lentille précise, demandez-la directement (« épaisseur S1 = 5 »).</li>
+<li>Les contraintes s'expriment simplement : « épaisseur minimale des verres 5 mm » (MNCG ≥ 5), « épaisseur maximale… » (MXCG), « espace d'air minimum 0,5 mm » (MNCA), « … au bord » (MNET, MNEA), « longueur totale inférieure à 120 mm » (TTL ≤ 120). Elles s'appliquent à toutes les lentilles ; pour fixer l'épaisseur d'une lentille précise, demandez-la directement (« épaisseur S1 = 5 »).</li>
 <li>Pour une meilleure compréhension, <code>qwen3:8b</code> est nettement plus capable que <code>qwen3:4b-instruct</code>, au prix d'une réponse plus lente sans carte graphique.</li></ul>
 <p>Rien n'est envoyé sur Internet. Sur un PC sans carte graphique, une réponse d'Ollama prend de quelques secondes à une minute selon le modèle.</p>
 <h4>Module facultatif</h4>
@@ -4972,7 +5267,7 @@ const SAMPLES = (() => {
   const FdC = [{ um: 0.4861327, w: 1 }, { um: 0.5875618, w: 1 }, { um: 0.6562725, w: 1 }];
   const base = (o) => ({ title: '', aperture: { type: 'EPD', value: 10, obscuration: 0 }, fieldType: 'angle',
     fields: [{ y: 0, w: 1 }], wavelengths: FdC, primary: 1, rayAiming: false,
-    merit: { image: 'SPOT', ops: [] }, ...o });
+    merit: { v: 2, image: 'SPOT', ops: [] }, ...o });
   const He = [{ um: 0.6328, w: 1 }], gFdC = [{ um: 0.4358343, w: 1 }, ...FdC];
   const L = {
     'Lentille plan-convexe f=100': () => base({
@@ -4985,14 +5280,14 @@ const SAMPLES = (() => {
       fields: [{ y: 0, w: 1 }, { y: 1.5, w: 1 }, { y: 3, w: 1 }],
       surfaces: [S(Infinity, Infinity, '', { comment: 'Objet' }), S(62.75, 4, 'N-BK7', { stop: true, comment: 'Couronne' }), S(-45.71, 2.5, 'N-SF5', { comment: 'Flint' }),
         S(-128.23, 97, '', { tsolve: 'M' }), S(Infinity, 0, '', { comment: 'Image' })],
-      merit: { image: 'SPOT', ops: [{ type: 'EFL', target: 100, weight: 1 }] },
+      merit: { v: 2, image: 'SPOT', ops: [{ type: 'EFL', target: 100, weight: 1 }] },
     }),
     'Triplet de Cooke f=50 F/5': () => base({
       title: 'Triplet de Cooke 40° — f=50 mm F/5', aperture: { type: 'EPD', value: 10, obscuration: 0 },
       fields: [{ y: 0, w: 1 }, { y: 14, w: 1 }, { y: 20, w: 1 }],
       surfaces: [S(Infinity, Infinity, '', { comment: 'Objet' }), S(22.01359, 3.25896, 'N-SK16'), S(-435.7604, 6.007567), S(-22.21328, 0.9999999, 'F2'),
         S(20.29192, 4.750409, '', { stop: true }), S(79.6836, 2.952076, 'N-SK16'), S(-18.39533, 42.20778, '', { tsolve: 'M' }), S(Infinity, 0, '', { comment: 'Image' })],
-      merit: { image: 'SPOT', ops: [{ type: 'EFL', target: 50, weight: 1 }, { type: 'MNCT', target: 1, weight: 10 }, { type: 'MNCA', target: 0.5, weight: 10 }] },
+      merit: { v: 2, image: 'SPOT', ops: [{ type: 'EFL', target: 50, weight: 1 }, { type: 'MNCG', target: 1, weight: 100 }, { type: 'MNCA', target: 0.5, weight: 100 }] },
     }),
     'Miroir parabolique f/4 (Newton)': () => base({
       title: 'Miroir parabolique f/4 — D=200 mm', aperture: { type: 'EPD', value: 200, obscuration: 0 },
@@ -5039,20 +5334,20 @@ const SAMPLES = (() => {
       title: 'Singulet N-BK7 de forme optimale (aberration sphérique minimale) f=100 mm F/5', aperture: { type: 'EPD', value: 20, obscuration: 0 },
       fields: [{ y: 0, w: 1 }, { y: 2, w: 1 }, { y: 3, w: 1 }],
       surfaces: [S(Infinity, Infinity, '', { comment: 'Objet' }), S(59.74, 5, 'N-BK7', { stop: true, comment: 'Face la plus bombée vers l\'infini' }), S(-372.1267, 97, '', { tsolve: 'M' }), S(Infinity, 0, '', { comment: 'Image' })],
-      merit: { image: 'SPOT', ops: [{ type: 'EFL', target: 100, weight: 1 }] },
+      merit: { v: 2, image: 'SPOT', ops: [{ type: 'EFL', target: 100, weight: 1 }] },
     }),
     'Lentille biconvexe 1:1 (2f – 2f)': () => base({
       title: 'Lentille biconvexe symétrique N-BK7 f=50 mm en conjugaison 1:1', aperture: { type: 'NA', value: 0.05, obscuration: 0 }, fieldType: 'height',
       fields: [{ y: 0, w: 1 }, { y: 2, w: 1 }, { y: 4, w: 1 }],
       surfaces: [S(Infinity, 99.81571, '', { comment: 'Objet' }), S(51.68, 5, 'N-BK7', { stop: true }), S(-51.68, 98, '', { tsolve: 'M' }), S(Infinity, 0, '', { comment: 'Image' })],
-      merit: { image: 'SPOT', ops: [{ type: 'PMAG', target: -1, weight: 1 }] },
+      merit: { v: 2, image: 'SPOT', ops: [{ type: 'PMAG', target: -1, weight: 1 }] },
     }),
     'Lentille asphérique de focalisation f=10 (1064 nm)': () => base({
       title: 'Lentille asphérique moulée S-LAH64 f=10 mm ON 0,25 — laser 1064 nm', aperture: { type: 'EPD', value: 5, obscuration: 0 },
       fields: [{ y: 0, w: 1 }, { y: 0.5, w: 1 }, { y: 1, w: 1 }], wavelengths: [{ um: 1.064, w: 1 }], primary: 0,
       surfaces: [S(Infinity, Infinity, '', { comment: 'Objet' }), S(Infinity, 0, '', { stop: true, comment: 'Pupille' }),
         S(7.688431, 3, 'S-LAH64', { k: -0.9966334, a4: 0.00009409413, a6: -1.085724e-7, comment: 'Face asphérique' }), S(Infinity, 8.302624, '', { tsolve: 'M' }), S(Infinity, 0, '', { comment: 'Foyer' })],
-      merit: { image: 'WFE', ops: [{ type: 'EFL', target: 10, weight: 1 }] },
+      merit: { v: 2, image: 'WFE', ops: [{ type: 'EFL', target: 10, weight: 1 }] },
     }),
     'Lentille cylindrique f=50 (ligne focale)': () => base({
       title: 'Lentille plan-cylindrique N-BK7 f=50 mm : le faisceau converge en Y seulement (ligne selon X)', aperture: { type: 'EPD', value: 10, obscuration: 0 },
@@ -5065,7 +5360,7 @@ const SAMPLES = (() => {
       fields: [{ y: 0, w: 1 }, { y: 1.5, w: 1 }, { y: 3, w: 1 }],
       surfaces: [S(Infinity, Infinity, '', { comment: 'Objet' }), S(57.46079, 5, 'N-BK7', { stop: true }),
         S(-1203.264, 0, '', { elem: 'doe', dm: 1, dnr: 10, da: [-324.7022, 28.9126], comment: 'Surface diffractive (achromatisation)' }), S(Infinity, 96.79725, ''), S(Infinity, 0, '', { comment: 'Image' })],
-      merit: { image: 'SPOT', ops: [{ type: 'EFL', target: 100, weight: 1 }, { type: 'AXCL', target: 0, weight: 1 }] },
+      merit: { v: 2, image: 'SPOT', ops: [{ type: 'EFL', target: 100, weight: 1 }, { type: 'AXCL', target: 0, weight: 1 }] },
     }),
     // ---- doublets et lunettes ----
     'Lunette achromatique D=100 F/9': () => base({
@@ -5073,14 +5368,14 @@ const SAMPLES = (() => {
       fields: [{ y: 0, w: 1 }, { y: 0.35, w: 1 }, { y: 0.5, w: 1 }],
       surfaces: [S(Infinity, Infinity, '', { comment: 'Objet' }), S(521.0593, 10, 'N-BK7', { stop: true, comment: 'Couronne' }), S(-328.8832, 3), S(-328.379, 7, 'F2', { comment: 'Flint' }),
         S(-1452.441, 884.7205, '', { tsolve: 'M' }), S(Infinity, 0, '', { comment: 'Image' })],
-      merit: { image: 'SPOT', ops: [{ type: 'EFL', target: 900, weight: 1 }, { type: 'MNCA', target: 0.3, weight: 10 }, { type: 'MNET', target: 2, weight: 10 }] },
+      merit: { v: 2, image: 'SPOT', ops: [{ type: 'EFL', target: 900, weight: 1 }, { type: 'MNCA', target: 0.3, weight: 100 }, { type: 'MNEG', target: 2, weight: 100 }] },
     }),
     'Doublet apochromatique S-FPL53 D=100 F/7': () => base({
       title: 'Objectif apochromatique S-FPL53 / N-KZFS4 D=100 mm F/7 (g, F, d, C)', aperture: { type: 'EPD', value: 100, obscuration: 0 },
       fields: [{ y: 0, w: 1 }, { y: 0.5, w: 1 }, { y: 0.7, w: 1 }], wavelengths: gFdC, primary: 2,
       surfaces: [S(Infinity, Infinity, '', { comment: 'Objet' }), S(389.3289, 12, 'S-FPL53', { stop: true, comment: 'Fluorophosphate (ED)' }), S(-290.3239, 1),
         S(-286.7424, 7, 'N-KZFS4', { comment: 'Flint court (KZFS)' }), S(-658.6804, 689.8549, '', { tsolve: 'M' }), S(Infinity, 0, '', { comment: 'Image' })],
-      merit: { image: 'SPOT', ops: [{ type: 'EFL', target: 700, weight: 1 }, { type: 'MNCA', target: 0.3, weight: 10 }, { type: 'MNET', target: 2, weight: 10 }] },
+      merit: { v: 2, image: 'SPOT', ops: [{ type: 'EFL', target: 700, weight: 1 }, { type: 'MNCA', target: 0.3, weight: 100 }, { type: 'MNEG', target: 2, weight: 100 }] },
     }),
     // ---- objectifs photographiques ----
     'Tessar f=50 F/4.5': () => base({
@@ -5088,7 +5383,7 @@ const SAMPLES = (() => {
       fields: [{ y: 0, w: 1 }, { y: 14, w: 1 }, { y: 20, w: 1 }],
       surfaces: [S(Infinity, Infinity, '', { comment: 'Objet' }), S(20.95483, 3.25896, 'N-SK16'), S(-314.6918, 5.512426), S(-22.19698, 1, 'F2'), S(20.10694, 4.252278, '', { stop: true }),
         S(83.12428, 1, 'LF5'), S(180.1977, 2.5, 'N-SK16'), S(-18.80592, 42, '', { tsolve: 'M' }), S(Infinity, 0, '', { comment: 'Image' })],
-      merit: { image: 'SPOT', ops: [{ type: 'EFL', target: 50, weight: 1 }, { type: 'MNCA', target: 0.5, weight: 10 }, { type: 'MNET', target: 0.8, weight: 10 }, { type: 'MNCT', target: 0.8, weight: 10 }] },
+      merit: { v: 2, image: 'SPOT', ops: [{ type: 'EFL', target: 50, weight: 1 }, { type: 'MNCA', target: 0.5, weight: 100 }, { type: 'MNEG', target: 0.8, weight: 100 }, { type: 'MNCG', target: 0.8, weight: 100 }] },
     }),
     'Double Gauss f=100 F/3': () => base({
       title: 'Double Gauss (type Planar) f=100 mm F/3 — champ ±14°', aperture: { type: 'EPD', value: 33.33, obscuration: 0 },
@@ -5096,21 +5391,21 @@ const SAMPLES = (() => {
       surfaces: [S(Infinity, Infinity, '', { comment: 'Objet' }), S(55.29101, 8.747, 'N-SK2'), S(154.0236, 0.5), S(35.20043, 14, 'N-SK16'), S(Infinity, 3.777, 'F5'), S(22.08829, 14.253),
         S(Infinity, 12.428, '', { stop: true }), S(-25.48849, 3.777, 'F5'), S(Infinity, 10.834, 'N-SK16'), S(-36.81989, 0.5), S(178.8146, 6.858, 'N-SK16'),
         S(-69.89159, 57.315, '', { tsolve: 'M' }), S(Infinity, 0, '', { comment: 'Image' })],
-      merit: { image: 'SPOT', ops: [{ type: 'EFL', target: 100, weight: 1 }] },
+      merit: { v: 2, image: 'SPOT', ops: [{ type: 'EFL', target: 100, weight: 1 }] },
     }),
     'Petzval f=100 F/3': () => base({
       title: 'Objectif de Petzval (deux doublets) f=100 mm F/3 — champ ±5°', aperture: { type: 'EPD', value: 33.3, obscuration: 0 },
       fields: [{ y: 0, w: 1 }, { y: 3.5, w: 1 }, { y: 5, w: 1 }],
       surfaces: [S(Infinity, Infinity, '', { comment: 'Objet' }), S(85.11013, 8, 'N-BK7', { stop: true }), S(-68.12143, 3, 'N-SF5'), S(-253.6624, 94.87909),
         S(45.04794, 6, 'N-BK7'), S(-58.74641, 2.5, 'N-SF5'), S(-542.2705, 30, '', { tsolve: 'M' }), S(Infinity, 0, '', { comment: 'Image' })],
-      merit: { image: 'SPOT', ops: [{ type: 'EFL', target: 100, weight: 1 }, { type: 'MNCA', target: 1, weight: 10 }, { type: 'MNET', target: 1, weight: 10 }] },
+      merit: { v: 2, image: 'SPOT', ops: [{ type: 'EFL', target: 100, weight: 1 }, { type: 'MNCA', target: 1, weight: 100 }, { type: 'MNEG', target: 1, weight: 100 }] },
     }),
     'Téléobjectif f=200 F/5.6': () => base({
       title: 'Téléobjectif f=200 mm F/5,6 — longueur 140 mm (rapport télé 0,7)', aperture: { type: 'EPD', value: 35.7, obscuration: 0 },
       fields: [{ y: 0, w: 1 }, { y: 2, w: 1 }, { y: 3, w: 1 }],
       surfaces: [S(Infinity, Infinity, '', { comment: 'Objet' }), S(66.12961, 6, 'N-BK7', { stop: true, comment: 'Groupe convergent' }), S(-65.689, 2.5, 'N-SF5'), S(-262.2889, 104.5915),
         S(-23.23767, 2, 'N-BK7', { comment: 'Groupe divergent' }), S(51.63884, 3, 'N-SF5'), S(138.6783, 22, '', { tsolve: 'M' }), S(Infinity, 0, '', { comment: 'Image' })],
-      merit: { image: 'SPOT', ops: [{ type: 'EFL', target: 200, weight: 1 }, { type: 'TTL', target: 140, weight: 1 }, { type: 'MNCA', target: 1, weight: 10 }, { type: 'MNET', target: 1, weight: 10 }] },
+      merit: { v: 2, image: 'SPOT', ops: [{ type: 'EFL', target: 200, weight: 1 }, { type: 'TTL', target: 140, weight: 1 }, { type: 'MNCA', target: 1, weight: 100 }, { type: 'MNEG', target: 1, weight: 100 }] },
     }),
     // ---- télescopes ----
     'Ritchey-Chrétien F/8': () => base({
@@ -5118,7 +5413,7 @@ const SAMPLES = (() => {
       fields: [{ y: 0, w: 1 }, { y: 0.2, w: 1 }, { y: 0.3, w: 1 }], wavelengths: [{ um: 0.5875618, w: 1 }], primary: 0,
       surfaces: [S(Infinity, Infinity, '', { comment: 'Objet' }), S(-1200, -395.4332, 'MIRROR', { k: -1.139033, stop: true, comment: 'Primaire (hyperbole)' }),
         S(-654.6138, 545.4332, 'MIRROR', { k: -6.51373, comment: 'Secondaire (hyperbole)' }), S(Infinity, 0, '', { comment: 'Image' })],
-      merit: { image: 'SPOT', ops: [{ type: 'EFL', target: 1600, weight: 1 }, { type: 'TTL', target: 150, weight: 1 }] },
+      merit: { v: 2, image: 'SPOT', ops: [{ type: 'EFL', target: 1600, weight: 1 }, { type: 'TTL', target: 150, weight: 1 }] },
     }),
     'Chambre de Schmidt F/2': () => base({
       title: 'Chambre de Schmidt D=200 mm F/2 : lame asphérique au centre de courbure, surface focale courbe', aperture: { type: 'EPD', value: 200, obscuration: 0 },
@@ -5132,14 +5427,14 @@ const SAMPLES = (() => {
       fields: [{ y: 0, w: 1 }, { y: 14, w: 1 }, { y: 20, w: 1 }],
       surfaces: [S(Infinity, Infinity, '', { comment: 'Objet (infini)' }), S(Infinity, 19.02311, '', { stop: true, comment: 'Pupille de sortie (œil)' }), S(126.104, 1.5, 'N-SF5'), S(21.11243, 7, 'N-BK7'), S(-31.98407, 0.5),
         S(23.41453, 7, 'N-BK7'), S(-29.56987, 1.5, 'N-SF5'), S(-66.19667, 18, '', { tsolve: 'M' }), S(Infinity, 0, '', { comment: 'Diaphragme de champ' })],
-      merit: { image: 'SPOT', ops: [{ type: 'EFL', target: 25, weight: 1 }, { type: 'MNCA', target: 0.3, weight: 10 }, { type: 'MNET', target: 1, weight: 10 }] },
+      merit: { v: 2, image: 'SPOT', ops: [{ type: 'EFL', target: 25, weight: 1 }, { type: 'MNCA', target: 0.3, weight: 100 }, { type: 'MNEG', target: 1, weight: 100 }] },
     }),
     'Objectif de microscope 10× ON 0,25': () => base({
       title: 'Objectif de microscope 10× ON 0,25 corrigé à l\'infini, f=20 mm (Lister, tracé inversé : de la pupille vers l\'objet)', aperture: { type: 'EPD', value: 10, obscuration: 0 },
       fields: [{ y: 0, w: 1 }, { y: 1, w: 1 }, { y: 1.4, w: 1 }],
       surfaces: [S(Infinity, Infinity, '', { comment: 'Lentille de tube (infini)' }), S(Infinity, 5, '', { stop: true, comment: 'Pupille (plan focal arrière)' }), S(24.34342, 3.5, 'N-BK7'), S(-16.25734, 1.5, 'N-SF5'),
         S(-78.74838, 4), S(12.66843, 3.5, 'N-BK7'), S(-48.49032, 1.5, 'N-SF5'), S(161.475, 10, '', { tsolve: 'M' }), S(Infinity, 0, '', { comment: 'Objet observé' })],
-      merit: { image: 'SPOT', ops: [{ type: 'EFL', target: 20, weight: 1 }, { type: 'MNET', target: 0.8, weight: 10 }, { type: 'MNEA', target: 0.3, weight: 100 }] },
+      merit: { v: 2, image: 'SPOT', ops: [{ type: 'EFL', target: 20, weight: 1 }, { type: 'MNEG', target: 0.8, weight: 100 }, { type: 'MNEA', target: 0.3, weight: 10000 }] },
     }),
     'Expanseur de faisceau Galilée ×4': () => base({
       title: 'Expanseur de faisceau de Galilée ×4 (HeNe) suivi d\'une lentille idéale qui contrôle la collimation', aperture: { type: 'EPD', value: 2.5, obscuration: 0 },
@@ -5444,7 +5739,7 @@ function normalize(s) {
   if (s.ftype && !OE.FTYPES[s.ftype]) delete s.ftype;
   s.wavelengths = (s.wavelengths && s.wavelengths.length) ? s.wavelengths : [{ um: 0.5875618, w: 1 }];
   s.primary = Math.min(Math.max(0, s.primary | 0), s.wavelengths.length - 1);
-  s.merit = s.merit || { image: 'SPOT', ops: [] }; s.merit.ops = s.merit.ops || [];
+  s.merit = s.merit || { image: 'SPOT', ops: [], v: 2 }; s.merit.ops = s.merit.ops || []; OE.meritUpgrade(s);
   s.src = { type: 'none', fib: 'si', core: 50, clad: 125, na: 0.22, mfd: null, lc0: null, dl: null, len: null, att: null, bw: null, d: 10, w: 20, h: 200, ...(s.src || {}) };
   s.det = { on: false, p: 3.45, nx: 2448, ny: 2048, ff: 100, bits: 12, fw: 10000, rn: 3, lvl: 70, noise: false, ...(s.det || {}) };
   s.surfaces = s.surfaces.map(x => newSurf(x));
@@ -7184,59 +7479,145 @@ function fans(c, w, h, M, data, k, unit) {
 
 /* ---------------- Optimisation ---------------- */
 const OPT = { running: false, st: null, hist: [], it: 0, snap: null, x0: null, maxIt: 100, gCyc: 10, gAmp: 20 };
+/** colonnes de l'éditeur de fonction de mérite (comme le Merit Function Editor de Zemax) */
+const MFC = [['s1', 'S1', 'Surface 1 (ou n° de ligne pour les opérations)'], ['s2', 'S2', 'Surface 2 (ou n° de ligne)'], ['w', 'λ', 'Longueur d\'onde (vide : primaire, ou polychromatique pour les RMS)'], ['hx', 'Hx', 'Champ normalisé X (−1…1)'], ['hy', 'Hy', 'Champ normalisé Y (−1…1)'], ['px', 'Px', 'Pupille normalisée X (−1…1)'], ['py', 'Py', 'Pupille normalisée Y (−1…1)'], ['p', 'Param.', 'Paramètre de l\'opérande']];
+/** valeurs par défaut d'une ligne au choix d'un type */
+function opDefaults(type, cur = {}) {
+  const d = OE.OPS[type] || {}, o = { type, weight: cur.weight ?? 1, ...(cur.cfg ? { cfg: cur.cfg } : {}) }, c = d.cols || [];
+  if (c.includes('p')) o.p = d.pdef ?? 0;
+  if (['TRAX', 'TRAY', 'TRAR', 'OPDC', 'OPDX', 'LONA', 'RAID', 'RAED', 'REAY', 'REAX', 'REAR', 'REAB', 'RANG'].includes(type)) o.py = 1;
+  if (['REAY', 'REAX', 'REAR', 'REAB', 'RANG', 'RAID', 'RAED', 'POWR', 'PARY', 'PARB', 'CTGT', 'CTLT', 'CTVA', 'ETGT', 'ETLT', 'ETVA', 'CVGT', 'CVLT', 'CVVA', 'COGT', 'COLT', 'COVA', 'DMGT', 'DMLT', 'DMVA'].includes(type)) o.s1 = 1;
+  if (['RSCE', 'RSCH', 'RWCE', 'RWCH', 'STRH', 'DISG', 'FCGT', 'FCGS', 'ZERN'].includes(type)) o.hy = cur.hy ?? 0;
+  const def = { MNCG: 1, MXCG: 20, MNEG: 1, MXEG: 30, MNCA: 0.5, MXCA: 200, MNEA: 0.3, MXEA: 200, MNCT: 0.3, MXCT: 200, MNET: 0.3, MXET: 200, MNSD: 1, MXSD: 50, RGLA: 0, MNIN: 1.45, MXIN: 2, MNAB: 20, MXAB: 90, STRH: 0.8, MTFT: 0.5, MTFS: 0.5, MTFA: 0.5, RELI: 0.5, RAID: 45, RAED: 45, GLTR: 0.9, DISM: 1, RSCE: 0, RSCH: 0, RWCE: 0, RWCH: 0, SPOT: 0, WFER: 0, CTGT: 1, ETGT: 1 };
+  if (def[type] != null) o.target = def[type];
+  else { try { const r = OE.residuals({ ...App.sys, merit: { v: 2, image: 'NONE', ops: [...(App.sys.merit.ops || []), o] } }); const v = r && r.parts[r.parts.length - 1].val; o.target = isFinite(v) ? +(+v).toPrecision(6) : 0; } catch (e) { o.target = 0; } }
+  if (type === 'RGLA') o.weight = 0.002;
+  return o;
+}
+const fmtCell = v => v == null || v === '' ? '' : String(v);
 function openOptim() {
-  const s = App.sys, mf = s.merit, wasOpen = !!$('#ovars'); mf.ops = mf.ops || [];
+  const s = App.sys; OE.meritUpgrade(s); const mf = s.merit, wasOpen = !!$('#ovars'); mf.ops = mf.ops || [];
   if (!OPT.running && !OPT.x0) OPT.x0 = optSnapVars(s);
-  const ops = Object.entries(OE.OPS), W = s.wavelengths, cen = OE.wlSel(s, 'central')[0];
+  const W = s.wavelengths, cen = OE.wlSel(s, 'central')[0], mc = OE.mcOn(s), pu = mf.pupil || { type: 'GQ', rings: 3, arms: 8 }, bnd = mf.bnd || {};
   const wlOpts = [['all', 'Toutes les λ (pondérées)'], ['central', `λ centrale (${fmt(W[cen].um * 1000, 5)} nm)`], ['primary', `λ primaire (${fmt(W[s.primary | 0].um * 1000, 5)} nm)`], ...W.map((w, i) => [String(i), `λ${i + 1} seule (${fmt(w.um * 1000, 5)} nm)`])];
-  const wsel = mf.wl == null ? 'all' : String(mf.wl);
-  dlg(`<h2>Optimisation — moindres carrés amortis <button class="x" data-d="close">✕</button></h2>
+  const wsel = mf.wl == null ? 'all' : String(mf.wl), sel = (id, cur, opts, attr = '') => `<select class="in" id="${id}" ${attr}>${opts.map(([k, l]) => `<option value="${k}" ${String(cur) === String(k) ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  const num = (id, v, ph, w = 48, t = '') => `<input class="in" id="${id}" value="${v == null ? '' : v}" placeholder="${ph}" style="width:${w}px" title="${t}">`;
+  const cyc = OPT.cyc || 'auto';
+  const rowHTML = (o, i) => {
+    const d = OE.OPS[o.type] || { label: '?', cols: [] }, cmp = o.cmp || d.kind, c = d.cols || [];
+    const cell = k => { if (!c.includes(k)) return '<td></td>';
+      if (k === 'w') return `<td><select class="in" data-o="w" data-i="${i}" style="width:38px" title="${MFC[2][2]}"><option value="">—</option>${W.map((_, j) => `<option value="${j + 1}" ${+o.w === j + 1 ? 'selected' : ''}>${j + 1}</option>`).join('')}</select></td>`;
+      if (k === 'p' && d.f) return `<td><input class="in" data-o="p" data-i="${i}" value="${fmtCell(o.p ?? d.pdef)}" style="width:46px" title="${esc(d.pl || d.p || '')}"></td>`;
+      return `<td><input class="in" data-o="${k}" data-i="${i}" value="${fmtCell(o[k] ?? (k === 'p' ? d.pdef : ''))}" style="width:${k === 'p' ? 44 : k === 's1' || k === 's2' ? 30 : 34}px" title="${esc(k === 'p' ? (d.pl || 'paramètre') : MFC.find(m => m[0] === k)[2])}"></td>`; };
+    const fiSel = d.f ? `<select class="in" data-o="fi" data-i="${i}" style="width:54px" title="Champ (tous : la contrainte s'applique à chaque champ)"><option value="0">tous</option>${s.fields.map((_, k) => `<option value="${k + 1}" ${+o.fi === k + 1 ? 'selected' : ''}>C${k + 1}</option>`).join('')}</select>` : '';
+    const desc = o.type === 'BLNK' ? `<input class="in" data-o="c" data-i="${i}" value="${esc(o.c || '')}" placeholder="commentaire" style="width:100%">` : `<span class="odesc" title="${esc(d.label + (d.aka ? ' — ' + d.aka : ''))}">${esc(d.label)}</span>${fiSel}`;
+    const nores = d.nores;
+    return `<tr data-row="${i}" class="${o.auto ? 'oauto' : ''}"><td class="onum">${i + 1}</td><td><button class="opb" data-d="opick" data-i="${i}" title="Changer l'opérande">${esc(o.type)}</button></td><td class="odc">${desc}</td>
+      ${['s1', 's2', 'w', 'hx', 'hy', 'px', 'py', 'p'].map(cell).join('')}
+      <td>${nores ? '' : `<select class="in" data-o="cmp" data-i="${i}" style="width:36px" title="Égal, au moins (≥) ou au plus (≤)">${[['eq', '='], ['ge', '≥'], ['le', '≤']].map(([k, l]) => `<option value="${k}" ${cmp === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`}</td>
+      <td>${nores || o.type === 'CONS' ? '' : `<input class="in" data-o="target" data-i="${i}" value="${fmtCell(o.target)}" style="width:58px">`}</td>
+      <td>${nores ? '' : `<input class="in" data-o="weight" data-i="${i}" value="${o.lag ? '' : fmtCell(o.weight)}" ${o.lag ? 'disabled placeholder="—"' : ''} style="width:40px" title="Poids W : contribution W·(valeur − cible)² (0 : ligne calculée sans effet, utile pour les opérations)">`}</td>
+      <td>${nores ? '' : `<input type="checkbox" data-o="lag" data-i="${i}" ${o.lag ? 'checked' : ''} title="Contrainte exacte (multiplicateurs de Lagrange, comme CODE V) : satisfaite à chaque cycle au lieu d'être pondérée">`}</td>
+      ${mc ? `<td><select class="in" data-o="cfg" data-i="${i}" style="width:54px"><option value="0">toutes</option>${Array.from({ length: s.mc.n }, (_, k) => `<option value="${k + 1}" ${+o.cfg === k + 1 ? 'selected' : ''}>${k + 1}</option>`).join('')}</select></td>` : ''}
+      <td class="ov" data-ov="${i}"></td><td class="ov" data-oc="${i}"></td>
+      <td class="oact"><button class="x" data-d="oup" data-i="${i}" title="Monter">↑</button><button class="x" data-d="odn" data-i="${i}" title="Descendre">↓</button><button class="x" data-d="odel" data-i="${i}" title="Supprimer">✕</button></td></tr>`;
+  };
+  const imgLab = { SPOT: 'Spot RMS', WFE: 'Front d\'onde RMS', MTF: `Contraste 1 − FTM à ${mf.mtfF || 30} cy/mm`, NONE: 'aucun' }[mf.image || 'SPOT'];
+  const puLab = pu.type === 'RA' ? `grille ${pu.grid || 8}×${pu.grid || 8}` : `Gauss ${pu.rings || 3} anneaux × ${pu.arms || 8} bras`;
+  dlg(`<h2>Optimisation <span class="hint" style="font-weight:400;margin-left:8px">moindres carrés amortis · contraintes exactes de Lagrange</span><button class="x" data-d="close">✕</button></h2>
   <div class="db"><div class="ogrid">
     <div class="oL">
-      <h4 class="th4" style="margin-top:0">Variables <span class="hint" id="onv"></span></h4>
-      <div class="hint">Bouton <b>V</b> dans l'éditeur : rayon, épaisseur, conique et, avec « Asphères », A4…A10.</div>
-      <div class="oscroll" id="ovars"></div>
-      <div class="row"><button class="bt" data-d="ovclear" title="Retire toutes les variables (V) du système">Tout libérer</button></div>
-      ${optGlassHTML()}
-      <h4 class="th4">Critère de qualité image</h4>
-      <div class="row"><select class="in grow" id="mfImg"><option value="SPOT" ${mf.image === 'SPOT' ? 'selected' : ''}>Spot RMS (barycentre)</option><option value="WFE" ${mf.image === 'WFE' ? 'selected' : ''}>Front d'onde RMS</option><option value="NONE" ${mf.image === 'NONE' ? 'selected' : ''}>Aucun (opérandes seuls)</option></select></div>
-      <div class="row"><label style="flex:none">Longueurs d'onde</label><select class="in grow" id="mfWl">${wlOpts.map(([k, l]) => `<option value="${k}" ${wsel === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-      <div class="hint">Quadrature de Gauss 3 anneaux × 8 bras sur tous les champs (pondérés). Choisir une seule λ permet par exemple d'optimiser une mise au point à la longueur d'onde centrale ; les opérandes de chromatisme utilisent toujours toutes les λ.</div>
-      <div class="hint" style="margin-top:6px;font-weight:600;color:var(--fg)">Poids du critère <span style="font-weight:400">(vide = poids du champ / de la λ)</span></div>
+      <h4 class="th4" style="margin-top:0">Fonction de mérite par défaut</h4>
+      <div class="ofrm">
+        <label>Critère</label>${sel('mfImg', mf.image || 'SPOT', [['SPOT', 'RMS spot (rayon)'], ['WFE', 'RMS front d\'onde'], ['MTF', 'Contraste FTM (1 − FTM)'], ['NONE', 'Aucun (opérandes seuls)']])}
+        <label>Référence</label>${sel('mfRef', mf.ref || 'centroid', [['centroid', 'Barycentre'], ['chief', 'Rayon principal']], mf.image === 'MTF' || mf.image === 'NONE' ? 'disabled' : '')}
+        <label>Pupille</label><div class="row" style="gap:4px">${sel('mfPu', pu.type || 'GQ', [['GQ', 'Quadrature de Gauss'], ['RA', 'Grille rectangulaire']])}${pu.type === 'RA' ? num('mfGrid', pu.grid || 8, '8', 40, 'Nombre de rayons sur un diamètre') : num('mfRings', pu.rings || 3, '3', 36, 'Anneaux (1 à 20)') + num('mfArms', pu.arms || 8, '8', 36, 'Bras (2 à 36)')}</div>
+        <label>Longueurs d'onde</label>${sel('mfWl', wsel, wlOpts)}
+        ${mf.image === 'MTF' ? `<label>Fréquence</label><div class="row" style="gap:4px">${num('mfMtfF', mf.mtfF || 30, '30', 56)}<span class="hint">cycles/mm</span></div>` : ''}
+        <label>Poids du critère</label>${num('mfIw', mf.iw ?? '', '1', 56, 'Poids total du critère image dans la fonction de mérite (0 : opérandes seuls)')}
+      </div>
+      <label class="ck"><input type="checkbox" id="mfSym" ${mf.sym !== false ? 'checked' : ''}> Symétrie axiale : demi-pupille si le système est de révolution</label>
+      <div class="hint" style="margin-top:4px;font-weight:600;color:var(--fg)">Poids des champs et des λ <span style="font-weight:400">(vide = ceux du système)</span></div>
       <div class="owt">${s.fields.map((f, i) => `<label title="Poids du champ ${i + 1} dans le critère image">C${i + 1} <input class="in" data-ow="fw" data-i="${i}" value="${Array.isArray(mf.fw) && mf.fw[i] != null && mf.fw[i] !== '' ? mf.fw[i] : ''}" placeholder="${f.w ?? 1}"></label>`).join('')}</div>
       <div class="owt">${W.map((w, i) => `<label title="Poids de ${fmt(w.um * 1000, 5)} nm dans le critère image">λ${i + 1} <input class="in" data-ow="ww" data-i="${i}" value="${Array.isArray(mf.ww) && mf.ww[i] != null && mf.ww[i] !== '' ? mf.ww[i] : ''}" placeholder="${w.w ?? 1}"></label>`).join('')}</div>
+      <h4 class="th4">Contraintes de bord <span class="hint">(lignes MNCG, MXCG, MNEG, MNCA, MXCA, MNEA)</span></h4>
+      <table class="obnd"><tr><th></th><th>centre min</th><th>centre max</th><th>bord min</th></tr>
+        <tr><td>Verre</td><td>${num('bgmin', bnd.gmin, '—', 52)}</td><td>${num('bgmax', bnd.gmax, '—', 52)}</td><td>${num('bgemin', bnd.gemin, '—', 52)}</td></tr>
+        <tr><td>Air</td><td>${num('bamin', bnd.amin, '—', 52)}</td><td>${num('bamax', bnd.amax, '—', 52)}</td><td>${num('baemin', bnd.aemin, '—', 52)}</td></tr></table>
+      <div class="row"><label class="ck" style="margin:0"><input type="checkbox" id="bLag" ${bnd.lag ? 'checked' : ''}> exactes</label><button class="bt" data-d="obnd" title="Écrit (ou remplace) les lignes de contraintes de bord dans l'éditeur de fonction de mérite">Écrire les contraintes</button></div>
+      <h4 class="th4">Variables <span class="hint" id="onv"></span></h4>
+      <div class="row" style="flex-wrap:wrap;gap:4px"><span class="hint">Rendre variables :</span>${[['r', 'rayons'], ['ta', 'espaces d\'air'], ['tg', 'épaisseurs de verre'], ['k', 'coniques'], ['g', 'verres']].map(([k, l]) => `<button class="bt" data-d="ovset" data-k="${k}" style="height:22px">${l}</button>`).join('')}<button class="bt" data-d="ovclear" style="height:22px" title="Retire toutes les variables (V) du système">tout libérer</button></div>
+      <div class="oscroll" id="ovars"></div>
+      ${optGlassHTML()}
       <h4 class="th4">Mise au point</h4>
-      <div class="row"><button class="bt" data-d="oqf">⌖ Quick focus</button><span class="hint">${App.qf.crit === 'WFE' ? 'front d\'onde' : 'spot'} RMS · ${qfWlLabel()} (options dans l'éditeur ▾)</span></div>
+      <div class="row"><button class="bt" data-d="oqf">⌖ Quick focus</button><span class="hint">${App.qf.crit === 'WFE' ? 'front d\'onde' : 'spot'} RMS · ${qfWlLabel()}</span></div>
       <h4 class="th4">Meilleures solutions <span class="hint">(recherche globale)</span></h4>
       <div id="osols">${optSolsHTML()}</div>
     </div>
     <div class="oR">
-      <h4 class="th4" style="margin-top:0">Opérandes</h4>
-      <div class="oscroll"><table class="mt otab"><tr><th>Opérande</th><th>Param.</th><th></th><th>Cible</th><th>Poids</th>${OE.mcOn(App.sys) ? '<th title="Configuration où l\'opérande s\'applique (multi-configuration)">Config.</th>' : ''}<th>Valeur</th><th title="Part de la fonction de mérite (somme des carrés)">%</th><th></th></tr>
-      ${mf.ops.map((o, i) => { const d = OE.OPS[o.type] || {}; const cmp = o.cmp || d.kind; return `<tr><td><select class="in" data-o="type" data-i="${i}" title="${esc(d.label || '')}">${ops.map(([k, v]) => `<option value="${k}" ${k === o.type ? 'selected' : ''}>${k} — ${v.label}</option>`).join('')}</select></td>
-        <td>${d.p ? `<input class="in" data-o="p" data-i="${i}" value="${o.p ?? d.pdef}" title="${d.p}" style="width:56px">` : ''}${d.f ? `<select class="in" data-o="fi" data-i="${i}" style="width:62px" title="Champ (tous : la contrainte s'applique à chaque champ)"><option value="0">tous</option>${s.fields.map((_, k) => `<option value="${k + 1}" ${+o.fi === k + 1 ? 'selected' : ''}>C${k + 1}</option>`).join('')}</select>` : ''}</td>
-        <td><select class="in" data-o="cmp" data-i="${i}" style="width:44px" title="Égal, au moins (≥) ou au plus (≤)">${[['eq', '='], ['ge', '≥'], ['le', '≤']].map(([k, l]) => `<option value="${k}" ${cmp === k ? 'selected' : ''}>${l}</option>`).join('')}</select></td>
-        <td><input class="in" data-o="target" data-i="${i}" value="${o.target}" style="width:70px"></td><td><input class="in" data-o="weight" data-i="${i}" value="${o.weight}" style="width:48px"></td>
-        ${OE.mcOn(App.sys) ? `<td><select class="in" data-o="cfg" data-i="${i}" style="width:64px"><option value="0">toutes</option>${Array.from({ length: App.sys.mc.n }, (_, k) => `<option value="${k + 1}" ${+o.cfg === k + 1 ? 'selected' : ''}>${k + 1}</option>`).join('')}</select></td>` : ''}
-        <td class="ov" data-ov="${i}"></td><td class="ov" data-oc="${i}"></td><td><button class="x" data-d="odel" data-i="${i}">✕</button></td></tr>`; }).join('')}
-      <tr><td colspan="${OE.mcOn(App.sys) ? 6 : 5}" class="hint">Critère image${OE.mcOn(App.sys) && App.sys.mc.opt !== 'cur' ? ` (somme sur ${App.sys.mc.n} configurations)` : ''}</td><td class="ov" id="oimgv"></td><td class="ov" id="oimgc"></td><td></td></tr></table></div>
-      <button class="add" data-d="oadd">+ Ajouter un opérande</button>
-      <div style="display:flex;gap:16px;align-items:center;margin-top:10px">
-        <div style="flex:none;width:150px"><div class="hint">Fonction de mérite</div><div class="big" id="mval">—</div><div class="hint" id="mit"></div></div>
-        <div style="flex:1;min-width:0;height:130px;position:relative"><canvas id="mchart"></canvas></div>
+      <div class="row" style="justify-content:space-between"><h4 class="th4" style="margin:0">Éditeur de fonction de mérite</h4><span class="hint">Critère : ${esc(imgLab)} · ${esc(puLab)}${mf.image === 'NONE' ? '' : ` · réf. ${mf.ref === 'chief' ? 'rayon principal' : 'barycentre'}`}</span></div>
+      <div class="oscroll"><table class="mt otab"><thead><tr><th>#</th><th>Type</th><th>Description</th>${MFC.map(([k, l, t]) => `<th title="${esc(t)}">${l}</th>`).join('')}<th></th><th>Cible</th><th title="Poids">Poids</th><th title="Contrainte exacte (Lagrange)">Ex.</th>${mc ? '<th title="Configuration où la ligne s\'applique">Conf.</th>' : ''}<th>Valeur</th><th title="Part de la fonction de mérite">%</th><th></th></tr></thead><tbody>
+      <tr class="oimg"><td class="onum">·</td><td><b>DMF</b></td><td class="odc" colspan="${MFC.length + 5 + (mc ? 1 : 0)}"><span class="odesc">Critère image : ${esc(imgLab)}${mf.image === 'NONE' ? '' : ` (${esc(puLab)}, ${mf.sym !== false ? 'symétrie exploitée si possible' : 'pupille entière'})`}${mc && s.mc.opt !== 'cur' ? ` — somme sur ${s.mc.n} configurations` : ''}</span></td><td class="ov" id="oimgv"></td><td class="ov" id="oimgc"></td><td></td></tr>
+      ${mf.ops.map(rowHTML).join('')}</tbody></table></div>
+      <div class="row" style="gap:6px"><button class="add" data-d="opick" data-i="-1" style="flex:none;width:auto;padding:0 14px">+ Ajouter un opérande</button><span class="hint">Noms Zemax (EFFL → EFL, TOTR → TTL…) et CODE V acceptés dans la recherche · Ex. : contrainte exacte · poids 0 : ligne calculée sans effet</span></div>
+      <div style="display:flex;gap:16px;align-items:center;margin-top:8px">
+        <div style="flex:none;width:190px"><div class="hint">Fonction de mérite <span title="√(Σ W·(valeur − cible)² / Σ W), convention Zemax">ⓘ</span></div><div class="big" id="mval">—</div><div class="hint" id="mcons"></div><div class="hint" id="mit"></div></div>
+        <div style="flex:1;min-width:0;height:120px;position:relative"><canvas id="mchart"></canvas></div>
       </div>
     </div>
   </div>
-  <div class="orow"><span>Itérations max</span><input class="in" id="maxIt" value="${OPT.maxIt || 100}" style="width:60px">
-    <span style="margin-left:18px">Recherche globale :</span><select class="in" id="gMode" title="Méthode de recherche globale">${[['hammer', 'Perturbation du meilleur (Hammer)'], ['anneal', 'Recuit simulé'], ['multi', 'Départs multiples']].map(([k, l]) => `<option value="${k}" ${(OPT.gMode || 'hammer') === k ? 'selected' : ''}>${l}</option>`).join('')}</select><span class="hint">essais</span><input class="in" id="gCyc" value="${OPT.gCyc || 10}" style="width:50px"><span class="hint">amplitude</span><input class="in" id="gAmp" value="${OPT.gAmp || 20}" style="width:50px"><span class="hint">% (perturbation relative des variables)</span></div>
+  <div class="orow"><span>Cycles</span>${sel('oCyc', cyc, [['auto', 'Automatique'], ['1', '1'], ['5', '5'], ['10', '10'], ['50', '50'], ['200', '200']], 'style="width:auto"')}
+    <span style="margin-left:10px">Dérivées</span>${sel('oDer', OPT.central ? 'cen' : 'fwd', [['fwd', 'différences avant'], ['cen', 'différences centrées (×2 calculs)']], 'style="width:auto"')}
+    <span style="margin-left:18px">Recherche globale :</span>${sel('gMode', OPT.gMode || 'hammer', [['hammer', 'Perturbation du meilleur (Hammer)'], ['anneal', 'Recuit simulé'], ['multi', 'Départs multiples']], 'style="width:auto"')}<span class="hint">essais</span><input class="in" id="gCyc" value="${OPT.gCyc || 10}" style="width:50px"><span class="hint">amplitude</span><input class="in" id="gAmp" value="${OPT.gAmp || 20}" style="width:46px"><span class="hint">%</span></div>
   </div>
   <div class="df"><span class="hint grow" id="omsg"></span>
     <button class="bt" data-d="revert" title="Revient au système d'avant la dernière optimisation">Restaurer l'état initial</button>
     <button class="bt" data-d="stop">Arrêter</button>
     <button class="bt" data-d="glob" title="Perturbe aléatoirement les variables puis optimise, plusieurs fois, et garde le meilleur résultat">Recherche globale</button>
-    <button class="tb pri" data-d="run">▶ Optimiser</button></div>`, true, { w: 1120, h: 720 });
-  if (!OPT.running) { const r = OE.residuals(s), m = r ? OE.meritOf(r.f) : NaN; if (!wasOpen || !OPT.hist.length) OPT.hist = isFinite(m) ? [m] : []; else if (isFinite(m) && m !== OPT.hist[OPT.hist.length - 1]) OPT.hist.push(m); }
+    <button class="tb pri" data-d="run">▶ Optimiser</button></div>`, true, { w: 1340, h: 780 });
+  if (!OPT.running) { const r = OE.residuals(s), m = OE.meritR(r); if (!wasOpen || !OPT.hist.length) OPT.hist = isFinite(m) ? [m] : []; else if (isFinite(m) && m !== OPT.hist[OPT.hist.length - 1]) OPT.hist.push(m); }
   optLive();
+}
+/** sélecteur d'opérande (recherche par nom Focale, Zemax ou CODE V, et par description) */
+function opPicker(btn, i) {
+  $('#opick')?.remove();
+  const el = document.createElement('div'); el.id = 'opick'; el.className = 'opick';
+  el.innerHTML = `<input class="in" id="opq" placeholder="Rechercher : EFFL, MNCG, spot, distorsion…" style="width:100%"><div id="opl"></div>`;
+  $('#dlg').appendChild(el);
+  const r = btn.getBoundingClientRect(), d = $('#dlg').getBoundingClientRect();
+  el.style.left = Math.max(8, Math.min(r.left - d.left, d.width - 460)) + 'px'; el.style.top = Math.min(r.bottom - d.top + 4, d.height - 420) + 'px';
+  const draw = () => {
+    const q = $('#opq').value.trim().toLowerCase(), E = Object.entries(OE.OPS).filter(([k, v]) => !v.hide);
+    $('#opl').innerHTML = OE.OPG.map(([g, gl]) => { const L = E.filter(([k, v]) => v.g === g && (!q || (k + ' ' + v.label + ' ' + (v.aka || '')).toLowerCase().includes(q)));
+      return L.length ? `<div class="opg">${esc(gl)}</div>` + L.map(([k, v]) => `<button data-opk="${k}"><b>${k}</b><span>${esc(v.label)}</span>${v.aka ? `<i>${esc(v.aka)}</i>` : ''}</button>`).join('') : ''; }).join('') || '<div class="hint" style="padding:8px">Aucun opérande</div>';
+  };
+  draw(); $('#opq').focus();
+  $('#opq').addEventListener('input', draw);
+  $('#opq').addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); el.remove(); } if (e.key === 'Enter') { const b = el.querySelector('[data-opk]'); if (b) b.click(); } });
+  el.addEventListener('click', e => { const b = e.target.closest('[data-opk]'); if (!b) return; const k = b.dataset.opk; el.remove();
+    commit(s => { const L = s.merit.ops; if (i < 0) L.push(opDefaults(k)); else { const o = L[i]; L[i] = { ...opDefaults(k, o), ...(o.lag ? { lag: true } : {}) }; } }); openOptim(); });
+  setTimeout(() => { const off = e => { if (!el.contains(e.target)) { el.remove(); document.removeEventListener('mousedown', off, true); } }; document.addEventListener('mousedown', off, true); }, 0);
+}
+/** écrit les contraintes de bord (lignes « auto ») */
+function optWriteBounds() {
+  const g = id => { const v = String($('#' + id)?.value ?? '').trim(); return v === '' ? null : parseFloat(v.replace(',', '.')); };
+  const b = { gmin: g('bgmin'), gmax: g('bgmax'), gemin: g('bgemin'), amin: g('bamin'), amax: g('bamax'), aemin: g('baemin'), lag: !!$('#bLag')?.checked };
+  const rows = [['MNCG', b.gmin], ['MXCG', b.gmax], ['MNEG', b.gemin], ['MNCA', b.amin], ['MXCA', b.amax], ['MNEA', b.aemin]].filter(([, v]) => v != null && isFinite(v));
+  commit(s => { s.merit.bnd = b; s.merit.ops = s.merit.ops.filter(o => o.auto !== 'bnd'); for (const [t, v] of rows) s.merit.ops.push({ type: t, target: v, weight: 1, auto: 'bnd', ...(b.lag ? { lag: true } : {}) }); });
+  toast(rows.length ? `${rows.length} contrainte(s) de bord écrite(s)` : 'Contraintes de bord retirées'); openOptim();
+}
+/** rend variables en bloc : r rayons, ta espaces d'air, tg épaisseurs de verre, k coniques, g verres */
+function optSetVars(k) {
+  let n = 0;
+  commit(S => { const L = S.surfaces, N = L.length - 1;
+    for (let j = 1; j < N; j++) { const s = L[j], prev = L[j - 1], glass = !OE.isAir(s.glass) && !OE.isMirror(s), boundary = OE.isMirror(s) || glass || (!OE.isAir(prev.glass) && !OE.isMirror(prev));
+      const fold = OE.isMirror(s) && !(isFinite(s.r) && s.r) && (+s.tx || +s.ty); if (s.elem === 'ideal' || s.elem === 'grating') continue;
+      if (k === 'r' && boundary && !fold && !s.vr) { s.vr = true; n++; }
+      if (k === 'k' && boundary && isFinite(s.r) && s.r && !s.vk) { s.vk = true; n++; }
+      if (k === 'ta' && OE.isAir(s.glass) && !OE.isMirror(s) && s.tsolve !== 'M' && !s.vt) { s.vt = true; n++; }
+      if (k === 'tg' && glass && !s.vt) { s.vt = true; n++; }
+      if (k === 'g' && glass && !s.vg) { const mg = OE.parseModel(s.glass) ? s.glass : OE.toModel(s.glass); if (mg) { s.vg = true; s.glass = mg; n++; } } } });
+  toast(n ? `${n} variable(s) ajoutée(s)` : 'Aucune nouvelle variable'); OPT.x0 = null; openOptim();
 }
 /** section « verres variables » de la fenêtre d'optimisation */
 function optGlassHTML() {
@@ -7295,14 +7676,17 @@ function optLive() {
     return `<tr><td>${optVarLab(v)}</td><td style="font-family:var(--mono)">${fmt(x, 7)}</td><td style="font-family:var(--mono);color:var(--mut)">${isFinite(d) && Math.abs(d) > 1e-12 ? (d > 0 ? '+' : '') + fmt(d, 4) : ''}</td></tr>`; }).join('')}</table>` : '<em class="hint">aucune variable définie</em>';
   if (!r) { $('#mval').textContent = '—'; return; }
   const m2 = r.f.reduce((a, b) => a + b * b, 0) || 1;
-  $('#mval').textContent = OE.meritOf(r.f).toExponential(4);
+  $('#mval').textContent = OE.meritR(r).toExponential(4);
+  const nc = r.parts.filter(p => p.lag), bad = nc.filter(p => p.ok === false).length, mc = $('#mcons');
+  if (mc) { mc.textContent = nc.length ? `Contraintes exactes : ${nc.length - bad}/${nc.length} satisfaites` : ''; mc.style.color = bad ? 'var(--warn)' : ''; }
   for (const p of r.parts) {
     const o = s.merit.ops[p.i], d = OE.OPS[o.type] || {}, cv = $(`[data-ov="${p.i}"]`), cc = $(`[data-oc="${p.i}"]`);
-    if (cv) { cv.textContent = p.val == null || !isFinite(p.val) ? '—' : fmt(p.val, 6) + (d.u ? ' ' + d.u : ''); cv.style.color = p.ok === false ? 'var(--warn)' : ''; }
-    if (cc) cc.textContent = fx(100 * p.r2 / m2, 1);
+    if (cv) { cv.textContent = p.val == null || !isFinite(p.val) ? '—' : fmt(p.val, 6) + (d.u ? ' ' + d.u : ''); cv.style.color = p.ok === false ? 'var(--warn)' : p.ok === true && o.lag ? 'var(--ok, #3fb950)' : ''; cv.title = p.ok === false ? 'Contrainte non satisfaite' : ''; }
+    if (cc) cc.textContent = p.lag ? 'exacte' : p.r2 ? fx(100 * p.r2 / m2, 1) : '';
   }
   const iv = $('#oimgv'), ic = $('#oimgc');
-  if (iv) iv.textContent = s.merit.image === 'NONE' ? '—' : s.merit.image === 'SPOT' ? `${fmt(Math.sqrt(r.img2) * 1e3, 5)} µm` : `${fmt(Math.sqrt(r.img2) * 1e6, 5)} nm`;
+  const iw = r.imgW || 0, ir = iw ? Math.sqrt(r.img2 / iw) : NaN;
+  if (iv) iv.textContent = s.merit.image === 'NONE' || !iw ? '—' : s.merit.image === 'SPOT' ? `${fmt(ir * 1e3, 5)} µm` : s.merit.image === 'WFE' ? `${fmt(ir, 4)} λ` : `${fmt(ir, 4)}`;
   if (ic) ic.textContent = fx(100 * r.img2 / m2, 1);
   drawMerit();
 }
@@ -7663,8 +8047,16 @@ function setupDlg() {
       return;
     }
     if (t.id === 'mfImg') { commit(s => s.merit.image = t.value, { fast: false }); openOptim(); }
+    if (t.id === 'mfRef') { commit(s => s.merit.ref = t.value); openOptim(); }
+    if (t.id === 'mfSym') { commit(s => s.merit.sym = t.checked); openOptim(); }
+    if (t.id === 'mfPu') { commit(s => { const p = s.merit.pupil = { type: 'GQ', rings: 3, arms: 8, grid: 8, ...(s.merit.pupil || {}) }; p.type = t.value; }); openOptim(); }
+    if (t.id === 'mfRings' || t.id === 'mfArms' || t.id === 'mfGrid') { const k = t.id === 'mfRings' ? 'rings' : t.id === 'mfArms' ? 'arms' : 'grid', lim = { rings: [1, 20], arms: [2, 36], grid: [2, 40] }[k], v = Math.max(lim[0], Math.min(lim[1], parseInt(t.value) || 0));
+      if (!v) { toast('Valeur invalide'); return; } commit(s => { s.merit.pupil = { type: 'GQ', rings: 3, arms: 8, grid: 8, ...(s.merit.pupil || {}) }; s.merit.pupil[k] = v; }); openOptim(); }
+    if (t.id === 'mfMtfF') { const v = parseFloat(String(t.value).replace(',', '.')); if (v > 0) { commit(s => s.merit.mtfF = v); openOptim(); } }
+    if (t.id === 'mfIw') { const raw = String(t.value).trim(), v = parseFloat(raw.replace(',', '.')); commit(s => { if (raw === '') delete s.merit.iw; else if (v >= 0) s.merit.iw = v; }); openOptim(); }
+    if (t.id === 'oCyc') { OPT.cyc = t.value; OPT.maxIt = t.value === 'auto' ? 500 : +t.value; }
+    if (t.id === 'oDer') OPT.central = t.value === 'cen';
     if (t.id === 'mfWl') { commit(s => s.merit.wl = t.value === 'all' ? 'all' : /^\d+$/.test(t.value) ? +t.value : t.value, { fast: false }); openOptim(); }
-    if (t.id === 'maxIt') OPT.maxIt = Math.max(1, parseInt(t.value) || 100);
     if (t.dataset.gs) { const k = t.dataset.gs; commit(s => { const g = s.merit.gsub = { cats: null, pref: false, k: 6, passes: 2, ...(s.merit.gsub || {}) };
       if (k === 'cat') { const all = OE.cats(), cur = new Set(g.cats && g.cats.length ? g.cats : all); t.checked ? cur.add(t.value) : cur.delete(t.value); g.cats = cur.size === all.length ? null : [...cur]; }
       else if (k === 'pref') g.pref = t.checked; else g[k] = Math.max(1, Math.min(k === 'k' ? 30 : 5, parseInt(t.value) || g[k])); }); openOptim(); }
@@ -7673,7 +8065,9 @@ function setupDlg() {
     if (t.id === 'gMode') OPT.gMode = t.value;
     if (t.id === 'gCyc') OPT.gCyc = Math.max(1, Math.min(200, parseInt(t.value) || 10));
     if (t.id === 'gAmp') OPT.gAmp = Math.max(1, Math.min(100, parseFloat(String(t.value).replace(',', '.')) || 20));
-    if (t.dataset.o) { const i = +t.dataset.i, k = t.dataset.o; commit(s => { const o = s.merit.ops[i]; if (k === 'type') { o.type = t.value; delete o.cmp; const d = OE.OPS[t.value]; if (d.p) o.p = o.p ?? d.pdef; else delete o.p; } else if (k === 'cmp') o.cmp = t.value; else o[k] = parseFloat(String(t.value).replace(',', '.')) || 0; }); openOptim(); }
+    if (t.dataset.o) { const i = +t.dataset.i, k = t.dataset.o; commit(s => { const o = s.merit.ops[i]; if (!o) return; delete o.auto;
+      if (k === 'cmp') o.cmp = t.value; else if (k === 'lag') { if (t.checked) o.lag = true; else delete o.lag; } else if (k === 'c') o.c = t.value;
+      else { const raw = String(t.value).trim(); if (raw === '') delete o[k]; else { const v = parseFloat(raw.replace(',', '.')); if (isFinite(v)) o[k] = v; } } }); openOptim(); }
   });
   $('#dlg').addEventListener('change', e => { if (e.target.dataset.dw != null || e.target.dataset.dws != null) drwEvent(e.target); if (e.target.dataset.sd) sdChange(e.target); if (e.target.closest('#mcw')) mcEvent(e); });
   $('#dlg').addEventListener('click', e => { const b = e.target.closest('#mcw [data-mcact]'); if (b) mcAction(b); const h = e.target.closest('#hw [data-hgo]'); if (h) histGo(+h.dataset.hgo); const ha = e.target.closest('#hw [data-hact]'); if (ha) histAction(ha); });
@@ -7702,7 +8096,10 @@ function setupDlg() {
     if (a === 'tinvApply' && TOL.inv) { const only = $('#tinvTight')?.checked; const I = TOL.inv;
       tolEditList(L => { for (const r of I.rows) { if (only && !(r.tr < r.it.tol * 0.999)) continue; const e = L.find(x => x.type === r.it.type && x.j === r.it.j); if (e) { e.min = -r.tr; e.max = r.tr; } } }); toast('Tolérances proposées appliquées à la liste détaillée'); }
     if (a === 'tload') tolLoad(b.dataset.k);
-    if (a === 'oadd') { commit(s => s.merit.ops.push({ type: 'EFL', target: Math.round(App.M?.par?.efl || 100), weight: 1 })); openOptim(); }
+    if (a === 'opick') opPicker(b, +b.dataset.i);
+    if (a === 'oup' || a === 'odn') { const i = +b.dataset.i, j = a === 'oup' ? i - 1 : i + 1; if (j < 0 || j >= App.sys.merit.ops.length) return; commit(s => { const L = s.merit.ops; [L[i], L[j]] = [L[j], L[i]]; }); openOptim(); }
+    if (a === 'obnd') optWriteBounds();
+    if (a === 'ovset') optSetVars(b.dataset.k);
     if (a === 'odel') { commit(s => s.merit.ops.splice(+b.dataset.i, 1)); openOptim(); }
     if (a === 'run') runOpt();
     if (a === 'glob') runGlobal();
@@ -7726,8 +8123,8 @@ function setupDlg() {
 function runOpt() {
   if (OPT.running) return;
   if (!OE.getVars(App.sys).length) { $('#omsg').textContent = 'Définissez au moins une variable (bouton V).'; return; }
-  OPT.snap = toJSON(App.sys); OPT.x0 = optSnapVars(App.sys); OPT.st = { sys: structuredClone(App.sys), mu: 1e-3 }; OPT.it = 0; OPT.running = true;
-  const maxIt = OPT.maxIt = Math.max(1, parseInt($('#maxIt').value) || 100);
+  OPT.snap = toJSON(App.sys); OPT.x0 = optSnapVars(App.sys); OPT.st = { sys: structuredClone(App.sys), mu: 1e-3, central: !!OPT.central }; OPT.it = 0; OPT.running = true;
+  const maxIt = OPT.maxIt = (OPT.cyc || 'auto') === 'auto' ? 500 : Math.max(1, +OPT.cyc || 100);
   $('#omsg').textContent = 'Optimisation en cours…';
   let lastPane = 0;
   const loop = () => {
@@ -7737,7 +8134,7 @@ function runOpt() {
     App.sys = OPT.st.sys; App.M = OE.prepare(App.sys); App.sysKey = null; renderLDE(); renderSide(); drawLayout();
     if (performance.now() - lastPane > 600) { renderPanes(); lastPane = performance.now(); }
     if ($('#mval')) { optLive(); $('#mit').textContent = `itération ${OPT.it}`; }
-    if (r.done || OPT.it >= maxIt) { OPT.running = false; finish(r.msg || (OPT.it >= maxIt ? 'Nombre max d\'itérations atteint' : 'Convergé')); return; }
+    if (r.done || OPT.it >= maxIt) { OPT.running = false; finish(r.msg || (OPT.it >= maxIt ? ((OPT.cyc || 'auto') === 'auto' ? 'Nombre max d\'itérations atteint' : `${maxIt} cycle(s) effectué(s)`) : 'Convergé')); return; }
     setTimeout(loop, 0);
   };
   const finish = (msg) => { pushHist('Optimisation (' + msg + ')'); refresh({ fast: true }); optLive(); const o = $('#omsg'); if (o) o.textContent = msg + ` — ${OPT.it} itérations`; toast('Optimisation : ' + msg); };
@@ -7773,10 +8170,10 @@ async function runGlobal() {
   if (OPT.running) return; const vars = OE.getVars(App.sys);
   if (!vars.length) { $('#omsg').textContent = 'Définissez au moins une variable (bouton V).'; return; }
   const mode = OPT.gMode = ($('#gMode') && $('#gMode').value) || OPT.gMode || 'hammer';
-  const cyc = OPT.gCyc = Math.max(1, Math.min(500, parseInt($('#gCyc').value) || 10)), amp = (OPT.gAmp = Math.max(1, Math.min(100, parseFloat(String($('#gAmp').value).replace(',', '.')) || 20))) / 100, maxIt = Math.max(5, Math.min(200, parseInt($('#maxIt').value) || 100));
+  const cyc = OPT.gCyc = Math.max(1, Math.min(500, parseInt($('#gCyc').value) || 10)), amp = (OPT.gAmp = Math.max(1, Math.min(100, parseFloat(String($('#gAmp').value).replace(',', '.')) || 20))) / 100, maxIt = (OPT.cyc || 'auto') === 'auto' ? 100 : Math.max(5, Math.min(200, +OPT.cyc || 100));
   OPT.snap = toJSON(App.sys); OPT.x0 = optSnapVars(App.sys); OPT.running = true; OPT.it = 0;
   const msg = t => { if ($('#omsg')) $('#omsg').textContent = t; };
-  const local = (sys, tag) => runJob('optLocal', { sys, maxIt }, { group: 'optg' }).then(r => { OPT.it += r.it; optKeep(r.sys, r.merit, tag); return r; });
+  const local = (sys, tag) => runJob('optLocal', { sys, maxIt, central: !!OPT.central }, { group: 'optg' }).then(r => { OPT.it += r.it; optKeep(r.sys, r.merit, tag); return r; });
   try {
     msg('Recherche globale : optimisation locale du point de départ…');
     const r0 = await local(structuredClone(App.sys), 'départ');

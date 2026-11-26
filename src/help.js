@@ -1,5 +1,14 @@
 'use strict';
 /* Centre d'aide de Focale : chaque rubrique = { id, t (titre), h (HTML) } */
+/** référence des opérandes, générée depuis OE.OPS */
+function helpOps() {
+  if (typeof OE === 'undefined' || !OE.OPS) return '<p>Liste indisponible.</p>';
+  const COL = { s1: 'S1', s2: 'S2', w: 'λ', hx: 'Hx', hy: 'Hy', px: 'Px', py: 'Py', p: 'Param.', fi: 'champ n°' }, K = { eq: '=', ge: '≥', le: '≤' };
+  const e = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  return '<p>Noms repris de Zemax OpticStudio quand ils existent ; la colonne « Zemax / CODE V » donne les équivalents (recherche possible par ces noms dans le sélecteur). Contrainte par défaut entre parenthèses, modifiable par ligne. Champ (Hx, Hy) normalisé par le champ radial maximal ; pupille (Px, Py) normalisée ; λ : numéro de longueur d\'onde (vide = primaire, ou polychromatique pour les RMS) ; S1 = 0 : surface image pour les opérandes de rayon ; plage S1 … S2 vide : toutes les surfaces.</p>' +
+    OE.OPG.map(([g, gl]) => { const L = Object.entries(OE.OPS).filter(([k, d]) => d.g === g && !d.hide); if (!L.length) return '';
+      return `<h4>${e(gl)}</h4><table class="ht"><tr><th>Code</th><th>Grandeur</th><th>Colonnes</th><th>Zemax / CODE V</th></tr>` + L.map(([k, d]) => `<tr><td>${k}</td><td>${e(d.label)}${d.u ? ` <span class="hint">(${e(d.u)})</span>` : ''} <span class="hint">${K[d.kind]}</span></td><td>${(d.cols || []).map(c => COL[c] || c).join(', ') || '—'}</td><td class="hint">${e(d.aka || '')}</td></tr>`).join('') + '</table>'; }).join('');
+}
 const HELP = [
   { id: 'demarrage', t: 'Démarrage rapide', h: `
 <p>Focale est un logiciel de <b>conception optique séquentielle</b> : la lumière traverse les surfaces dans l'ordre de l'éditeur de lentilles, de l'objet (surface 0) à l'image (dernière surface).</p>
@@ -39,7 +48,7 @@ Les combinaisons ont été optimisées dans Focale (spot, front d'onde) : ce son
 <li>Gardez l'historique (Ctrl+H) et créez des <b>points de sauvegarde</b> avant chaque essai : on revient facilement à une version antérieure.</li>
 <li>Commencez avec peu de rayons et de champs, puis densifiez pour la validation finale.</li>
 <li>Une variable inutile ralentit et rend l'optimisation instable : rendez variables seulement les paramètres qui ont un effet.</li>
-<li>Si l'optimisation propose des épaisseurs négatives ou des lentilles trop fines, augmentez le poids des contraintes MNCT / MNET / MNCA / MNEA.</li>
+<li>Si l'optimisation propose des épaisseurs négatives ou des lentilles trop fines, augmentez le poids des contraintes MNCG / MNEG / MNCA / MNEA (contraintes de bord), ou cochez-les en contraintes exactes.</li>
 <li>Pour comparer deux variantes, utilisez la multi-configuration ou des points de sauvegarde.</li>
 <li>Système proche de la diffraction : jugez sur le front d'onde RMS (objectif &lt; λ/14) et la FTM, pas sur le spot.</li>
 </ul>` },
@@ -279,50 +288,56 @@ Les combinaisons ont été optimisées dans Focale (spot, front d'onde) : ce son
 <p class="hint">Vos choix sont mémorisés pour le prochain rapport. Dans la version hébergée sur claude.ai, chaque téléchargement (PDF, JSON, images, CSV, exports) passe par une fenêtre de confirmation de Claude ; les formats que claude.ai n'accepte pas (.zmx, .seq, .agf) sont enregistrés avec « .txt » ajouté au nom : retirez-le après téléchargement.</p>` },
 
   { id: 'optimisation', t: 'Optimisation', h: `
-<p>Méthode des <b>moindres carrés amortis</b> (Levenberg-Marquardt) avec Jacobien numérique, comme l'optimisation locale de Zemax ou CODE V. Bouton <b>Optimiser</b> (Ctrl+Maj+O) ; la fenêtre se déplace et se redimensionne, et l'on peut continuer à travailler dans l'éditeur.</p>
+<p>L'optimisation de Focale reprend l'organisation de Zemax OpticStudio (éditeur de fonction de mérite, assistant de fonction de mérite par défaut, noms d'opérandes) et la gestion des contraintes de CODE V (contraintes exactes par multiplicateurs de Lagrange). Bouton <b>Optimiser</b> (Ctrl+Maj+O) ; la fenêtre se déplace et se redimensionne, et l'on peut continuer à travailler dans l'éditeur de lentilles.</p>
+<h4>Algorithme</h4>
+<ul><li><b>Moindres carrés amortis</b> (Levenberg-Marquardt, amortissement diagonal de Marquardt) avec Jacobien numérique, comme l'optimisation locale de Zemax et l'AUT de CODE V. Chaque cycle calcule les dérivées de tous les résidus par rapport à toutes les variables, résout le système amorti et garde le pas s'il améliore la fonction de mérite ; sinon l'amortissement augmente.</li>
+<li><b>Contraintes exactes</b> (case <b>Ex.</b> d'une ligne) : la contrainte n'est plus un terme pondéré de la fonction de mérite mais une équation imposée à chaque cycle (système de Karush-Kuhn-Tucker, multiplicateurs de Lagrange), comme les contraintes de CODE V. La fonction de mérite n'est alors minimisée que dans l'espace des solutions qui respectent la contrainte : pas de compromis entre focale et qualité d'image, pas de poids à régler. Une contrainte ≥ ou ≤ exacte n'est active que si elle est violée. Si les contraintes sont incompatibles ou hors d'atteinte des variables, le message le signale et elles passent en pénalité forte.</li>
+<li><b>Cycles</b> : <i>Automatique</i> (jusqu'à convergence, 500 cycles au plus) ou un nombre fixe (1, 5, 10, 50, 200), comme le choix « Cycles » de Zemax ou la commande MXC de CODE V.</li>
+<li><b>Dérivées</b> : différences avant (rapide) ou centrées (deux fois plus de calculs, plus précises près d'un minimum ou avec des opérandes très non linéaires comme la FTM).</li>
+<li>Arrêt : variation relative de la fonction de mérite &lt; 10⁻⁷ et contraintes exactes satisfaites, ou minimum local (aucun pas ne l'améliore).</li></ul>
+<h4>Fonction de mérite par défaut</h4>
+<p>Équivalent de l'<i>Optimization Wizard</i> de Zemax et de la fonction d'erreur par défaut de CODE V : un critère de qualité image calculé sur tous les champs et longueurs d'onde, affiché sur la première ligne (<b>DMF</b>) de l'éditeur.</p>
+<ul><li><b>Critère</b> : <i>RMS spot</i> (rayon, en mm), <i>RMS front d'onde</i> (en ondes) ou <i>contraste FTM</i> (1 − FTM tangentielle et sagittale à une fréquence, comme « Contrast » de Zemax), ou aucun (opérandes seuls).</li>
+<li><b>Référence</b> : <i>barycentre</i> (spot autour du centre de gravité ; front d'onde sans piston ni basculement) ou <i>rayon principal</i> (spot autour du rayon principal à λ primaire ; front d'onde sans piston seulement), comme « Centroid / Chief ray » de Zemax.</li>
+<li><b>Pupille</b> : <i>quadrature de Gauss</i> (anneaux × bras ; positions radiales de Gauss-Legendre en ρ², exactes pour les aberrations polynomiales jusqu'à l'ordre 4 × anneaux − 1 ; 3 × 6 est le défaut de Zemax) ou <i>grille rectangulaire</i> n × n (Zemax « Rectangular array », CODE V DEL), préférable si la pupille est fortement vignetée. Avec une obstruction centrale, les anneaux sont répartis dans la couronne.</li>
+<li><b>Symétrie axiale</b> : si le système est de révolution (pas de décentrement, de surface non sphérique de révolution ni de réseau) et que tous les champs sont en Y, seule la demi-pupille x ≥ 0 est tracée, avec des poids doublés : deux fois moins de rayons, même résultat (Zemax « Assume axial symmetry »).</li>
+<li><b>Longueurs d'onde</b> : toutes (pondérées), λ centrale, λ primaire ou une seule ; <b>poids</b> par champ (C1…) et par λ propres à la fonction de mérite (vide : ceux du système) ; <b>poids du critère</b> par rapport aux opérandes (1 par défaut).</li>
+<li><b>Contraintes de bord</b> : épaisseurs de verre au centre (min, max) et au bord (min), espaces d'air au centre (min, max) et au bord (min) ; <b>Écrire les contraintes</b> ajoute ou remplace les lignes MNCG, MXCG, MNEG, MNCA, MXCA, MNEA (numéro en couleur dans l'éditeur), éventuellement en contraintes exactes. C'est la partie « Thickness boundary values » de l'assistant de Zemax.</li></ul>
+<h4>Éditeur de fonction de mérite</h4>
+<ul><li>Une ligne par opérande, comme le <i>Merit Function Editor</i> de Zemax : <b>Type</b> (cliquez pour le changer), description, colonnes <b>S1, S2</b> (surfaces, ou numéros de ligne pour les opérations), <b>λ</b> (vide : primaire, ou polychromatique pour les RMS), <b>Hx, Hy</b> (champ normalisé par le champ radial maximal), <b>Px, Py</b> (pupille normalisée), <b>Param.</b> (fréquence, terme de Zernike, nombre d'anneaux…), puis la contrainte <b>= ≥ ≤</b>, la <b>cible</b>, le <b>poids</b>, la case <b>Ex.</b> (contrainte exacte), la <b>valeur</b> actuelle et la <b>part</b> (%) de la fonction de mérite. Seules les colonnes utiles à l'opérande sont éditables.</li>
+<li><b>+ Ajouter un opérande</b> ouvre un sélecteur classé par famille, avec recherche par nom Focale, <b>nom Zemax</b> (EFFL, TOTR, PIMH…) ou <b>nom CODE V</b> (OAL, RED, MNT…), et par description. La cible proposée est la valeur actuelle (ou une valeur usuelle pour les contraintes de bord).</li>
+<li><b>Fonction de mérite</b> = √(Σ W·(valeur − cible)² / Σ W), convention de Zemax : le poids multiplie le <i>carré</i> de l'écart. Une contrainte ≥ ou ≤ ne compte que si elle est violée. <b>Poids 0</b> : la ligne est calculée et affichée sans peser, ce qui sert de base aux opérations.</li>
+<li><b>Opérations sur les lignes</b> : SUMM, DIFF, PROD, DIVI, ABSO, SQRT, MINN, MAXX combinent les valeurs des lignes S1 et S2 (numéros de ligne, colonne « # ») ; OPGT, OPLT, OPVA contraignent la valeur d'une ligne ; CONS fournit une constante ; BLNK sépare des blocs avec un commentaire. Exemple : ligne 6 = TTL (poids 0), ligne 7 = OPLT 6 &lt; 62 en contrainte exacte. Les numéros ne sont pas renumérotés quand on déplace des lignes (↑ ↓).</li>
+<li><b>Multi-configuration</b> : la fonction de mérite additionne toutes les configurations (ou la seule active, au choix dans la fenêtre Multi-configuration) ; la colonne <b>Conf.</b> réserve une ligne à une configuration.</li>
+<li>La valeur s'affiche en orange si une contrainte n'est pas respectée, en vert pour une contrainte exacte satisfaite ; le bilan des contraintes exactes s'affiche sous la fonction de mérite.</li>
+<li>Fichiers d'avant cette version : MNCT, MXCT, MNET, MXET (qui visaient le verre seul) deviennent MNCG, MXCG, MNEG, MXEG, CTHK / ETHK deviennent CTGT / ETGT, et les poids sont élevés au carré pour garder le même équilibre.</li></ul>
+<h4>Correspondances avec Zemax et CODE V</h4>
+<table class="ht"><tr><th>Focale</th><th>Zemax OpticStudio</th><th>CODE V</th></tr>
+<tr><td>Fonction de mérite par défaut</td><td>Optimization Wizard (RMS Spot / Wavefront / Contrast, Centroid / Chief, Gaussian Quadrature / Rectangular Array, boundary values)</td><td>Fonction d'erreur par défaut de AUT, grille DEL</td></tr>
+<tr><td>Éditeur de fonction de mérite</td><td>Merit Function Editor</td><td>Contraintes et fonction d'erreur utilisateur de AUT</td></tr>
+<tr><td>Poids W (écart²)</td><td>Weight</td><td>Contrainte pondérée (WT)</td></tr>
+<tr><td>Case <b>Ex.</b></td><td>— (contraintes par poids élevés)</td><td>Contrainte exacte (Lagrange), « EFL = 50 »</td></tr>
+<tr><td>≥, ≤</td><td>Opérandes …GT / …LT, OPGT / OPLT</td><td>EFL &gt; 49, MNT, MXT…</td></tr>
+<tr><td>Cycles</td><td>Cycles (Automatic, 1, 5…)</td><td>MXC</td></tr>
+<tr><td>Recherche globale : Hammer, recuit, départs multiples</td><td>Hammer, Global Search</td><td>Global Synthesis</td></tr>
+<tr><td>Verres variables et substitution</td><td>Model glass, Glass substitution</td><td>Verres fictifs variables, GLA</td></tr></table>
 <h4>Variables</h4>
-<ul><li>Bouton <b>V</b> dans l'éditeur : rayon (la variable est la courbure), épaisseur, conique, <b>verre</b> (voir ci-dessous) et, avec la case « Asphères », les coefficients <b>A4, A6, A8, A10</b>.</li>
-<li>La fenêtre liste les variables avec leur valeur et leur <b>écart</b> depuis le début de l'optimisation ; « Tout libérer » retire tous les V.</li>
-<li>Une épaisseur pilotée par le solve M ne peut pas être variable.</li></ul>
-<h4>Fonction de mérite</h4>
-<ul><li><b>Critère de qualité image</b> : spot RMS (par rapport au barycentre), front d'onde RMS ou aucun ; quadrature de Gauss 3 anneaux × 8 bras sur tous les champs pondérés.</li>
-<li><b>Multi-configuration</b> : la fonction de mérite additionne toutes les configurations (ou la seule configuration active, au choix dans la fenêtre Multi-configuration) ; la colonne <b>Config.</b> réserve un opérande à une configuration, et les valeurs cochées V dans la fenêtre Multi-configuration deviennent des variables propres à chaque configuration.</li>
-<li><b>Longueurs d'onde du critère</b> : toutes (pondérées), la <b>λ centrale</b> (la plus proche du milieu de la bande), la λ primaire ou une λ donnée. Exemple : variable sur la dernière épaisseur + critère sur la λ centrale = mise au point à cette longueur d'onde. Les opérandes de chromatisme utilisent toujours toutes les λ.</li>
-<li><b>Opérandes</b>, chacun avec une contrainte <b>=</b>, <b>≥</b> ou <b>≤</b> (une contrainte d'inégalité ne pèse que si elle est violée) :
-<table class="ht"><tr><th>Code</th><th>Grandeur</th></tr>
-<tr><td>EFL · WFNO · TTL · BFL</td><td>Focale, F/# de travail paraxial, longueur totale (1ʳᵉ surface → image), distance image paraxiale.</td></tr>
-<tr><td>PMAG · IMGH · RIMH</td><td>Grandissement paraxial, hauteur image paraxiale et réelle (rayon principal) au champ maximal.</td></tr>
-<tr><td>DIST</td><td>Distorsion réelle au champ maximal (%).</td></tr>
-<tr><td>AXCL · LACL</td><td>Chromatisme axial (foyer paraxial λmax − λmin) et latéral (hauteur du rayon principal λmax − λmin au champ max), en mm.</td></tr>
-<tr><td>SPHA · COMA · ASTI · FCUR</td><td>Sommes de Seidel en ondes : W040, W131, W222, W220 (Petzval).</td></tr>
-<tr><td>MTFA</td><td>FTM moyenne T/S à une fréquence (paramètre, cycles/mm), moyenne pondérée sur les champs ; par défaut « ≥ cible ».</td></tr>
-<tr><td>MNCT · MXCT · MNET · MXET</td><td>Épaisseurs de verre au centre et au bord, min et max (toutes les lentilles).</td></tr>
-<tr><td>MNCA · MXCA · MNEA</td><td>Espaces d'air au centre (min, max) et au bord (min).</td></tr>
-<tr><td>MTFT · MTFS</td><td>FTM tangentielle ou sagittale à une fréquence (paramètre, cycles/mm), pour un champ ou pour chacun (« tous » : la contrainte s'applique à chaque champ ; défaut ≥).</td></tr>
-<tr><td>SPOT · WFER</td><td>Spot RMS (µm) ou front d'onde RMS (λ primaire) d'un champ ou de chacun (défaut ≤).</td></tr>
-<tr><td>DISM</td><td>Distorsion maximale |%| sur tout le champ (défaut ≤).</td></tr>
-<tr><td>RELI</td><td>Éclairement relatif au champ maximal (0 à 1, défaut ≥) : limite le vignetage.</td></tr>
-<tr><td>CTHK · ETHK</td><td>Épaisseur au centre de la surface j, ou au bord entre j et j+1 (paramètre = j) ; contrainte =, ≥ ou ≤ au choix.</td></tr>
-<tr><td>GLTR</td><td>Transmission interne des verres le long de l'axe (produit des verres traversés) à une longueur d'onde (paramètre, µm ; défaut ≥) : écarte les verres absorbants dans le bleu ou l'UV.</td></tr>
-<tr><td>RGLA</td><td>Verre modèle « réaliste » : écart normalisé entre chaque verre modèle variable et le verre réel le plus proche (catalogues choisis) ; « ≤ 0 » avec un petit poids les garde près des verres existants.</td></tr></table></li>
-<li>Le tableau affiche en direct la <b>valeur</b> de chaque opérande (en orange si une contrainte ≥/≤ n'est pas respectée) et sa <b>part</b> de la fonction de mérite ; la dernière ligne donne celle du critère image.</li></ul>
+<ul><li>Bouton <b>V</b> dans l'éditeur : rayon (la variable est la courbure), épaisseur, conique, <b>verre</b>, et avec « Asphères » A4…A10 ; coefficients des surfaces diffractives et rayon X des toriques.</li>
+<li><b>Rendre variables</b> en bloc : tous les rayons des dioptres et miroirs (sauf les renvois plans), les espaces d'air, les épaisseurs de verre, les coniques ou les verres (comme « Make all radii variable » de Zemax) ; <b>tout libérer</b> retire tous les V.</li>
+<li>La liste donne la valeur et l'<b>écart</b> depuis le début de l'optimisation. Une épaisseur pilotée par le solve M ne peut pas être variable. Pour borner une variable, utilisez les opérandes de contrainte (CTGT/CTLT, CVGT/CVLT, COGT/COLT…), éventuellement en contrainte exacte.</li></ul>
 <h4>Verres variables et substitution</h4>
-<ul><li>Bouton <b>V</b> de la colonne <b>Verre</b> (ou clic droit › Verre variable) : le verre devient un <b>verre modèle</b> « nd/νd » (affiché en italique) dont l'indice nd et la constringence νd sont deux variables continues (bornes 1,35–2,2 et 15–100). La dispersion du modèle est celle des verres fictifs de CODE V (voir <i>Verres</i>).</li>
-<li>Optimisez normalement, typiquement avec l'opérande <b>AXCL</b> (chromatisme axial) ; ajoutez <b>RGLA</b> (bouton « + Opérande RGLA ») pour éviter que les verres modèles partent dans une zone du diagramme nd/νd où aucun verre n'existe.</li>
-<li><b>Substituer par des verres réels</b> : pour chaque verre variable, Focale essaie les verres réels les plus proches dans le diagramme nd/νd (nombre de candidats réglable, catalogues cochés, préférentiels seulement en option, obsolètes exclus) ; à chaque essai les autres variables sont réoptimisées, et le verre qui donne la meilleure fonction de mérite est retenu. Plusieurs <b>passes</b> permettent de revoir les choix une fois les autres verres fixés. Le message liste les remplacements ; « Restaurer l'état initial » ou Ctrl+Z annulent.</li>
-<li>Après substitution, le verre reste marqué V (« réel, substituable ») : une nouvelle substitution peut encore le changer. Pour repartir d'un verre modèle continu, retirez puis remettez le V.</li>
-<li>La recherche globale perturbe aussi les verres modèles.</li></ul>
-<h4>Lancer</h4>
-<ul><li><b>Optimiser</b> : optimisation locale jusqu'à convergence ou au nombre d'itérations max.</li>
-<li><b>Recherche globale</b> : trois méthodes, chaque essai étant une optimisation locale complète, calculée <b>en parallèle</b> sur plusieurs cœurs (Web Workers) :
-<b>Perturbation du meilleur (Hammer)</b> : les variables du meilleur système sont perturbées au hasard (amplitude relative réglable) puis optimisées, le résultat est gardé s'il s'améliore.
-<b>Recuit simulé</b> : on part du point courant, et un résultat moins bon peut être accepté avec une probabilité qui décroît au fil des essais (température), ce qui permet de franchir les barrières entre minima ; le meilleur point rencontré est gardé.
-<b>Départs multiples</b> : perturbations fortes (×2,5) du point de départ, pour explorer d'autres familles de solutions.
-La liste <b>Meilleures solutions</b> (12 solutions distinctes, avec leur mérite) permet de <b>recharger</b> n'importe laquelle dans l'éditeur (Ctrl+Z pour revenir). <b>Arrêter</b> interrompt les essais en cours et garde le meilleur.</li>
-<li><b>Poids du critère</b> par champ (C1, C2…) et par longueur d'onde (λ1…) : propres à la fonction de mérite ; vide = poids du champ ou de la λ (Données système). Par exemple, donner plus de poids au champ sur l'axe sans changer les poids utilisés par les analyses.</li>
-<li><b>Restaurer l'état initial</b> revient au système d'avant la dernière optimisation ; Ctrl+Z fonctionne aussi.</li></ul>
+<ul><li>Bouton <b>V</b> de la colonne <b>Verre</b> (ou clic droit › Verre variable, ou « Rendre variables : verres ») : le verre devient un <b>verre modèle</b> « nd/νd » (en italique) dont nd et νd sont deux variables continues (bornes 1,35–2,2 et 15–100) ; dispersion des verres fictifs de CODE V (voir <i>Verres</i>). MNIN/MXIN et MNAB/MXAB bornent nd et νd.</li>
+<li>Ajoutez <b>RGLA</b> (bouton « + Opérande RGLA ») pour garder les verres modèles près des verres existants.</li>
+<li><b>Substituer par des verres réels</b> : pour chaque verre variable, les verres réels les plus proches dans le diagramme nd/νd (candidats, catalogues, préférentiels, obsolètes exclus) sont essayés avec réoptimisation des autres variables ; le meilleur est gardé. Plusieurs <b>passes</b> revoient les choix une fois les autres verres fixés.</li></ul>
+<h4>Recherche globale</h4>
+<ul><li>Chaque essai est une optimisation locale complète, calculée <b>en parallèle</b> sur plusieurs cœurs. <b>Perturbation du meilleur (Hammer)</b> : variables du meilleur système perturbées (amplitude réglable) puis optimisées, résultat gardé s'il s'améliore. <b>Recuit simulé</b> : un résultat moins bon peut être accepté avec une probabilité décroissante, pour franchir les barrières entre minima. <b>Départs multiples</b> : perturbations fortes du point de départ, pour explorer d'autres familles de solutions.</li>
+<li>Une solution qui viole une contrainte exacte est fortement pénalisée dans le classement. La liste <b>Meilleures solutions</b> (12 solutions distinctes) permet d'en recharger une (Ctrl+Z pour revenir).</li>
+<li><b>Restaurer l'état initial</b> revient au système d'avant la dernière optimisation.</li></ul>
 <h4>Quick focus</h4>
-<p>Bouton <b>⌖ Quick focus</b> de l'éditeur (ou Ctrl+Maj+F, ou clic droit) : déplace le plan image au <b>meilleur foyer</b> en ajustant l'épaisseur avant l'image. Le menu <b>▾</b> choisit le critère (spot RMS ou front d'onde RMS) et la longueur d'onde : <b>centrale</b> par défaut (utile en polychromatique), primaire, toutes pondérées ou une λ précise. Un solve M sur cette épaisseur est retiré. Le message indique le déplacement et le critère avant/après. Le bouton est aussi dans la fenêtre d'optimisation.</p>` },
+<p>Bouton <b>⌖ Quick focus</b> de l'éditeur (ou Ctrl+Maj+F) : déplace le plan image au <b>meilleur foyer</b> (spot ou front d'onde RMS, λ centrale par défaut, réglages dans ▾). Un solve M sur cette épaisseur est retiré. Aussi dans la fenêtre d'optimisation.</p>
+<p>La liste complète des opérandes est dans la rubrique <i>Opérandes de la fonction de mérite</i>.</p>` },
+
+  { id: 'operandes', t: 'Opérandes de la fonction de mérite', get h() { return helpOps(); } },
 
   { id: 'tolerancement', t: 'Tolérancement', h: `
 <p>Estime la dégradation due aux défauts de fabrication et d'alignement, à la manière du tolérancement de Zemax ou du module TOR de CODE V. Bouton <b>Tolérancer</b> ; la fenêtre a trois onglets de réglages à gauche et trois onglets de résultats à droite. La configuration est enregistrée avec le système.</p>
@@ -365,7 +380,7 @@ La liste <b>Meilleures solutions</b> (12 solutions distinctes, avec leur mérite
 <p>Le panneau ⚙ est compact (moteur, modèle Ollama avec « Tester », modèle du navigateur avec « Charger ») ; les options et l'aide à l'installation sont repliées sous « Options et installation ». Il se referme à l'envoi d'un message.</p>
 <ul><li><b>Demandes simples traitées par les règles</b> (activé par défaut) : une demande courte reconnue sans ambiguïté (« verre de la 2e lentille en N-SF11 », « f/4 », « quick focus »…) est exécutée immédiatement, sans attendre le modèle ; la ligne grise indique alors « règles (instantané) ». Les phrases plus libres ou composées (« puis », « pour que »…) vont au modèle.</li>
 <li><b>Appel d'outils natif</b> (Ollama, activé par défaut) : chaque action est décrite au modèle comme une fonction avec ses paramètres typés, format pour lequel Qwen3 est entraîné — plus fiable qu'un JSON libre pour un petit modèle. Les nombres renvoyés en texte (« 120 », « f/4 ») sont corrigés automatiquement. Décocher pour revenir au mode JSON contraint (utile avec un modèle qui ne gère pas les outils ; bascule automatique dans ce cas). Si le modèle répond seulement par du texte (« Compris : … ») sans appeler d'outil, Focale le <b>relance une fois</b> en lui demandant d'exécuter les actions ; une réponse terminée par « ? » est traitée comme une question.</li>
-<li>Les contraintes s'expriment simplement : « épaisseur minimale des verres 5 mm » (MNCT ≥ 5), « épaisseur maximale… » (MXCT), « espace d'air minimum 0,5 mm » (MNCA), « … au bord » (MNET, MNEA), « longueur totale inférieure à 120 mm » (TTL ≤ 120). Elles s'appliquent à toutes les lentilles ; pour fixer l'épaisseur d'une lentille précise, demandez-la directement (« épaisseur S1 = 5 »).</li>
+<li>Les contraintes s'expriment simplement : « épaisseur minimale des verres 5 mm » (MNCG ≥ 5), « épaisseur maximale… » (MXCG), « espace d'air minimum 0,5 mm » (MNCA), « … au bord » (MNET, MNEA), « longueur totale inférieure à 120 mm » (TTL ≤ 120). Elles s'appliquent à toutes les lentilles ; pour fixer l'épaisseur d'une lentille précise, demandez-la directement (« épaisseur S1 = 5 »).</li>
 <li>Pour une meilleure compréhension, <code>qwen3:8b</code> est nettement plus capable que <code>qwen3:4b-instruct</code>, au prix d'une réponse plus lente sans carte graphique.</li></ul>
 <p>Rien n'est envoyé sur Internet. Sur un PC sans carte graphique, une réponse d'Ollama prend de quelques secondes à une minute selon le modèle.</p>
 <h4>Module facultatif</h4>

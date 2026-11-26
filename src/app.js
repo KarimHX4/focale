@@ -70,7 +70,7 @@ function normalize(s) {
   if (s.ftype && !OE.FTYPES[s.ftype]) delete s.ftype;
   s.wavelengths = (s.wavelengths && s.wavelengths.length) ? s.wavelengths : [{ um: 0.5875618, w: 1 }];
   s.primary = Math.min(Math.max(0, s.primary | 0), s.wavelengths.length - 1);
-  s.merit = s.merit || { image: 'SPOT', ops: [] }; s.merit.ops = s.merit.ops || [];
+  s.merit = s.merit || { image: 'SPOT', ops: [], v: 2 }; s.merit.ops = s.merit.ops || []; OE.meritUpgrade(s);
   s.src = { type: 'none', fib: 'si', core: 50, clad: 125, na: 0.22, mfd: null, lc0: null, dl: null, len: null, att: null, bw: null, d: 10, w: 20, h: 200, ...(s.src || {}) };
   s.det = { on: false, p: 3.45, nx: 2448, ny: 2048, ff: 100, bits: 12, fw: 10000, rn: 3, lvl: 70, noise: false, ...(s.det || {}) };
   s.surfaces = s.surfaces.map(x => newSurf(x));
@@ -1810,59 +1810,145 @@ function fans(c, w, h, M, data, k, unit) {
 
 /* ---------------- Optimisation ---------------- */
 const OPT = { running: false, st: null, hist: [], it: 0, snap: null, x0: null, maxIt: 100, gCyc: 10, gAmp: 20 };
+/** colonnes de l'éditeur de fonction de mérite (comme le Merit Function Editor de Zemax) */
+const MFC = [['s1', 'S1', 'Surface 1 (ou n° de ligne pour les opérations)'], ['s2', 'S2', 'Surface 2 (ou n° de ligne)'], ['w', 'λ', 'Longueur d\'onde (vide : primaire, ou polychromatique pour les RMS)'], ['hx', 'Hx', 'Champ normalisé X (−1…1)'], ['hy', 'Hy', 'Champ normalisé Y (−1…1)'], ['px', 'Px', 'Pupille normalisée X (−1…1)'], ['py', 'Py', 'Pupille normalisée Y (−1…1)'], ['p', 'Param.', 'Paramètre de l\'opérande']];
+/** valeurs par défaut d'une ligne au choix d'un type */
+function opDefaults(type, cur = {}) {
+  const d = OE.OPS[type] || {}, o = { type, weight: cur.weight ?? 1, ...(cur.cfg ? { cfg: cur.cfg } : {}) }, c = d.cols || [];
+  if (c.includes('p')) o.p = d.pdef ?? 0;
+  if (['TRAX', 'TRAY', 'TRAR', 'OPDC', 'OPDX', 'LONA', 'RAID', 'RAED', 'REAY', 'REAX', 'REAR', 'REAB', 'RANG'].includes(type)) o.py = 1;
+  if (['REAY', 'REAX', 'REAR', 'REAB', 'RANG', 'RAID', 'RAED', 'POWR', 'PARY', 'PARB', 'CTGT', 'CTLT', 'CTVA', 'ETGT', 'ETLT', 'ETVA', 'CVGT', 'CVLT', 'CVVA', 'COGT', 'COLT', 'COVA', 'DMGT', 'DMLT', 'DMVA'].includes(type)) o.s1 = 1;
+  if (['RSCE', 'RSCH', 'RWCE', 'RWCH', 'STRH', 'DISG', 'FCGT', 'FCGS', 'ZERN'].includes(type)) o.hy = cur.hy ?? 0;
+  const def = { MNCG: 1, MXCG: 20, MNEG: 1, MXEG: 30, MNCA: 0.5, MXCA: 200, MNEA: 0.3, MXEA: 200, MNCT: 0.3, MXCT: 200, MNET: 0.3, MXET: 200, MNSD: 1, MXSD: 50, RGLA: 0, MNIN: 1.45, MXIN: 2, MNAB: 20, MXAB: 90, STRH: 0.8, MTFT: 0.5, MTFS: 0.5, MTFA: 0.5, RELI: 0.5, RAID: 45, RAED: 45, GLTR: 0.9, DISM: 1, RSCE: 0, RSCH: 0, RWCE: 0, RWCH: 0, SPOT: 0, WFER: 0, CTGT: 1, ETGT: 1 };
+  if (def[type] != null) o.target = def[type];
+  else { try { const r = OE.residuals({ ...App.sys, merit: { v: 2, image: 'NONE', ops: [...(App.sys.merit.ops || []), o] } }); const v = r && r.parts[r.parts.length - 1].val; o.target = isFinite(v) ? +(+v).toPrecision(6) : 0; } catch (e) { o.target = 0; } }
+  if (type === 'RGLA') o.weight = 0.002;
+  return o;
+}
+const fmtCell = v => v == null || v === '' ? '' : String(v);
 function openOptim() {
-  const s = App.sys, mf = s.merit, wasOpen = !!$('#ovars'); mf.ops = mf.ops || [];
+  const s = App.sys; OE.meritUpgrade(s); const mf = s.merit, wasOpen = !!$('#ovars'); mf.ops = mf.ops || [];
   if (!OPT.running && !OPT.x0) OPT.x0 = optSnapVars(s);
-  const ops = Object.entries(OE.OPS), W = s.wavelengths, cen = OE.wlSel(s, 'central')[0];
+  const W = s.wavelengths, cen = OE.wlSel(s, 'central')[0], mc = OE.mcOn(s), pu = mf.pupil || { type: 'GQ', rings: 3, arms: 8 }, bnd = mf.bnd || {};
   const wlOpts = [['all', 'Toutes les λ (pondérées)'], ['central', `λ centrale (${fmt(W[cen].um * 1000, 5)} nm)`], ['primary', `λ primaire (${fmt(W[s.primary | 0].um * 1000, 5)} nm)`], ...W.map((w, i) => [String(i), `λ${i + 1} seule (${fmt(w.um * 1000, 5)} nm)`])];
-  const wsel = mf.wl == null ? 'all' : String(mf.wl);
-  dlg(`<h2>Optimisation — moindres carrés amortis <button class="x" data-d="close">✕</button></h2>
+  const wsel = mf.wl == null ? 'all' : String(mf.wl), sel = (id, cur, opts, attr = '') => `<select class="in" id="${id}" ${attr}>${opts.map(([k, l]) => `<option value="${k}" ${String(cur) === String(k) ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  const num = (id, v, ph, w = 48, t = '') => `<input class="in" id="${id}" value="${v == null ? '' : v}" placeholder="${ph}" style="width:${w}px" title="${t}">`;
+  const cyc = OPT.cyc || 'auto';
+  const rowHTML = (o, i) => {
+    const d = OE.OPS[o.type] || { label: '?', cols: [] }, cmp = o.cmp || d.kind, c = d.cols || [];
+    const cell = k => { if (!c.includes(k)) return '<td></td>';
+      if (k === 'w') return `<td><select class="in" data-o="w" data-i="${i}" style="width:38px" title="${MFC[2][2]}"><option value="">—</option>${W.map((_, j) => `<option value="${j + 1}" ${+o.w === j + 1 ? 'selected' : ''}>${j + 1}</option>`).join('')}</select></td>`;
+      if (k === 'p' && d.f) return `<td><input class="in" data-o="p" data-i="${i}" value="${fmtCell(o.p ?? d.pdef)}" style="width:46px" title="${esc(d.pl || d.p || '')}"></td>`;
+      return `<td><input class="in" data-o="${k}" data-i="${i}" value="${fmtCell(o[k] ?? (k === 'p' ? d.pdef : ''))}" style="width:${k === 'p' ? 44 : k === 's1' || k === 's2' ? 30 : 34}px" title="${esc(k === 'p' ? (d.pl || 'paramètre') : MFC.find(m => m[0] === k)[2])}"></td>`; };
+    const fiSel = d.f ? `<select class="in" data-o="fi" data-i="${i}" style="width:54px" title="Champ (tous : la contrainte s'applique à chaque champ)"><option value="0">tous</option>${s.fields.map((_, k) => `<option value="${k + 1}" ${+o.fi === k + 1 ? 'selected' : ''}>C${k + 1}</option>`).join('')}</select>` : '';
+    const desc = o.type === 'BLNK' ? `<input class="in" data-o="c" data-i="${i}" value="${esc(o.c || '')}" placeholder="commentaire" style="width:100%">` : `<span class="odesc" title="${esc(d.label + (d.aka ? ' — ' + d.aka : ''))}">${esc(d.label)}</span>${fiSel}`;
+    const nores = d.nores;
+    return `<tr data-row="${i}" class="${o.auto ? 'oauto' : ''}"><td class="onum">${i + 1}</td><td><button class="opb" data-d="opick" data-i="${i}" title="Changer l'opérande">${esc(o.type)}</button></td><td class="odc">${desc}</td>
+      ${['s1', 's2', 'w', 'hx', 'hy', 'px', 'py', 'p'].map(cell).join('')}
+      <td>${nores ? '' : `<select class="in" data-o="cmp" data-i="${i}" style="width:36px" title="Égal, au moins (≥) ou au plus (≤)">${[['eq', '='], ['ge', '≥'], ['le', '≤']].map(([k, l]) => `<option value="${k}" ${cmp === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`}</td>
+      <td>${nores || o.type === 'CONS' ? '' : `<input class="in" data-o="target" data-i="${i}" value="${fmtCell(o.target)}" style="width:58px">`}</td>
+      <td>${nores ? '' : `<input class="in" data-o="weight" data-i="${i}" value="${o.lag ? '' : fmtCell(o.weight)}" ${o.lag ? 'disabled placeholder="—"' : ''} style="width:40px" title="Poids W : contribution W·(valeur − cible)² (0 : ligne calculée sans effet, utile pour les opérations)">`}</td>
+      <td>${nores ? '' : `<input type="checkbox" data-o="lag" data-i="${i}" ${o.lag ? 'checked' : ''} title="Contrainte exacte (multiplicateurs de Lagrange, comme CODE V) : satisfaite à chaque cycle au lieu d'être pondérée">`}</td>
+      ${mc ? `<td><select class="in" data-o="cfg" data-i="${i}" style="width:54px"><option value="0">toutes</option>${Array.from({ length: s.mc.n }, (_, k) => `<option value="${k + 1}" ${+o.cfg === k + 1 ? 'selected' : ''}>${k + 1}</option>`).join('')}</select></td>` : ''}
+      <td class="ov" data-ov="${i}"></td><td class="ov" data-oc="${i}"></td>
+      <td class="oact"><button class="x" data-d="oup" data-i="${i}" title="Monter">↑</button><button class="x" data-d="odn" data-i="${i}" title="Descendre">↓</button><button class="x" data-d="odel" data-i="${i}" title="Supprimer">✕</button></td></tr>`;
+  };
+  const imgLab = { SPOT: 'Spot RMS', WFE: 'Front d\'onde RMS', MTF: `Contraste 1 − FTM à ${mf.mtfF || 30} cy/mm`, NONE: 'aucun' }[mf.image || 'SPOT'];
+  const puLab = pu.type === 'RA' ? `grille ${pu.grid || 8}×${pu.grid || 8}` : `Gauss ${pu.rings || 3} anneaux × ${pu.arms || 8} bras`;
+  dlg(`<h2>Optimisation <span class="hint" style="font-weight:400;margin-left:8px">moindres carrés amortis · contraintes exactes de Lagrange</span><button class="x" data-d="close">✕</button></h2>
   <div class="db"><div class="ogrid">
     <div class="oL">
-      <h4 class="th4" style="margin-top:0">Variables <span class="hint" id="onv"></span></h4>
-      <div class="hint">Bouton <b>V</b> dans l'éditeur : rayon, épaisseur, conique et, avec « Asphères », A4…A10.</div>
-      <div class="oscroll" id="ovars"></div>
-      <div class="row"><button class="bt" data-d="ovclear" title="Retire toutes les variables (V) du système">Tout libérer</button></div>
-      ${optGlassHTML()}
-      <h4 class="th4">Critère de qualité image</h4>
-      <div class="row"><select class="in grow" id="mfImg"><option value="SPOT" ${mf.image === 'SPOT' ? 'selected' : ''}>Spot RMS (barycentre)</option><option value="WFE" ${mf.image === 'WFE' ? 'selected' : ''}>Front d'onde RMS</option><option value="NONE" ${mf.image === 'NONE' ? 'selected' : ''}>Aucun (opérandes seuls)</option></select></div>
-      <div class="row"><label style="flex:none">Longueurs d'onde</label><select class="in grow" id="mfWl">${wlOpts.map(([k, l]) => `<option value="${k}" ${wsel === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-      <div class="hint">Quadrature de Gauss 3 anneaux × 8 bras sur tous les champs (pondérés). Choisir une seule λ permet par exemple d'optimiser une mise au point à la longueur d'onde centrale ; les opérandes de chromatisme utilisent toujours toutes les λ.</div>
-      <div class="hint" style="margin-top:6px;font-weight:600;color:var(--fg)">Poids du critère <span style="font-weight:400">(vide = poids du champ / de la λ)</span></div>
+      <h4 class="th4" style="margin-top:0">Fonction de mérite par défaut</h4>
+      <div class="ofrm">
+        <label>Critère</label>${sel('mfImg', mf.image || 'SPOT', [['SPOT', 'RMS spot (rayon)'], ['WFE', 'RMS front d\'onde'], ['MTF', 'Contraste FTM (1 − FTM)'], ['NONE', 'Aucun (opérandes seuls)']])}
+        <label>Référence</label>${sel('mfRef', mf.ref || 'centroid', [['centroid', 'Barycentre'], ['chief', 'Rayon principal']], mf.image === 'MTF' || mf.image === 'NONE' ? 'disabled' : '')}
+        <label>Pupille</label><div class="row" style="gap:4px">${sel('mfPu', pu.type || 'GQ', [['GQ', 'Quadrature de Gauss'], ['RA', 'Grille rectangulaire']])}${pu.type === 'RA' ? num('mfGrid', pu.grid || 8, '8', 40, 'Nombre de rayons sur un diamètre') : num('mfRings', pu.rings || 3, '3', 36, 'Anneaux (1 à 20)') + num('mfArms', pu.arms || 8, '8', 36, 'Bras (2 à 36)')}</div>
+        <label>Longueurs d'onde</label>${sel('mfWl', wsel, wlOpts)}
+        ${mf.image === 'MTF' ? `<label>Fréquence</label><div class="row" style="gap:4px">${num('mfMtfF', mf.mtfF || 30, '30', 56)}<span class="hint">cycles/mm</span></div>` : ''}
+        <label>Poids du critère</label>${num('mfIw', mf.iw ?? '', '1', 56, 'Poids total du critère image dans la fonction de mérite (0 : opérandes seuls)')}
+      </div>
+      <label class="ck"><input type="checkbox" id="mfSym" ${mf.sym !== false ? 'checked' : ''}> Symétrie axiale : demi-pupille si le système est de révolution</label>
+      <div class="hint" style="margin-top:4px;font-weight:600;color:var(--fg)">Poids des champs et des λ <span style="font-weight:400">(vide = ceux du système)</span></div>
       <div class="owt">${s.fields.map((f, i) => `<label title="Poids du champ ${i + 1} dans le critère image">C${i + 1} <input class="in" data-ow="fw" data-i="${i}" value="${Array.isArray(mf.fw) && mf.fw[i] != null && mf.fw[i] !== '' ? mf.fw[i] : ''}" placeholder="${f.w ?? 1}"></label>`).join('')}</div>
       <div class="owt">${W.map((w, i) => `<label title="Poids de ${fmt(w.um * 1000, 5)} nm dans le critère image">λ${i + 1} <input class="in" data-ow="ww" data-i="${i}" value="${Array.isArray(mf.ww) && mf.ww[i] != null && mf.ww[i] !== '' ? mf.ww[i] : ''}" placeholder="${w.w ?? 1}"></label>`).join('')}</div>
+      <h4 class="th4">Contraintes de bord <span class="hint">(lignes MNCG, MXCG, MNEG, MNCA, MXCA, MNEA)</span></h4>
+      <table class="obnd"><tr><th></th><th>centre min</th><th>centre max</th><th>bord min</th></tr>
+        <tr><td>Verre</td><td>${num('bgmin', bnd.gmin, '—', 52)}</td><td>${num('bgmax', bnd.gmax, '—', 52)}</td><td>${num('bgemin', bnd.gemin, '—', 52)}</td></tr>
+        <tr><td>Air</td><td>${num('bamin', bnd.amin, '—', 52)}</td><td>${num('bamax', bnd.amax, '—', 52)}</td><td>${num('baemin', bnd.aemin, '—', 52)}</td></tr></table>
+      <div class="row"><label class="ck" style="margin:0"><input type="checkbox" id="bLag" ${bnd.lag ? 'checked' : ''}> exactes</label><button class="bt" data-d="obnd" title="Écrit (ou remplace) les lignes de contraintes de bord dans l'éditeur de fonction de mérite">Écrire les contraintes</button></div>
+      <h4 class="th4">Variables <span class="hint" id="onv"></span></h4>
+      <div class="row" style="flex-wrap:wrap;gap:4px"><span class="hint">Rendre variables :</span>${[['r', 'rayons'], ['ta', 'espaces d\'air'], ['tg', 'épaisseurs de verre'], ['k', 'coniques'], ['g', 'verres']].map(([k, l]) => `<button class="bt" data-d="ovset" data-k="${k}" style="height:22px">${l}</button>`).join('')}<button class="bt" data-d="ovclear" style="height:22px" title="Retire toutes les variables (V) du système">tout libérer</button></div>
+      <div class="oscroll" id="ovars"></div>
+      ${optGlassHTML()}
       <h4 class="th4">Mise au point</h4>
-      <div class="row"><button class="bt" data-d="oqf">⌖ Quick focus</button><span class="hint">${App.qf.crit === 'WFE' ? 'front d\'onde' : 'spot'} RMS · ${qfWlLabel()} (options dans l'éditeur ▾)</span></div>
+      <div class="row"><button class="bt" data-d="oqf">⌖ Quick focus</button><span class="hint">${App.qf.crit === 'WFE' ? 'front d\'onde' : 'spot'} RMS · ${qfWlLabel()}</span></div>
       <h4 class="th4">Meilleures solutions <span class="hint">(recherche globale)</span></h4>
       <div id="osols">${optSolsHTML()}</div>
     </div>
     <div class="oR">
-      <h4 class="th4" style="margin-top:0">Opérandes</h4>
-      <div class="oscroll"><table class="mt otab"><tr><th>Opérande</th><th>Param.</th><th></th><th>Cible</th><th>Poids</th>${OE.mcOn(App.sys) ? '<th title="Configuration où l\'opérande s\'applique (multi-configuration)">Config.</th>' : ''}<th>Valeur</th><th title="Part de la fonction de mérite (somme des carrés)">%</th><th></th></tr>
-      ${mf.ops.map((o, i) => { const d = OE.OPS[o.type] || {}; const cmp = o.cmp || d.kind; return `<tr><td><select class="in" data-o="type" data-i="${i}" title="${esc(d.label || '')}">${ops.map(([k, v]) => `<option value="${k}" ${k === o.type ? 'selected' : ''}>${k} — ${v.label}</option>`).join('')}</select></td>
-        <td>${d.p ? `<input class="in" data-o="p" data-i="${i}" value="${o.p ?? d.pdef}" title="${d.p}" style="width:56px">` : ''}${d.f ? `<select class="in" data-o="fi" data-i="${i}" style="width:62px" title="Champ (tous : la contrainte s'applique à chaque champ)"><option value="0">tous</option>${s.fields.map((_, k) => `<option value="${k + 1}" ${+o.fi === k + 1 ? 'selected' : ''}>C${k + 1}</option>`).join('')}</select>` : ''}</td>
-        <td><select class="in" data-o="cmp" data-i="${i}" style="width:44px" title="Égal, au moins (≥) ou au plus (≤)">${[['eq', '='], ['ge', '≥'], ['le', '≤']].map(([k, l]) => `<option value="${k}" ${cmp === k ? 'selected' : ''}>${l}</option>`).join('')}</select></td>
-        <td><input class="in" data-o="target" data-i="${i}" value="${o.target}" style="width:70px"></td><td><input class="in" data-o="weight" data-i="${i}" value="${o.weight}" style="width:48px"></td>
-        ${OE.mcOn(App.sys) ? `<td><select class="in" data-o="cfg" data-i="${i}" style="width:64px"><option value="0">toutes</option>${Array.from({ length: App.sys.mc.n }, (_, k) => `<option value="${k + 1}" ${+o.cfg === k + 1 ? 'selected' : ''}>${k + 1}</option>`).join('')}</select></td>` : ''}
-        <td class="ov" data-ov="${i}"></td><td class="ov" data-oc="${i}"></td><td><button class="x" data-d="odel" data-i="${i}">✕</button></td></tr>`; }).join('')}
-      <tr><td colspan="${OE.mcOn(App.sys) ? 6 : 5}" class="hint">Critère image${OE.mcOn(App.sys) && App.sys.mc.opt !== 'cur' ? ` (somme sur ${App.sys.mc.n} configurations)` : ''}</td><td class="ov" id="oimgv"></td><td class="ov" id="oimgc"></td><td></td></tr></table></div>
-      <button class="add" data-d="oadd">+ Ajouter un opérande</button>
-      <div style="display:flex;gap:16px;align-items:center;margin-top:10px">
-        <div style="flex:none;width:150px"><div class="hint">Fonction de mérite</div><div class="big" id="mval">—</div><div class="hint" id="mit"></div></div>
-        <div style="flex:1;min-width:0;height:130px;position:relative"><canvas id="mchart"></canvas></div>
+      <div class="row" style="justify-content:space-between"><h4 class="th4" style="margin:0">Éditeur de fonction de mérite</h4><span class="hint">Critère : ${esc(imgLab)} · ${esc(puLab)}${mf.image === 'NONE' ? '' : ` · réf. ${mf.ref === 'chief' ? 'rayon principal' : 'barycentre'}`}</span></div>
+      <div class="oscroll"><table class="mt otab"><thead><tr><th>#</th><th>Type</th><th>Description</th>${MFC.map(([k, l, t]) => `<th title="${esc(t)}">${l}</th>`).join('')}<th></th><th>Cible</th><th title="Poids">Poids</th><th title="Contrainte exacte (Lagrange)">Ex.</th>${mc ? '<th title="Configuration où la ligne s\'applique">Conf.</th>' : ''}<th>Valeur</th><th title="Part de la fonction de mérite">%</th><th></th></tr></thead><tbody>
+      <tr class="oimg"><td class="onum">·</td><td><b>DMF</b></td><td class="odc" colspan="${MFC.length + 5 + (mc ? 1 : 0)}"><span class="odesc">Critère image : ${esc(imgLab)}${mf.image === 'NONE' ? '' : ` (${esc(puLab)}, ${mf.sym !== false ? 'symétrie exploitée si possible' : 'pupille entière'})`}${mc && s.mc.opt !== 'cur' ? ` — somme sur ${s.mc.n} configurations` : ''}</span></td><td class="ov" id="oimgv"></td><td class="ov" id="oimgc"></td><td></td></tr>
+      ${mf.ops.map(rowHTML).join('')}</tbody></table></div>
+      <div class="row" style="gap:6px"><button class="add" data-d="opick" data-i="-1" style="flex:none;width:auto;padding:0 14px">+ Ajouter un opérande</button><span class="hint">Noms Zemax (EFFL → EFL, TOTR → TTL…) et CODE V acceptés dans la recherche · Ex. : contrainte exacte · poids 0 : ligne calculée sans effet</span></div>
+      <div style="display:flex;gap:16px;align-items:center;margin-top:8px">
+        <div style="flex:none;width:190px"><div class="hint">Fonction de mérite <span title="√(Σ W·(valeur − cible)² / Σ W), convention Zemax">ⓘ</span></div><div class="big" id="mval">—</div><div class="hint" id="mcons"></div><div class="hint" id="mit"></div></div>
+        <div style="flex:1;min-width:0;height:120px;position:relative"><canvas id="mchart"></canvas></div>
       </div>
     </div>
   </div>
-  <div class="orow"><span>Itérations max</span><input class="in" id="maxIt" value="${OPT.maxIt || 100}" style="width:60px">
-    <span style="margin-left:18px">Recherche globale :</span><select class="in" id="gMode" title="Méthode de recherche globale">${[['hammer', 'Perturbation du meilleur (Hammer)'], ['anneal', 'Recuit simulé'], ['multi', 'Départs multiples']].map(([k, l]) => `<option value="${k}" ${(OPT.gMode || 'hammer') === k ? 'selected' : ''}>${l}</option>`).join('')}</select><span class="hint">essais</span><input class="in" id="gCyc" value="${OPT.gCyc || 10}" style="width:50px"><span class="hint">amplitude</span><input class="in" id="gAmp" value="${OPT.gAmp || 20}" style="width:50px"><span class="hint">% (perturbation relative des variables)</span></div>
+  <div class="orow"><span>Cycles</span>${sel('oCyc', cyc, [['auto', 'Automatique'], ['1', '1'], ['5', '5'], ['10', '10'], ['50', '50'], ['200', '200']], 'style="width:auto"')}
+    <span style="margin-left:10px">Dérivées</span>${sel('oDer', OPT.central ? 'cen' : 'fwd', [['fwd', 'différences avant'], ['cen', 'différences centrées (×2 calculs)']], 'style="width:auto"')}
+    <span style="margin-left:18px">Recherche globale :</span>${sel('gMode', OPT.gMode || 'hammer', [['hammer', 'Perturbation du meilleur (Hammer)'], ['anneal', 'Recuit simulé'], ['multi', 'Départs multiples']], 'style="width:auto"')}<span class="hint">essais</span><input class="in" id="gCyc" value="${OPT.gCyc || 10}" style="width:50px"><span class="hint">amplitude</span><input class="in" id="gAmp" value="${OPT.gAmp || 20}" style="width:46px"><span class="hint">%</span></div>
   </div>
   <div class="df"><span class="hint grow" id="omsg"></span>
     <button class="bt" data-d="revert" title="Revient au système d'avant la dernière optimisation">Restaurer l'état initial</button>
     <button class="bt" data-d="stop">Arrêter</button>
     <button class="bt" data-d="glob" title="Perturbe aléatoirement les variables puis optimise, plusieurs fois, et garde le meilleur résultat">Recherche globale</button>
-    <button class="tb pri" data-d="run">▶ Optimiser</button></div>`, true, { w: 1120, h: 720 });
-  if (!OPT.running) { const r = OE.residuals(s), m = r ? OE.meritOf(r.f) : NaN; if (!wasOpen || !OPT.hist.length) OPT.hist = isFinite(m) ? [m] : []; else if (isFinite(m) && m !== OPT.hist[OPT.hist.length - 1]) OPT.hist.push(m); }
+    <button class="tb pri" data-d="run">▶ Optimiser</button></div>`, true, { w: 1340, h: 780 });
+  if (!OPT.running) { const r = OE.residuals(s), m = OE.meritR(r); if (!wasOpen || !OPT.hist.length) OPT.hist = isFinite(m) ? [m] : []; else if (isFinite(m) && m !== OPT.hist[OPT.hist.length - 1]) OPT.hist.push(m); }
   optLive();
+}
+/** sélecteur d'opérande (recherche par nom Focale, Zemax ou CODE V, et par description) */
+function opPicker(btn, i) {
+  $('#opick')?.remove();
+  const el = document.createElement('div'); el.id = 'opick'; el.className = 'opick';
+  el.innerHTML = `<input class="in" id="opq" placeholder="Rechercher : EFFL, MNCG, spot, distorsion…" style="width:100%"><div id="opl"></div>`;
+  $('#dlg').appendChild(el);
+  const r = btn.getBoundingClientRect(), d = $('#dlg').getBoundingClientRect();
+  el.style.left = Math.max(8, Math.min(r.left - d.left, d.width - 460)) + 'px'; el.style.top = Math.min(r.bottom - d.top + 4, d.height - 420) + 'px';
+  const draw = () => {
+    const q = $('#opq').value.trim().toLowerCase(), E = Object.entries(OE.OPS).filter(([k, v]) => !v.hide);
+    $('#opl').innerHTML = OE.OPG.map(([g, gl]) => { const L = E.filter(([k, v]) => v.g === g && (!q || (k + ' ' + v.label + ' ' + (v.aka || '')).toLowerCase().includes(q)));
+      return L.length ? `<div class="opg">${esc(gl)}</div>` + L.map(([k, v]) => `<button data-opk="${k}"><b>${k}</b><span>${esc(v.label)}</span>${v.aka ? `<i>${esc(v.aka)}</i>` : ''}</button>`).join('') : ''; }).join('') || '<div class="hint" style="padding:8px">Aucun opérande</div>';
+  };
+  draw(); $('#opq').focus();
+  $('#opq').addEventListener('input', draw);
+  $('#opq').addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); el.remove(); } if (e.key === 'Enter') { const b = el.querySelector('[data-opk]'); if (b) b.click(); } });
+  el.addEventListener('click', e => { const b = e.target.closest('[data-opk]'); if (!b) return; const k = b.dataset.opk; el.remove();
+    commit(s => { const L = s.merit.ops; if (i < 0) L.push(opDefaults(k)); else { const o = L[i]; L[i] = { ...opDefaults(k, o), ...(o.lag ? { lag: true } : {}) }; } }); openOptim(); });
+  setTimeout(() => { const off = e => { if (!el.contains(e.target)) { el.remove(); document.removeEventListener('mousedown', off, true); } }; document.addEventListener('mousedown', off, true); }, 0);
+}
+/** écrit les contraintes de bord (lignes « auto ») */
+function optWriteBounds() {
+  const g = id => { const v = String($('#' + id)?.value ?? '').trim(); return v === '' ? null : parseFloat(v.replace(',', '.')); };
+  const b = { gmin: g('bgmin'), gmax: g('bgmax'), gemin: g('bgemin'), amin: g('bamin'), amax: g('bamax'), aemin: g('baemin'), lag: !!$('#bLag')?.checked };
+  const rows = [['MNCG', b.gmin], ['MXCG', b.gmax], ['MNEG', b.gemin], ['MNCA', b.amin], ['MXCA', b.amax], ['MNEA', b.aemin]].filter(([, v]) => v != null && isFinite(v));
+  commit(s => { s.merit.bnd = b; s.merit.ops = s.merit.ops.filter(o => o.auto !== 'bnd'); for (const [t, v] of rows) s.merit.ops.push({ type: t, target: v, weight: 1, auto: 'bnd', ...(b.lag ? { lag: true } : {}) }); });
+  toast(rows.length ? `${rows.length} contrainte(s) de bord écrite(s)` : 'Contraintes de bord retirées'); openOptim();
+}
+/** rend variables en bloc : r rayons, ta espaces d'air, tg épaisseurs de verre, k coniques, g verres */
+function optSetVars(k) {
+  let n = 0;
+  commit(S => { const L = S.surfaces, N = L.length - 1;
+    for (let j = 1; j < N; j++) { const s = L[j], prev = L[j - 1], glass = !OE.isAir(s.glass) && !OE.isMirror(s), boundary = OE.isMirror(s) || glass || (!OE.isAir(prev.glass) && !OE.isMirror(prev));
+      const fold = OE.isMirror(s) && !(isFinite(s.r) && s.r) && (+s.tx || +s.ty); if (s.elem === 'ideal' || s.elem === 'grating') continue;
+      if (k === 'r' && boundary && !fold && !s.vr) { s.vr = true; n++; }
+      if (k === 'k' && boundary && isFinite(s.r) && s.r && !s.vk) { s.vk = true; n++; }
+      if (k === 'ta' && OE.isAir(s.glass) && !OE.isMirror(s) && s.tsolve !== 'M' && !s.vt) { s.vt = true; n++; }
+      if (k === 'tg' && glass && !s.vt) { s.vt = true; n++; }
+      if (k === 'g' && glass && !s.vg) { const mg = OE.parseModel(s.glass) ? s.glass : OE.toModel(s.glass); if (mg) { s.vg = true; s.glass = mg; n++; } } } });
+  toast(n ? `${n} variable(s) ajoutée(s)` : 'Aucune nouvelle variable'); OPT.x0 = null; openOptim();
 }
 /** section « verres variables » de la fenêtre d'optimisation */
 function optGlassHTML() {
@@ -1921,14 +2007,17 @@ function optLive() {
     return `<tr><td>${optVarLab(v)}</td><td style="font-family:var(--mono)">${fmt(x, 7)}</td><td style="font-family:var(--mono);color:var(--mut)">${isFinite(d) && Math.abs(d) > 1e-12 ? (d > 0 ? '+' : '') + fmt(d, 4) : ''}</td></tr>`; }).join('')}</table>` : '<em class="hint">aucune variable définie</em>';
   if (!r) { $('#mval').textContent = '—'; return; }
   const m2 = r.f.reduce((a, b) => a + b * b, 0) || 1;
-  $('#mval').textContent = OE.meritOf(r.f).toExponential(4);
+  $('#mval').textContent = OE.meritR(r).toExponential(4);
+  const nc = r.parts.filter(p => p.lag), bad = nc.filter(p => p.ok === false).length, mc = $('#mcons');
+  if (mc) { mc.textContent = nc.length ? `Contraintes exactes : ${nc.length - bad}/${nc.length} satisfaites` : ''; mc.style.color = bad ? 'var(--warn)' : ''; }
   for (const p of r.parts) {
     const o = s.merit.ops[p.i], d = OE.OPS[o.type] || {}, cv = $(`[data-ov="${p.i}"]`), cc = $(`[data-oc="${p.i}"]`);
-    if (cv) { cv.textContent = p.val == null || !isFinite(p.val) ? '—' : fmt(p.val, 6) + (d.u ? ' ' + d.u : ''); cv.style.color = p.ok === false ? 'var(--warn)' : ''; }
-    if (cc) cc.textContent = fx(100 * p.r2 / m2, 1);
+    if (cv) { cv.textContent = p.val == null || !isFinite(p.val) ? '—' : fmt(p.val, 6) + (d.u ? ' ' + d.u : ''); cv.style.color = p.ok === false ? 'var(--warn)' : p.ok === true && o.lag ? 'var(--ok, #3fb950)' : ''; cv.title = p.ok === false ? 'Contrainte non satisfaite' : ''; }
+    if (cc) cc.textContent = p.lag ? 'exacte' : p.r2 ? fx(100 * p.r2 / m2, 1) : '';
   }
   const iv = $('#oimgv'), ic = $('#oimgc');
-  if (iv) iv.textContent = s.merit.image === 'NONE' ? '—' : s.merit.image === 'SPOT' ? `${fmt(Math.sqrt(r.img2) * 1e3, 5)} µm` : `${fmt(Math.sqrt(r.img2) * 1e6, 5)} nm`;
+  const iw = r.imgW || 0, ir = iw ? Math.sqrt(r.img2 / iw) : NaN;
+  if (iv) iv.textContent = s.merit.image === 'NONE' || !iw ? '—' : s.merit.image === 'SPOT' ? `${fmt(ir * 1e3, 5)} µm` : s.merit.image === 'WFE' ? `${fmt(ir, 4)} λ` : `${fmt(ir, 4)}`;
   if (ic) ic.textContent = fx(100 * r.img2 / m2, 1);
   drawMerit();
 }
@@ -2289,8 +2378,16 @@ function setupDlg() {
       return;
     }
     if (t.id === 'mfImg') { commit(s => s.merit.image = t.value, { fast: false }); openOptim(); }
+    if (t.id === 'mfRef') { commit(s => s.merit.ref = t.value); openOptim(); }
+    if (t.id === 'mfSym') { commit(s => s.merit.sym = t.checked); openOptim(); }
+    if (t.id === 'mfPu') { commit(s => { const p = s.merit.pupil = { type: 'GQ', rings: 3, arms: 8, grid: 8, ...(s.merit.pupil || {}) }; p.type = t.value; }); openOptim(); }
+    if (t.id === 'mfRings' || t.id === 'mfArms' || t.id === 'mfGrid') { const k = t.id === 'mfRings' ? 'rings' : t.id === 'mfArms' ? 'arms' : 'grid', lim = { rings: [1, 20], arms: [2, 36], grid: [2, 40] }[k], v = Math.max(lim[0], Math.min(lim[1], parseInt(t.value) || 0));
+      if (!v) { toast('Valeur invalide'); return; } commit(s => { s.merit.pupil = { type: 'GQ', rings: 3, arms: 8, grid: 8, ...(s.merit.pupil || {}) }; s.merit.pupil[k] = v; }); openOptim(); }
+    if (t.id === 'mfMtfF') { const v = parseFloat(String(t.value).replace(',', '.')); if (v > 0) { commit(s => s.merit.mtfF = v); openOptim(); } }
+    if (t.id === 'mfIw') { const raw = String(t.value).trim(), v = parseFloat(raw.replace(',', '.')); commit(s => { if (raw === '') delete s.merit.iw; else if (v >= 0) s.merit.iw = v; }); openOptim(); }
+    if (t.id === 'oCyc') { OPT.cyc = t.value; OPT.maxIt = t.value === 'auto' ? 500 : +t.value; }
+    if (t.id === 'oDer') OPT.central = t.value === 'cen';
     if (t.id === 'mfWl') { commit(s => s.merit.wl = t.value === 'all' ? 'all' : /^\d+$/.test(t.value) ? +t.value : t.value, { fast: false }); openOptim(); }
-    if (t.id === 'maxIt') OPT.maxIt = Math.max(1, parseInt(t.value) || 100);
     if (t.dataset.gs) { const k = t.dataset.gs; commit(s => { const g = s.merit.gsub = { cats: null, pref: false, k: 6, passes: 2, ...(s.merit.gsub || {}) };
       if (k === 'cat') { const all = OE.cats(), cur = new Set(g.cats && g.cats.length ? g.cats : all); t.checked ? cur.add(t.value) : cur.delete(t.value); g.cats = cur.size === all.length ? null : [...cur]; }
       else if (k === 'pref') g.pref = t.checked; else g[k] = Math.max(1, Math.min(k === 'k' ? 30 : 5, parseInt(t.value) || g[k])); }); openOptim(); }
@@ -2299,7 +2396,9 @@ function setupDlg() {
     if (t.id === 'gMode') OPT.gMode = t.value;
     if (t.id === 'gCyc') OPT.gCyc = Math.max(1, Math.min(200, parseInt(t.value) || 10));
     if (t.id === 'gAmp') OPT.gAmp = Math.max(1, Math.min(100, parseFloat(String(t.value).replace(',', '.')) || 20));
-    if (t.dataset.o) { const i = +t.dataset.i, k = t.dataset.o; commit(s => { const o = s.merit.ops[i]; if (k === 'type') { o.type = t.value; delete o.cmp; const d = OE.OPS[t.value]; if (d.p) o.p = o.p ?? d.pdef; else delete o.p; } else if (k === 'cmp') o.cmp = t.value; else o[k] = parseFloat(String(t.value).replace(',', '.')) || 0; }); openOptim(); }
+    if (t.dataset.o) { const i = +t.dataset.i, k = t.dataset.o; commit(s => { const o = s.merit.ops[i]; if (!o) return; delete o.auto;
+      if (k === 'cmp') o.cmp = t.value; else if (k === 'lag') { if (t.checked) o.lag = true; else delete o.lag; } else if (k === 'c') o.c = t.value;
+      else { const raw = String(t.value).trim(); if (raw === '') delete o[k]; else { const v = parseFloat(raw.replace(',', '.')); if (isFinite(v)) o[k] = v; } } }); openOptim(); }
   });
   $('#dlg').addEventListener('change', e => { if (e.target.dataset.dw != null || e.target.dataset.dws != null) drwEvent(e.target); if (e.target.dataset.sd) sdChange(e.target); if (e.target.closest('#mcw')) mcEvent(e); });
   $('#dlg').addEventListener('click', e => { const b = e.target.closest('#mcw [data-mcact]'); if (b) mcAction(b); const h = e.target.closest('#hw [data-hgo]'); if (h) histGo(+h.dataset.hgo); const ha = e.target.closest('#hw [data-hact]'); if (ha) histAction(ha); });
@@ -2328,7 +2427,10 @@ function setupDlg() {
     if (a === 'tinvApply' && TOL.inv) { const only = $('#tinvTight')?.checked; const I = TOL.inv;
       tolEditList(L => { for (const r of I.rows) { if (only && !(r.tr < r.it.tol * 0.999)) continue; const e = L.find(x => x.type === r.it.type && x.j === r.it.j); if (e) { e.min = -r.tr; e.max = r.tr; } } }); toast('Tolérances proposées appliquées à la liste détaillée'); }
     if (a === 'tload') tolLoad(b.dataset.k);
-    if (a === 'oadd') { commit(s => s.merit.ops.push({ type: 'EFL', target: Math.round(App.M?.par?.efl || 100), weight: 1 })); openOptim(); }
+    if (a === 'opick') opPicker(b, +b.dataset.i);
+    if (a === 'oup' || a === 'odn') { const i = +b.dataset.i, j = a === 'oup' ? i - 1 : i + 1; if (j < 0 || j >= App.sys.merit.ops.length) return; commit(s => { const L = s.merit.ops; [L[i], L[j]] = [L[j], L[i]]; }); openOptim(); }
+    if (a === 'obnd') optWriteBounds();
+    if (a === 'ovset') optSetVars(b.dataset.k);
     if (a === 'odel') { commit(s => s.merit.ops.splice(+b.dataset.i, 1)); openOptim(); }
     if (a === 'run') runOpt();
     if (a === 'glob') runGlobal();
@@ -2352,8 +2454,8 @@ function setupDlg() {
 function runOpt() {
   if (OPT.running) return;
   if (!OE.getVars(App.sys).length) { $('#omsg').textContent = 'Définissez au moins une variable (bouton V).'; return; }
-  OPT.snap = toJSON(App.sys); OPT.x0 = optSnapVars(App.sys); OPT.st = { sys: structuredClone(App.sys), mu: 1e-3 }; OPT.it = 0; OPT.running = true;
-  const maxIt = OPT.maxIt = Math.max(1, parseInt($('#maxIt').value) || 100);
+  OPT.snap = toJSON(App.sys); OPT.x0 = optSnapVars(App.sys); OPT.st = { sys: structuredClone(App.sys), mu: 1e-3, central: !!OPT.central }; OPT.it = 0; OPT.running = true;
+  const maxIt = OPT.maxIt = (OPT.cyc || 'auto') === 'auto' ? 500 : Math.max(1, +OPT.cyc || 100);
   $('#omsg').textContent = 'Optimisation en cours…';
   let lastPane = 0;
   const loop = () => {
@@ -2363,7 +2465,7 @@ function runOpt() {
     App.sys = OPT.st.sys; App.M = OE.prepare(App.sys); App.sysKey = null; renderLDE(); renderSide(); drawLayout();
     if (performance.now() - lastPane > 600) { renderPanes(); lastPane = performance.now(); }
     if ($('#mval')) { optLive(); $('#mit').textContent = `itération ${OPT.it}`; }
-    if (r.done || OPT.it >= maxIt) { OPT.running = false; finish(r.msg || (OPT.it >= maxIt ? 'Nombre max d\'itérations atteint' : 'Convergé')); return; }
+    if (r.done || OPT.it >= maxIt) { OPT.running = false; finish(r.msg || (OPT.it >= maxIt ? ((OPT.cyc || 'auto') === 'auto' ? 'Nombre max d\'itérations atteint' : `${maxIt} cycle(s) effectué(s)`) : 'Convergé')); return; }
     setTimeout(loop, 0);
   };
   const finish = (msg) => { pushHist('Optimisation (' + msg + ')'); refresh({ fast: true }); optLive(); const o = $('#omsg'); if (o) o.textContent = msg + ` — ${OPT.it} itérations`; toast('Optimisation : ' + msg); };
@@ -2399,10 +2501,10 @@ async function runGlobal() {
   if (OPT.running) return; const vars = OE.getVars(App.sys);
   if (!vars.length) { $('#omsg').textContent = 'Définissez au moins une variable (bouton V).'; return; }
   const mode = OPT.gMode = ($('#gMode') && $('#gMode').value) || OPT.gMode || 'hammer';
-  const cyc = OPT.gCyc = Math.max(1, Math.min(500, parseInt($('#gCyc').value) || 10)), amp = (OPT.gAmp = Math.max(1, Math.min(100, parseFloat(String($('#gAmp').value).replace(',', '.')) || 20))) / 100, maxIt = Math.max(5, Math.min(200, parseInt($('#maxIt').value) || 100));
+  const cyc = OPT.gCyc = Math.max(1, Math.min(500, parseInt($('#gCyc').value) || 10)), amp = (OPT.gAmp = Math.max(1, Math.min(100, parseFloat(String($('#gAmp').value).replace(',', '.')) || 20))) / 100, maxIt = (OPT.cyc || 'auto') === 'auto' ? 100 : Math.max(5, Math.min(200, +OPT.cyc || 100));
   OPT.snap = toJSON(App.sys); OPT.x0 = optSnapVars(App.sys); OPT.running = true; OPT.it = 0;
   const msg = t => { if ($('#omsg')) $('#omsg').textContent = t; };
-  const local = (sys, tag) => runJob('optLocal', { sys, maxIt }, { group: 'optg' }).then(r => { OPT.it += r.it; optKeep(r.sys, r.merit, tag); return r; });
+  const local = (sys, tag) => runJob('optLocal', { sys, maxIt, central: !!OPT.central }, { group: 'optg' }).then(r => { OPT.it += r.it; optKeep(r.sys, r.merit, tag); return r; });
   try {
     msg('Recherche globale : optimisation locale du point de départ…');
     const r0 = await local(structuredClone(App.sys), 'départ');
